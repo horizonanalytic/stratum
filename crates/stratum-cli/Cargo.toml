@@ -1,0 +1,22 @@
+[package]
+name = "stratum-cli"
+description = "Command-line interface for the Stratum programming language"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "stratum"
+path = "src/main.rs"
+
+[dependencies]
+stratum-core = { path = "../stratum-core" }
+anyhow.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true
