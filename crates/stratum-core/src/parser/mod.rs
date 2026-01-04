@@ -23,11 +23,11 @@ mod error;
 pub use error::{ExpectedToken, ParseError, ParseErrorKind};
 
 use crate::ast::{
-    BinOp, Block, CatchClause, CompoundOp, ElseBranch, EnumDef, EnumVariant, EnumVariantData, Expr,
-    ExprKind, FieldInit, FieldPattern, Function, Ident, ImplDef, Import, ImportItem, ImportKind,
-    InterfaceDef, InterfaceMethod, Item, ItemKind, Literal, MatchArm, Module, Param, Pattern,
-    PatternKind, Stmt, StmtKind, StringPart, StructDef, StructField, TypeAnnotation, TypeKind,
-    TypeParam, UnaryOp,
+    Attribute, AttributeArg, BinOp, Block, CatchClause, CompoundOp, ElseBranch, EnumDef,
+    EnumVariant, EnumVariantData, Expr, ExprKind, FieldInit, FieldPattern, Function, Ident,
+    ImplDef, Import, ImportItem, ImportKind, InterfaceDef, InterfaceMethod, Item, ItemKind,
+    Literal, MatchArm, Module, Param, Pattern, PatternKind, Stmt, StmtKind, StringPart, StructDef,
+    StructField, TypeAnnotation, TypeKind, TypeParam, UnaryOp,
 };
 use crate::lexer::{Lexer, Span, SpannedError, Token, TokenKind};
 
@@ -246,13 +246,81 @@ impl Parser {
     fn item(&mut self) -> ParseResult<Item> {
         let start = self.current().span.start;
 
+        // Parse any attributes before the item
+        let attributes = self.attributes()?;
+
         let kind = match self.current_kind() {
-            TokenKind::Fx | TokenKind::Async => self.function_item()?,
-            TokenKind::Struct => self.struct_item()?,
-            TokenKind::Enum => self.enum_item()?,
-            TokenKind::Interface => self.interface_item()?,
-            TokenKind::Impl => self.impl_item()?,
-            TokenKind::Import => self.import_item()?,
+            TokenKind::Fx | TokenKind::Async => self.function_item(attributes)?,
+            TokenKind::Struct => {
+                if !attributes.is_empty() {
+                    return Err(ParseError::new(
+                        ParseErrorKind::UnexpectedToken {
+                            found: TokenKind::Hash,
+                            expected: ExpectedToken::Description(
+                                "attributes not supported on structs yet".to_string(),
+                            ),
+                        },
+                        attributes[0].span,
+                    ));
+                }
+                self.struct_item()?
+            }
+            TokenKind::Enum => {
+                if !attributes.is_empty() {
+                    return Err(ParseError::new(
+                        ParseErrorKind::UnexpectedToken {
+                            found: TokenKind::Hash,
+                            expected: ExpectedToken::Description(
+                                "attributes not supported on enums yet".to_string(),
+                            ),
+                        },
+                        attributes[0].span,
+                    ));
+                }
+                self.enum_item()?
+            }
+            TokenKind::Interface => {
+                if !attributes.is_empty() {
+                    return Err(ParseError::new(
+                        ParseErrorKind::UnexpectedToken {
+                            found: TokenKind::Hash,
+                            expected: ExpectedToken::Description(
+                                "attributes not supported on interfaces yet".to_string(),
+                            ),
+                        },
+                        attributes[0].span,
+                    ));
+                }
+                self.interface_item()?
+            }
+            TokenKind::Impl => {
+                if !attributes.is_empty() {
+                    return Err(ParseError::new(
+                        ParseErrorKind::UnexpectedToken {
+                            found: TokenKind::Hash,
+                            expected: ExpectedToken::Description(
+                                "attributes not supported on impl blocks yet".to_string(),
+                            ),
+                        },
+                        attributes[0].span,
+                    ));
+                }
+                self.impl_item()?
+            }
+            TokenKind::Import => {
+                if !attributes.is_empty() {
+                    return Err(ParseError::new(
+                        ParseErrorKind::UnexpectedToken {
+                            found: TokenKind::Hash,
+                            expected: ExpectedToken::Description(
+                                "attributes not supported on imports".to_string(),
+                            ),
+                        },
+                        attributes[0].span,
+                    ));
+                }
+                self.import_item()?
+            }
             _ => {
                 return Err(ParseError::new(
                     ParseErrorKind::UnexpectedToken {
@@ -273,14 +341,76 @@ impl Parser {
         Ok(Item::new(kind, Span::new(start, end)))
     }
 
+    /// Parse a list of attributes: #[attr1] #[attr2(args)]
+    fn attributes(&mut self) -> ParseResult<Vec<Attribute>> {
+        let mut attrs = Vec::new();
+        while self.check(TokenKind::Hash) {
+            attrs.push(self.attribute()?);
+        }
+        Ok(attrs)
+    }
+
+    /// Parse a single attribute: #[name] or #[name(args)]
+    fn attribute(&mut self) -> ParseResult<Attribute> {
+        let start = self.current().span.start;
+
+        self.expect(TokenKind::Hash)?;
+        self.expect(TokenKind::LBracket)?;
+
+        let name = self.expect_ident()?;
+
+        // Optional arguments
+        let args = if self.eat(TokenKind::LParen).is_some() {
+            let args = self.attribute_args()?;
+            self.expect(TokenKind::RParen)?;
+            args
+        } else {
+            Vec::new()
+        };
+
+        let end_token = self.expect(TokenKind::RBracket)?;
+        let end = end_token.span.end;
+
+        Ok(Attribute::new(name, args, Span::new(start, end)))
+    }
+
+    /// Parse attribute arguments: ident, ident = expr, ...
+    fn attribute_args(&mut self) -> ParseResult<Vec<AttributeArg>> {
+        let mut args = Vec::new();
+
+        while !self.check(TokenKind::RParen) && !self.is_eof() {
+            let name = self.expect_ident()?;
+
+            let arg = if self.eat(TokenKind::Eq).is_some() {
+                // Name = value form
+                let value = self.expression()?;
+                AttributeArg::NameValue {
+                    name,
+                    value: Box::new(value),
+                }
+            } else {
+                // Just an identifier
+                AttributeArg::Ident(name)
+            };
+
+            args.push(arg);
+
+            if !self.eat(TokenKind::Comma).is_some() {
+                break;
+            }
+        }
+
+        Ok(args)
+    }
+
     /// Parse a function definition
-    fn function_item(&mut self) -> ParseResult<ItemKind> {
-        let func = self.function()?;
+    fn function_item(&mut self, attributes: Vec<Attribute>) -> ParseResult<ItemKind> {
+        let func = self.function(attributes)?;
         Ok(ItemKind::Function(func))
     }
 
     /// Parse a function
-    fn function(&mut self) -> ParseResult<Function> {
+    fn function(&mut self, attributes: Vec<Attribute>) -> ParseResult<Function> {
         let start = self.current().span.start;
 
         // Check for async modifier
@@ -325,6 +455,7 @@ impl Parser {
             return_type,
             body,
             is_async,
+            attributes,
             Span::new(start, end),
         ))
     }
@@ -621,7 +752,8 @@ impl Parser {
         let mut methods = Vec::new();
         self.function_depth += 1;
         while !self.check(TokenKind::RBrace) && !self.is_eof() {
-            methods.push(self.function()?);
+            let attrs = self.attributes()?;
+            methods.push(self.function(attrs)?);
         }
         self.function_depth -= 1;
         self.expect(TokenKind::RBrace)?;

@@ -2,7 +2,67 @@
 
 use crate::lexer::Span;
 
-use super::{Block, Ident, Param, Spanned, TypeAnnotation, TypeParam};
+use super::{Block, Expr, Ident, Param, Spanned, TypeAnnotation, TypeParam};
+
+/// An attribute on a function or other item
+/// Syntax: #[name] or #[name(args)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Attribute {
+    /// The attribute name
+    pub name: Ident,
+    /// Optional arguments to the attribute
+    pub args: Vec<AttributeArg>,
+    /// Source location
+    pub span: Span,
+}
+
+impl Attribute {
+    /// Create a new attribute
+    #[must_use]
+    pub fn new(name: Ident, args: Vec<AttributeArg>, span: Span) -> Self {
+        Self { name, args, span }
+    }
+
+    /// Create a simple attribute with no arguments
+    #[must_use]
+    pub fn simple(name: Ident, span: Span) -> Self {
+        Self {
+            name,
+            args: Vec::new(),
+            span,
+        }
+    }
+
+    /// Check if this is a test attribute
+    #[must_use]
+    pub fn is_test(&self) -> bool {
+        self.name.name == "test"
+    }
+
+    /// Check if this test should expect a panic
+    #[must_use]
+    pub fn should_panic(&self) -> bool {
+        self.args.iter().any(|arg| match arg {
+            AttributeArg::Ident(ident) => ident.name == "should_panic",
+            AttributeArg::NameValue { name, .. } => name.name == "should_panic",
+        })
+    }
+}
+
+impl Spanned for Attribute {
+    fn span(&self) -> Span {
+        self.span
+    }
+}
+
+/// An argument to an attribute
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttributeArg {
+    /// Just an identifier: #[test(should_panic)]
+    Ident(Ident),
+    /// Name = value pair: #[test(expected = "error message")]
+    NameValue { name: Ident, value: Box<Expr> },
+}
 
 /// A complete source file / module
 #[derive(Debug, Clone, PartialEq)]
@@ -81,6 +141,8 @@ pub struct Function {
     pub body: Block,
     /// Whether this is an async function
     pub is_async: bool,
+    /// Attributes on this function (e.g., #[test])
+    pub attributes: Vec<Attribute>,
     /// Source location
     pub span: Span,
 }
@@ -96,6 +158,7 @@ impl Function {
         return_type: Option<TypeAnnotation>,
         body: Block,
         is_async: bool,
+        attributes: Vec<Attribute>,
         span: Span,
     ) -> Self {
         Self {
@@ -105,8 +168,24 @@ impl Function {
             return_type,
             body,
             is_async,
+            attributes,
             span,
         }
+    }
+
+    /// Check if this function has a #[test] attribute
+    #[must_use]
+    pub fn is_test(&self) -> bool {
+        self.attributes.iter().any(Attribute::is_test)
+    }
+
+    /// Check if this test function should expect a panic
+    #[must_use]
+    pub fn should_panic(&self) -> bool {
+        self.attributes
+            .iter()
+            .filter(|a| a.is_test())
+            .any(Attribute::should_panic)
     }
 }
 

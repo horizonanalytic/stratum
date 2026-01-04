@@ -11,8 +11,33 @@ rust-version.workspace = true
 [dependencies]
 thiserror.workspace = true
 logos.workspace = true
-
-[dev-dependencies]
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+serde_yaml.workspace = true
+base64.workspace = true
+percent-encoding.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+regex.workspace = true
+sha2.workspace = true
+md-5.workspace = true
+hmac.workspace = true
+hex.workspace = true
+uuid.workspace = true
+rand.workspace = true
+rpassword.workspace = true
+sysinfo.workspace = true
+tempfile.workspace = true
+rusqlite.workspace = true
+postgres.workspace = true
+mysql.workspace = true
+duckdb.workspace = true
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
+r2d2_postgres.workspace = true
+r2d2_mysql.workspace = true
 
 [lints]
 workspace = true

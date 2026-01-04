@@ -176,6 +176,10 @@ pub enum TokenKind {
     #[token("]")]
     RBracket,
 
+    /// Hash for attributes: #
+    #[token("#")]
+    Hash,
+
     #[token(",")]
     Comma,
     #[token("::")]
@@ -364,6 +368,7 @@ impl std::fmt::Display for TokenKind {
             Self::RBrace => write!(f, "}}"),
             Self::LBracket => write!(f, "["),
             Self::RBracket => write!(f, "]"),
+            Self::Hash => write!(f, "#"),
             Self::Comma => write!(f, ","),
             Self::ColonColon => write!(f, "::"),
             Self::Colon => write!(f, ":"),
