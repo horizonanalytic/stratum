@@ -1305,6 +1305,172 @@ impl VM {
             }
         });
 
+        // pivot(cube_or_query, rows, col_dim, value_col, [agg_func]) -> DataFrame
+        // Pivots data to create cross-tabulation view
+        // Used in pipelines: cube |> pivot(["region"], "quarter", "revenue")
+        self.define_native("pivot", -1, |args| {
+            use crate::data::CubeQuery;
+            use elasticube_core::AggFunc;
+            use std::sync::Arc;
+
+            if args.len() < 4 {
+                return Err("pivot requires at least 4 arguments: cube/query, rows, col_dim, value_col".to_string());
+            }
+
+            // Extract row dimensions (array of strings)
+            let row_dims: Vec<String> = match &args[1] {
+                Value::List(items) => {
+                    items
+                        .borrow()
+                        .iter()
+                        .map(|v| match v {
+                            Value::String(s) => Ok(s.to_string()),
+                            other => Err(format!(
+                                "pivot row dimensions must be strings, got {}",
+                                other.type_name()
+                            )),
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                }
+                other => {
+                    return Err(format!(
+                        "pivot rows must be an array of strings, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Extract column dimension
+            let col_dim = match &args[2] {
+                Value::String(s) => s.to_string(),
+                other => {
+                    return Err(format!(
+                        "pivot col_dim must be a string, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Extract value column
+            let value_col = match &args[3] {
+                Value::String(s) => s.to_string(),
+                other => {
+                    return Err(format!(
+                        "pivot value_col must be a string, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Optional aggregation function (default: Sum)
+            let agg_func = if args.len() > 4 {
+                match &args[4] {
+                    Value::String(s) => match s.to_lowercase().as_str() {
+                        "sum" => AggFunc::Sum,
+                        "avg" | "mean" => AggFunc::Avg,
+                        "min" => AggFunc::Min,
+                        "max" => AggFunc::Max,
+                        "count" => AggFunc::Count,
+                        other => {
+                            return Err(format!(
+                                "pivot unknown aggregation function: {}",
+                                other
+                            ))
+                        }
+                    },
+                    other => {
+                        return Err(format!(
+                            "pivot agg_func must be a string, got {}",
+                            other.type_name()
+                        ))
+                    }
+                }
+            } else {
+                AggFunc::Sum
+            };
+
+            // Handle both Cube and CubeQuery as input
+            match &args[0] {
+                Value::Cube(cube) => {
+                    let query = CubeQuery::new(cube);
+                    let df = query
+                        .pivot(row_dims, &col_dim, &value_col, agg_func)
+                        .map_err(|e| e.to_string())?;
+                    Ok(Value::DataFrame(Arc::new(df)))
+                }
+                Value::CubeQuery(query_arc) => {
+                    let guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .as_ref()
+                        .ok_or("CubeQuery has already been consumed")?;
+                    let df = query
+                        .pivot(row_dims, &col_dim, &value_col, agg_func)
+                        .map_err(|e| e.to_string())?;
+                    Ok(Value::DataFrame(Arc::new(df)))
+                }
+                other => Err(format!(
+                    "pivot expects Cube or CubeQuery as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // cross_join(cube_or_query, ...dimensions) -> DataFrame
+        // Generates Cartesian product of dimension values
+        // Used in pipelines: cube |> cross_join("region", "product")
+        self.define_native("cross_join", -1, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::Arc;
+
+            if args.len() < 2 {
+                return Err(
+                    "cross_join requires at least 2 arguments: cube/query and dimension(s)"
+                        .to_string(),
+                );
+            }
+
+            // Extract dimensions from remaining args
+            let dimensions: Vec<String> = args[1..]
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => Ok(s.to_string()),
+                    other => Err(format!(
+                        "cross_join dimensions must be strings, got {}",
+                        other.type_name()
+                    )),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            if dimensions.is_empty() {
+                return Err("cross_join requires at least one dimension".to_string());
+            }
+
+            // Handle both Cube and CubeQuery as input
+            match &args[0] {
+                Value::Cube(cube) => {
+                    let query = CubeQuery::new(cube);
+                    let df = query.cross_join(dimensions).map_err(|e| e.to_string())?;
+                    Ok(Value::DataFrame(Arc::new(df)))
+                }
+                Value::CubeQuery(query_arc) => {
+                    let guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .as_ref()
+                        .ok_or("CubeQuery has already been consumed")?;
+                    let df = query.cross_join(dimensions).map_err(|e| e.to_string())?;
+                    Ok(Value::DataFrame(Arc::new(df)))
+                }
+                other => Err(format!(
+                    "cross_join expects Cube or CubeQuery as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
         // to_dataframe(cube_query) -> DataFrame
         // Used in pipelines: cube |> slice("region", "West") |> to_dataframe()
         self.define_native("to_dataframe", 1, |args| {
@@ -4831,6 +4997,36 @@ impl VM {
                     ))),
                 }
             }
+
+            // Cache methods
+            "has_cache" => Ok(Value::Bool(cube.has_cache())),
+
+            "cache_stats" => {
+                // cache_stats() -> Map { hits, misses, hit_rate, entries } or Null if no cache
+                use crate::bytecode::HashableValue;
+                use std::cell::RefCell;
+                use std::collections::HashMap;
+                use std::rc::Rc;
+
+                match cube.cache_stats() {
+                    Some(stats) => {
+                        let mut map = HashMap::new();
+                        map.insert(HashableValue::String(Rc::new("hits".to_string())), Value::Int(stats.hits as i64));
+                        map.insert(HashableValue::String(Rc::new("misses".to_string())), Value::Int(stats.misses as i64));
+                        map.insert(HashableValue::String(Rc::new("hit_rate".to_string())), Value::Float(stats.hit_rate));
+                        map.insert(HashableValue::String(Rc::new("entries".to_string())), Value::Int(stats.entries as i64));
+                        Ok(Value::Map(Rc::new(RefCell::new(map))))
+                    }
+                    None => Ok(Value::Null),
+                }
+            }
+
+            "clear_cache" => {
+                // clear_cache() -> Null (clears cache, returns null)
+                cube.clear_cache();
+                Ok(Value::Null)
+            }
+
             _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
                 type_name: "Cube".to_string(),
                 field: method.to_string(),
@@ -5005,6 +5201,151 @@ impl VM {
                 let result_builder = inner_builder.hierarchy(&name, &levels_refs).map_err(|e| {
                     self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
                 })?;
+
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+            }
+
+            // calculated_measure(name, expression) or calculated_measure(name, expression, type, agg)
+            // Add a calculated measure computed from an expression
+            "calculated_measure" => {
+                if args.len() < 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "calculated_measure requires at least 2 arguments: name and expression".to_string()
+                    )));
+                }
+
+                let name = match &args[0] {
+                    Value::String(s) => (**s).clone(),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "calculated_measure name",
+                        }))
+                    }
+                };
+
+                let expression = match &args[1] {
+                    Value::String(s) => (**s).clone(),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "calculated_measure expression",
+                        }))
+                    }
+                };
+
+                let mut guard = builder
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
+                let inner_builder = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
+
+                let result_builder = if args.len() >= 4 {
+                    // Full version: calculated_measure(name, expr, type, agg)
+                    let data_type = match &args[2] {
+                        Value::String(s) => match s.to_lowercase().as_str() {
+                            "float64" | "float" | "f64" | "double" => arrow::datatypes::DataType::Float64,
+                            "float32" | "f32" => arrow::datatypes::DataType::Float32,
+                            "int64" | "int" | "i64" => arrow::datatypes::DataType::Int64,
+                            "int32" | "i32" => arrow::datatypes::DataType::Int32,
+                            other => {
+                                return Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                                    "unsupported data type for calculated_measure: {other}"
+                                ))))
+                            }
+                        },
+                        other => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: other.type_name(),
+                                operation: "calculated_measure data_type",
+                            }))
+                        }
+                    };
+
+                    let agg_func = match &args[3] {
+                        Value::NativeFunction(f) => match f.name {
+                            "sum" => CubeAggFunc::Sum,
+                            "avg" | "mean" => CubeAggFunc::Avg,
+                            "min" => CubeAggFunc::Min,
+                            "max" => CubeAggFunc::Max,
+                            "count" => CubeAggFunc::Count,
+                            "first" => CubeAggFunc::First,
+                            "last" => CubeAggFunc::Last,
+                            other => {
+                                return Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                                    "unsupported aggregation function for calculated_measure: {other}"
+                                ))))
+                            }
+                        },
+                        Value::String(s) => match s.to_lowercase().as_str() {
+                            "sum" => CubeAggFunc::Sum,
+                            "avg" | "mean" | "average" => CubeAggFunc::Avg,
+                            "min" => CubeAggFunc::Min,
+                            "max" => CubeAggFunc::Max,
+                            "count" => CubeAggFunc::Count,
+                            "count_distinct" => CubeAggFunc::CountDistinct,
+                            "median" => CubeAggFunc::Median,
+                            "stddev" | "std" => CubeAggFunc::StdDev,
+                            "variance" | "var" => CubeAggFunc::Variance,
+                            "first" => CubeAggFunc::First,
+                            "last" => CubeAggFunc::Last,
+                            other => {
+                                return Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                                    "unsupported aggregation function for calculated_measure: {other}"
+                                ))))
+                            }
+                        },
+                        other => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "function or String",
+                                got: other.type_name(),
+                                operation: "calculated_measure agg_func",
+                            }))
+                        }
+                    };
+
+                    inner_builder.calculated_measure_with_type(&name, &expression, data_type, agg_func)
+                        .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?
+                } else {
+                    // Simple version: calculated_measure(name, expr) - uses Float64 and Sum defaults
+                    inner_builder.calculated_measure(&name, &expression)
+                        .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?
+                };
+
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+            }
+
+            // cache_enabled(size) - enable query caching with specified size
+            "cache_enabled" => {
+                if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "cache_enabled requires a cache size argument".to_string()
+                    )));
+                }
+
+                let cache_size = match &args[0] {
+                    Value::Int(n) => *n as usize,
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Int",
+                            got: other.type_name(),
+                            operation: "cache_enabled",
+                        }))
+                    }
+                };
+
+                let mut guard = builder
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
+                let inner_builder = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
+
+                let result_builder = inner_builder.cache_enabled(cache_size);
 
                 Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
             }

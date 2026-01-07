@@ -8,7 +8,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
-use elasticube_core::{AggFunc, ElastiCube, ElastiCubeBuilder, QueryBuilder};
+use elasticube_core::{AggFunc, CacheStats, ElastiCube, ElastiCubeBuilder, QueryBuilder, QueryCache};
 
 use super::{DataError, DataResult, DataFrame};
 
@@ -25,6 +25,8 @@ pub struct Cube {
     inner: Arc<ElastiCube>,
     /// Optional name for the cube
     name: Option<String>,
+    /// Shared query cache for improved performance
+    cache: Option<Arc<QueryCache>>,
 }
 
 impl Cube {
@@ -33,6 +35,7 @@ impl Cube {
         Self {
             inner: Arc::new(cube),
             name: None,
+            cache: None,
         }
     }
 
@@ -41,6 +44,25 @@ impl Cube {
         Self {
             inner: Arc::new(cube),
             name: Some(name.into()),
+            cache: None,
+        }
+    }
+
+    /// Create a new Cube with caching enabled
+    pub fn with_cache(cube: ElastiCube, cache_size: usize) -> Self {
+        Self {
+            inner: Arc::new(cube),
+            name: None,
+            cache: Some(Arc::new(QueryCache::new(cache_size))),
+        }
+    }
+
+    /// Create a new Cube with name and caching enabled
+    pub fn with_name_and_cache(cube: ElastiCube, name: impl Into<String>, cache_size: usize) -> Self {
+        Self {
+            inner: Arc::new(cube),
+            name: Some(name.into()),
+            cache: Some(Arc::new(QueryCache::new(cache_size))),
         }
     }
 
@@ -49,6 +71,7 @@ impl Cube {
         Self {
             inner: cube,
             name: None,
+            cache: None,
         }
     }
 
@@ -57,6 +80,7 @@ impl Cube {
         Self {
             inner: cube,
             name: Some(name.into()),
+            cache: None,
         }
     }
 
@@ -157,6 +181,67 @@ impl Cube {
     #[must_use]
     pub fn statistics(&self) -> elasticube_core::CubeStatistics {
         self.inner.statistics()
+    }
+
+    /// Check if query caching is enabled
+    #[must_use]
+    pub fn has_cache(&self) -> bool {
+        self.cache.is_some()
+    }
+
+    /// Get the shared query cache (if enabled)
+    #[must_use]
+    pub fn cache(&self) -> Option<&Arc<QueryCache>> {
+        self.cache.as_ref()
+    }
+
+    /// Get query cache statistics
+    ///
+    /// Returns cache hit/miss statistics if caching is enabled.
+    /// Returns None if caching is not enabled for this cube.
+    ///
+    /// # Example
+    /// ```ignore
+    /// if let Some(stats) = cube.cache_stats() {
+    ///     println!("Cache hit rate: {:.2}%", stats.hit_rate);
+    /// }
+    /// ```
+    #[must_use]
+    pub fn cache_stats(&self) -> Option<CacheStats> {
+        self.cache.as_ref().map(|c| c.stats())
+    }
+
+    /// Clear the query cache
+    ///
+    /// Removes all cached query results and resets hit/miss statistics.
+    /// Does nothing if caching is not enabled.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Clear cache after data modifications
+    /// cube.clear_cache();
+    /// ```
+    pub fn clear_cache(&self) {
+        if let Some(cache) = &self.cache {
+            cache.clear();
+        }
+    }
+
+    /// Enable caching on this cube with the specified cache size
+    ///
+    /// If caching is already enabled, this replaces the existing cache.
+    ///
+    /// # Arguments
+    /// * `cache_size` - Maximum number of cached query results
+    ///
+    /// # Example
+    /// ```ignore
+    /// let cube = cube.enable_cache(100);
+    /// ```
+    #[must_use]
+    pub fn enable_cache(mut self, cache_size: usize) -> Self {
+        self.cache = Some(Arc::new(QueryCache::new(cache_size)));
+        self
     }
 
     /// Get the current level for a hierarchy
@@ -329,6 +414,8 @@ pub struct CubeBuilder {
     builder: ElastiCubeBuilder,
     schema: Arc<arrow::datatypes::Schema>,
     name: Option<String>,
+    /// Cache configuration (None = no caching, Some(size) = enable with size)
+    cache_size: Option<usize>,
 }
 
 impl CubeBuilder {
@@ -351,6 +438,7 @@ impl CubeBuilder {
             builder,
             schema,
             name: None,
+            cache_size: None,
         })
     }
 
@@ -374,6 +462,7 @@ impl CubeBuilder {
             builder,
             schema,
             name: Some(name_str),
+            cache_size: None,
         })
     }
 
@@ -398,6 +487,7 @@ impl CubeBuilder {
             builder,
             schema: self.schema,
             name: self.name,
+            cache_size: self.cache_size,
         })
     }
 
@@ -414,6 +504,7 @@ impl CubeBuilder {
             builder,
             schema: self.schema,
             name: self.name,
+            cache_size: self.cache_size,
         })
     }
 
@@ -431,6 +522,88 @@ impl CubeBuilder {
             builder,
             schema: self.schema,
             name: self.name,
+            cache_size: self.cache_size,
+        })
+    }
+
+    /// Enable query caching for the built cube
+    ///
+    /// When enabled, query results are cached to improve performance
+    /// for repeated queries.
+    ///
+    /// # Arguments
+    /// * `size` - Maximum number of cached query results (default: 100)
+    ///
+    /// # Example
+    /// ```ignore
+    /// Cube.from(df)
+    ///     |> cache_enabled(100)
+    ///     |> dimension("region")
+    ///     |> measure("revenue", sum)
+    ///     |> build()
+    /// ```
+    pub fn cache_enabled(self, size: usize) -> Self {
+        Self {
+            builder: self.builder,
+            schema: self.schema,
+            name: self.name,
+            cache_size: Some(size),
+        }
+    }
+
+    /// Add a calculated measure to the cube
+    ///
+    /// A calculated measure is computed from an expression referencing other measures.
+    /// The expression is evaluated at query time using SQL syntax.
+    ///
+    /// # Arguments
+    /// * `name` - Name for the calculated measure
+    /// * `expression` - SQL expression (e.g., "revenue - cost")
+    ///
+    /// # Example
+    /// ```ignore
+    /// Cube.from(df)
+    ///     |> measure("revenue", sum)
+    ///     |> measure("cost", sum)
+    ///     |> calculated_measure("profit", "revenue - cost")
+    ///     |> build()
+    /// ```
+    pub fn calculated_measure(self, name: &str, expression: &str) -> DataResult<Self> {
+        // Default to Float64 and Sum for simple usage
+        self.calculated_measure_with_type(name, expression, DataType::Float64, AggFunc::Sum)
+    }
+
+    /// Add a calculated measure with explicit type and aggregation
+    ///
+    /// # Arguments
+    /// * `name` - Name for the calculated measure
+    /// * `expression` - SQL expression (e.g., "revenue - cost")
+    /// * `data_type` - Expected result data type
+    /// * `agg_func` - Default aggregation function
+    ///
+    /// # Example
+    /// ```ignore
+    /// Cube.from(df)
+    ///     |> measure("revenue", sum)
+    ///     |> calculated_measure_with_type("margin", "(revenue - cost) / revenue * 100", "float64", avg)
+    ///     |> build()
+    /// ```
+    pub fn calculated_measure_with_type(
+        self,
+        name: &str,
+        expression: &str,
+        data_type: DataType,
+        agg_func: AggFunc,
+    ) -> DataResult<Self> {
+        let builder = self
+            .builder
+            .add_calculated_measure(name, expression, data_type, agg_func)
+            .map_err(|e| DataError::Cube(e.to_string()))?;
+        Ok(Self {
+            builder,
+            schema: self.schema,
+            name: self.name,
+            cache_size: self.cache_size,
         })
     }
 
@@ -441,10 +614,15 @@ impl CubeBuilder {
             .build()
             .map_err(|e| DataError::Cube(e.to_string()))?;
 
-        Ok(match self.name {
-            Some(name) => Cube::with_name(cube, name),
-            None => Cube::new(cube),
-        })
+        // Create the cube with optional caching
+        let result = match (self.name, self.cache_size) {
+            (Some(name), Some(size)) => Cube::with_name_and_cache(cube, name, size),
+            (Some(name), None) => Cube::with_name(cube, name),
+            (None, Some(size)) => Cube::with_cache(cube, size),
+            (None, None) => Cube::new(cube),
+        };
+
+        Ok(result)
     }
 }
 
@@ -466,6 +644,8 @@ pub struct CubeQuery {
     cube: Arc<ElastiCube>,
     /// Optional name from the source cube
     cube_name: Option<String>,
+    /// Shared query cache from the source cube
+    cache: Option<Arc<QueryCache>>,
     /// Accumulated slice filters (dimension, value)
     slices: Vec<(String, String)>,
     /// Accumulated dice filters (dimension, values)
@@ -492,6 +672,7 @@ impl CubeQuery {
         Self {
             cube: cube.inner().clone(),
             cube_name: cube.name().map(|s| s.to_string()),
+            cache: cube.cache().cloned(),
             slices: Vec::new(),
             dices: Vec::new(),
             drill_downs: Vec::new(),
@@ -509,6 +690,25 @@ impl CubeQuery {
         Self {
             cube,
             cube_name: name,
+            cache: None,
+            slices: Vec::new(),
+            dices: Vec::new(),
+            drill_downs: Vec::new(),
+            roll_ups: Vec::new(),
+            select_exprs: Vec::new(),
+            filter_expr: None,
+            group_by_cols: Vec::new(),
+            order_by_cols: Vec::new(),
+            limit_count: None,
+        }
+    }
+
+    /// Create a CubeQuery from an Arc<ElastiCube> with optional name and cache
+    pub fn from_arc_with_cache(cube: Arc<ElastiCube>, name: Option<String>, cache: Option<Arc<QueryCache>>) -> Self {
+        Self {
+            cube,
+            cube_name: name,
+            cache,
             slices: Vec::new(),
             dices: Vec::new(),
             drill_downs: Vec::new(),
@@ -659,6 +859,11 @@ impl CubeQuery {
         // Clone the Arc to allow query() to take ownership
         let mut qb = self.cube.clone().query().map_err(|e| DataError::Cube(e.to_string()))?;
 
+        // Apply shared cache if available
+        if let Some(cache) = &self.cache {
+            qb = qb.with_cache(cache.clone());
+        }
+
         // Apply slices
         for (dim, val) in &self.slices {
             qb = qb.slice(dim, val);
@@ -747,6 +952,7 @@ impl CubeQuery {
         Self {
             cube: self.cube.clone(),
             cube_name: self.cube_name.clone(),
+            cache: self.cache.clone(),
             slices: self.slices.clone(),
             dices: self.dices.clone(),
             drill_downs: self.drill_downs.clone(),
@@ -757,6 +963,303 @@ impl CubeQuery {
             order_by_cols: self.order_by_cols.clone(),
             limit_count: self.limit_count,
         }
+    }
+
+    /// Pivot a cube to create a cross-tabulation view
+    ///
+    /// Transforms data from rows to columns. For example, transforms:
+    /// ```text
+    /// region | quarter | revenue
+    /// North  | Q1      | 100
+    /// North  | Q2      | 150
+    /// South  | Q1      | 200
+    /// ```
+    /// Into:
+    /// ```text
+    /// region | Q1  | Q2
+    /// North  | 100 | 150
+    /// South  | 200 | null
+    /// ```
+    ///
+    /// # Arguments
+    /// * `row_dims` - Dimensions to keep as rows
+    /// * `col_dim` - Dimension to transpose into columns
+    /// * `value_col` - Measure to aggregate
+    /// * `agg_func` - Aggregation function (Sum, Avg, Min, Max, Count)
+    pub fn pivot(
+        &self,
+        row_dims: Vec<String>,
+        col_dim: &str,
+        value_col: &str,
+        agg_func: AggFunc,
+    ) -> DataResult<DataFrame> {
+        use datafusion::prelude::*;
+
+        // Get unique values for the column dimension
+        let col_values = self.get_dimension_values(col_dim)?;
+        if col_values.is_empty() {
+            return Err(DataError::Cube(format!(
+                "No values found for column dimension '{}'",
+                col_dim
+            )));
+        }
+
+        // Map AggFunc to SQL aggregate function name
+        let agg_name = match agg_func {
+            AggFunc::Sum => "SUM",
+            AggFunc::Avg => "AVG",
+            AggFunc::Min => "MIN",
+            AggFunc::Max => "MAX",
+            AggFunc::Count => "COUNT",
+            AggFunc::CountDistinct => "COUNT",
+            AggFunc::First => "FIRST_VALUE",
+            AggFunc::Last => "LAST_VALUE",
+            _ => "SUM", // Default fallback
+        };
+
+        // Build SELECT expressions
+        let mut select_parts: Vec<String> = row_dims
+            .iter()
+            .map(|d| format!("\"{}\"", d))
+            .collect();
+
+        // Add CASE WHEN for each column value
+        for val in &col_values {
+            let case_expr = format!(
+                "{}(CASE WHEN \"{}\" = '{}' THEN \"{}\" ELSE NULL END) AS \"{}\"",
+                agg_name, col_dim, val, value_col, val
+            );
+            select_parts.push(case_expr);
+        }
+
+        // Build GROUP BY
+        let group_by_cols: Vec<String> = row_dims
+            .iter()
+            .map(|d| format!("\"{}\"", d))
+            .collect();
+
+        // Build the full SQL query
+        let sql = if group_by_cols.is_empty() {
+            format!("SELECT {} FROM cube_data", select_parts.join(", "))
+        } else {
+            format!(
+                "SELECT {} FROM cube_data GROUP BY {}",
+                select_parts.join(", "),
+                group_by_cols.join(", ")
+            )
+        };
+
+        // Execute the query
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| DataError::Cube(format!("failed to create runtime: {e}")))?;
+
+        rt.block_on(async {
+            let ctx = SessionContext::new();
+            let schema = self.cube.arrow_schema().clone();
+            let data = self.cube.data();
+
+            let table = datafusion::datasource::MemTable::try_new(schema, vec![data.to_vec()])
+                .map_err(|e| DataError::Cube(format!("failed to create temp table: {e}")))?;
+
+            ctx.register_table("cube_data", Arc::new(table))
+                .map_err(|e| DataError::Cube(format!("failed to register table: {e}")))?;
+
+            let df = ctx
+                .sql(&sql)
+                .await
+                .map_err(|e| DataError::Cube(format!("failed to execute pivot query: {e}")))?;
+
+            let batches = df
+                .collect()
+                .await
+                .map_err(|e| DataError::Cube(format!("failed to collect pivot results: {e}")))?;
+
+            if batches.is_empty() {
+                return Err(DataError::EmptyData);
+            }
+
+            let result_schema = batches[0].schema();
+            super::DataFrame::from_batches(result_schema, batches)
+        })
+    }
+
+    /// Generate a cross-join (Cartesian product) of dimension values
+    ///
+    /// Creates all combinations of values from the specified dimensions.
+    /// This is useful for:
+    /// - Creating a complete grid of dimension combinations
+    /// - Filling sparse data with zeros/nulls
+    /// - Generating all possible dimension intersections
+    ///
+    /// # Arguments
+    /// * `dimensions` - List of dimensions to cross-join
+    ///
+    /// # Returns
+    /// A DataFrame containing all combinations of dimension values
+    pub fn cross_join(&self, dimensions: Vec<String>) -> DataResult<DataFrame> {
+        use datafusion::prelude::*;
+
+        if dimensions.is_empty() {
+            return Err(DataError::Cube(
+                "cross_join requires at least one dimension".to_string(),
+            ));
+        }
+
+        // Validate all dimensions exist
+        for dim in &dimensions {
+            if !self.cube.get_dimension(dim).is_some() {
+                return Err(DataError::ColumnNotFound(dim.clone()));
+            }
+        }
+
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| DataError::Cube(format!("failed to create runtime: {e}")))?;
+
+        rt.block_on(async {
+            let ctx = SessionContext::new();
+            let schema = self.cube.arrow_schema().clone();
+            let data = self.cube.data();
+
+            let table = datafusion::datasource::MemTable::try_new(schema, vec![data.to_vec()])
+                .map_err(|e| DataError::Cube(format!("failed to create temp table: {e}")))?;
+
+            ctx.register_table("cube_data", Arc::new(table))
+                .map_err(|e| DataError::Cube(format!("failed to register table: {e}")))?;
+
+            // Build CTEs for each dimension's distinct values
+            let mut cte_parts: Vec<String> = Vec::new();
+            let mut cte_names: Vec<String> = Vec::new();
+
+            for (i, dim) in dimensions.iter().enumerate() {
+                let cte_name = format!("dim_{}", i);
+                let cte = format!(
+                    "{} AS (SELECT DISTINCT \"{}\" FROM cube_data)",
+                    cte_name, dim
+                );
+                cte_parts.push(cte);
+                cte_names.push(cte_name);
+            }
+
+            // Build the SELECT with column aliases
+            let select_cols: Vec<String> = dimensions
+                .iter()
+                .enumerate()
+                .map(|(i, dim)| format!("dim_{}.\"{}\"", i, dim))
+                .collect();
+
+            // Build CROSS JOIN chain
+            let join_expr = if cte_names.len() == 1 {
+                cte_names[0].clone()
+            } else {
+                let mut join = cte_names[0].clone();
+                for cte in &cte_names[1..] {
+                    join = format!("{} CROSS JOIN {}", join, cte);
+                }
+                join
+            };
+
+            let sql = format!(
+                "WITH {} SELECT {} FROM {}",
+                cte_parts.join(", "),
+                select_cols.join(", "),
+                join_expr
+            );
+
+            let df = ctx
+                .sql(&sql)
+                .await
+                .map_err(|e| DataError::Cube(format!("failed to execute cross_join query: {e}")))?;
+
+            let batches = df
+                .collect()
+                .await
+                .map_err(|e| DataError::Cube(format!("failed to collect cross_join results: {e}")))?;
+
+            if batches.is_empty() {
+                return Err(DataError::EmptyData);
+            }
+
+            let result_schema = batches[0].schema();
+            super::DataFrame::from_batches(result_schema, batches)
+        })
+    }
+
+    /// Helper to get distinct values for a dimension as strings
+    fn get_dimension_values(&self, dimension: &str) -> DataResult<Vec<String>> {
+        use arrow::array::{Array, Float64Array, Int64Array, StringArray};
+        use datafusion::prelude::*;
+
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| DataError::Cube(format!("failed to create runtime: {e}")))?;
+
+        rt.block_on(async {
+            let ctx = SessionContext::new();
+            let schema = self.cube.arrow_schema().clone();
+            let data = self.cube.data();
+
+            let table = datafusion::datasource::MemTable::try_new(schema, vec![data.to_vec()])
+                .map_err(|e| DataError::Cube(format!("failed to create temp table: {e}")))?;
+
+            ctx.register_table("cube_data", Arc::new(table))
+                .map_err(|e| DataError::Cube(format!("failed to register table: {e}")))?;
+
+            let query = format!(
+                "SELECT DISTINCT \"{}\" FROM cube_data ORDER BY \"{}\"",
+                dimension, dimension
+            );
+            let df = ctx
+                .sql(&query)
+                .await
+                .map_err(|e| DataError::Cube(format!("failed to query dimension values: {e}")))?;
+
+            let batches = df
+                .collect()
+                .await
+                .map_err(|e| DataError::Cube(format!("failed to collect dimension values: {e}")))?;
+
+            let mut values = Vec::new();
+            for batch in batches {
+                if batch.num_columns() == 0 {
+                    continue;
+                }
+                let col = batch.column(0);
+
+                if let Some(arr) = col.as_any().downcast_ref::<StringArray>() {
+                    for i in 0..arr.len() {
+                        if arr.is_valid(i) {
+                            values.push(arr.value(i).to_string());
+                        }
+                    }
+                } else if let Some(arr) = col.as_any().downcast_ref::<Int64Array>() {
+                    for i in 0..arr.len() {
+                        if arr.is_valid(i) {
+                            values.push(arr.value(i).to_string());
+                        }
+                    }
+                } else if let Some(arr) = col.as_any().downcast_ref::<Float64Array>() {
+                    for i in 0..arr.len() {
+                        if arr.is_valid(i) {
+                            values.push(arr.value(i).to_string());
+                        }
+                    }
+                } else {
+                    // For other types, use debug formatting
+                    let formatter = arrow::util::display::ArrayFormatter::try_new(
+                        col.as_ref(),
+                        &arrow::util::display::FormatOptions::default(),
+                    )
+                    .map_err(|e| DataError::Cube(format!("failed to format array: {e}")))?;
+
+                    for i in 0..col.len() {
+                        if col.is_valid(i) {
+                            values.push(formatter.value(i).to_string());
+                        }
+                    }
+                }
+            }
+
+            Ok(values)
+        })
     }
 }
 
@@ -1328,5 +1831,459 @@ mod tests {
         assert_eq!(hierarchies.len(), 1);
         assert_eq!(hierarchies[0].0, "time");
         assert_eq!(hierarchies[0].1, vec!["year", "quarter", "month"]);
+    }
+
+    // Calculated Measure Tests
+
+    fn create_sales_dataframe() -> DataFrame {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("region", arrow::datatypes::DataType::Utf8, false),
+            Field::new("revenue", arrow::datatypes::DataType::Float64, false),
+            Field::new("cost", arrow::datatypes::DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec!["North", "South", "East", "West"])),
+                Arc::new(Float64Array::from(vec![1000.0, 2000.0, 1500.0, 1750.0])),
+                Arc::new(Float64Array::from(vec![600.0, 1200.0, 900.0, 1050.0])),
+            ],
+        )
+        .unwrap();
+
+        DataFrame::from_batch(batch)
+    }
+
+    #[test]
+    fn test_calculated_measure_simple() {
+        let df = create_sales_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .measure("cost", AggFunc::Sum)
+            .unwrap()
+            .calculated_measure("profit", "revenue - cost")
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(cube.row_count(), 4);
+        assert_eq!(cube.dimension_names(), vec!["region"]);
+        assert_eq!(cube.measure_names(), vec!["revenue", "cost"]);
+    }
+
+    #[test]
+    fn test_calculated_measure_with_type() {
+        let df = create_sales_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .measure("cost", AggFunc::Sum)
+            .unwrap()
+            .calculated_measure_with_type(
+                "margin",
+                "(revenue - cost) / revenue * 100",
+                DataType::Float64,
+                AggFunc::Avg,
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(cube.row_count(), 4);
+    }
+
+    #[test]
+    fn test_calculated_measure_query() {
+        let df = create_sales_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .measure("cost", AggFunc::Sum)
+            .unwrap()
+            .calculated_measure("profit", "revenue - cost")
+            .unwrap()
+            .build()
+            .unwrap();
+
+        // Query using the calculated measure
+        let query = CubeQuery::new(&cube)
+            .select(vec![
+                "region".to_string(),
+                "SUM(profit) as total_profit".to_string(),
+            ])
+            .group_by(vec!["region".to_string()]);
+
+        let result = query.to_dataframe();
+        assert!(result.is_ok());
+        let result_df = result.unwrap();
+        assert_eq!(result_df.num_rows(), 4);
+    }
+
+    #[test]
+    fn test_nested_calculated_measures() {
+        let df = create_sales_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .measure("cost", AggFunc::Sum)
+            .unwrap()
+            .calculated_measure("profit", "revenue - cost")
+            .unwrap()
+            .calculated_measure("margin_pct", "(profit / revenue) * 100")
+            .unwrap()
+            .build()
+            .unwrap();
+
+        // Both calculated measures should be defined
+        assert_eq!(cube.row_count(), 4);
+    }
+
+    // Pivot Tests
+
+    fn create_pivot_dataframe() -> DataFrame {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("region", arrow::datatypes::DataType::Utf8, false),
+            Field::new("quarter", arrow::datatypes::DataType::Utf8, false),
+            Field::new("revenue", arrow::datatypes::DataType::Float64, false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec![
+                    "North", "North", "South", "South",
+                ])),
+                Arc::new(StringArray::from(vec!["Q1", "Q2", "Q1", "Q2"])),
+                Arc::new(Float64Array::from(vec![100.0, 150.0, 200.0, 250.0])),
+            ],
+        )
+        .unwrap();
+
+        DataFrame::from_batch(batch)
+    }
+
+    #[test]
+    fn test_pivot_basic() {
+        let df = create_pivot_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .dimension("quarter")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let query = CubeQuery::new(&cube);
+        let result = query.pivot(
+            vec!["region".to_string()],
+            "quarter",
+            "revenue",
+            AggFunc::Sum,
+        );
+
+        assert!(result.is_ok());
+        let pivoted = result.unwrap();
+        // Should have 2 rows (North, South)
+        assert_eq!(pivoted.num_rows(), 2);
+        // Should have 3 columns: region, Q1, Q2
+        assert_eq!(pivoted.num_columns(), 3);
+    }
+
+    #[test]
+    fn test_pivot_with_avg() {
+        let df = create_pivot_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .dimension("quarter")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let query = CubeQuery::new(&cube);
+        let result = query.pivot(
+            vec!["region".to_string()],
+            "quarter",
+            "revenue",
+            AggFunc::Avg,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    // Cross-Join Tests
+
+    fn create_sparse_dataframe() -> DataFrame {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("region", arrow::datatypes::DataType::Utf8, false),
+            Field::new("product", arrow::datatypes::DataType::Utf8, false),
+            Field::new("sales", arrow::datatypes::DataType::Float64, false),
+        ]));
+
+        // Sparse data: not all region/product combinations exist
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec!["North", "South", "North"])),
+                Arc::new(StringArray::from(vec!["Widget", "Widget", "Gadget"])),
+                Arc::new(Float64Array::from(vec![100.0, 200.0, 150.0])),
+            ],
+        )
+        .unwrap();
+
+        DataFrame::from_batch(batch)
+    }
+
+    #[test]
+    fn test_cross_join_two_dimensions() {
+        let df = create_sparse_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .dimension("product")
+            .unwrap()
+            .measure("sales", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let query = CubeQuery::new(&cube);
+        let result = query.cross_join(vec!["region".to_string(), "product".to_string()]);
+
+        assert!(result.is_ok());
+        let cross = result.unwrap();
+        // 2 regions x 2 products = 4 combinations
+        assert_eq!(cross.num_rows(), 4);
+        assert_eq!(cross.num_columns(), 2);
+    }
+
+    #[test]
+    fn test_cross_join_single_dimension() {
+        let df = create_sparse_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .dimension("product")
+            .unwrap()
+            .measure("sales", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let query = CubeQuery::new(&cube);
+        let result = query.cross_join(vec!["region".to_string()]);
+
+        assert!(result.is_ok());
+        let cross = result.unwrap();
+        // 2 unique regions
+        assert_eq!(cross.num_rows(), 2);
+        assert_eq!(cross.num_columns(), 1);
+    }
+
+    #[test]
+    fn test_cross_join_invalid_dimension() {
+        let df = create_sparse_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .measure("sales", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let query = CubeQuery::new(&cube);
+        let result = query.cross_join(vec!["nonexistent".to_string()]);
+
+        assert!(result.is_err());
+    }
+
+    // Query Cache Tests
+
+    #[test]
+    fn test_cube_without_cache() {
+        let df = create_test_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        // Cube should not have cache by default
+        assert!(!cube.has_cache());
+        assert!(cube.cache_stats().is_none());
+
+        // clear_cache() should not error even without cache
+        cube.clear_cache();
+    }
+
+    #[test]
+    fn test_cube_with_cache() {
+        let df = create_test_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .cache_enabled(100)
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        // Cube should have cache
+        assert!(cube.has_cache());
+
+        // Initial stats should show 0 hits/misses
+        let stats = cube.cache_stats().unwrap();
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+        assert_eq!(stats.entries, 0);
+    }
+
+    #[test]
+    fn test_cube_cache_query_execution() {
+        let df = create_test_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .cache_enabled(10)
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        // First query - should be a cache miss
+        let query1 = CubeQuery::new(&cube)
+            .select(vec!["region".to_string(), "SUM(revenue) as total".to_string()])
+            .group_by(vec!["region".to_string()]);
+        let result1 = query1.to_dataframe();
+        assert!(result1.is_ok());
+
+        let stats1 = cube.cache_stats().unwrap();
+        assert_eq!(stats1.misses, 1);
+        assert_eq!(stats1.hits, 0);
+        assert_eq!(stats1.entries, 1);
+
+        // Second identical query - should be a cache hit
+        let query2 = CubeQuery::new(&cube)
+            .select(vec!["region".to_string(), "SUM(revenue) as total".to_string()])
+            .group_by(vec!["region".to_string()]);
+        let result2 = query2.to_dataframe();
+        assert!(result2.is_ok());
+
+        let stats2 = cube.cache_stats().unwrap();
+        assert_eq!(stats2.misses, 1);
+        assert_eq!(stats2.hits, 1);
+        assert_eq!(stats2.hit_rate, 50.0);
+    }
+
+    #[test]
+    fn test_cube_clear_cache() {
+        let df = create_test_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .cache_enabled(10)
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        // Execute a query to populate cache
+        let query = CubeQuery::new(&cube)
+            .select(vec!["region".to_string()])
+            .group_by(vec!["region".to_string()]);
+        let _ = query.to_dataframe();
+
+        // Verify cache has entries
+        let stats = cube.cache_stats().unwrap();
+        assert_eq!(stats.entries, 1);
+
+        // Clear cache
+        cube.clear_cache();
+
+        // Verify cache is empty
+        let stats_after = cube.cache_stats().unwrap();
+        assert_eq!(stats_after.hits, 0);
+        assert_eq!(stats_after.misses, 0);
+        assert_eq!(stats_after.entries, 0);
+    }
+
+    #[test]
+    fn test_cube_cache_different_queries() {
+        let df = create_test_dataframe();
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .cache_enabled(10)
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        // First query
+        let query1 = CubeQuery::new(&cube)
+            .select(vec!["region".to_string()])
+            .group_by(vec!["region".to_string()]);
+        let _ = query1.to_dataframe();
+
+        // Different query - should be a new cache miss
+        let query2 = CubeQuery::new(&cube)
+            .select(vec!["SUM(revenue) as total".to_string()]);
+        let _ = query2.to_dataframe();
+
+        // Should have 2 cache misses, 2 entries
+        let stats = cube.cache_stats().unwrap();
+        assert_eq!(stats.misses, 2);
+        assert_eq!(stats.entries, 2);
+    }
+
+    #[test]
+    fn test_cube_enable_cache_method() {
+        let df = create_test_dataframe();
+
+        // Create cube without cache first
+        let cube_no_cache = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .measure("revenue", AggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert!(!cube_no_cache.has_cache());
+
+        // Enable cache using the method
+        let cube_with_cache = cube_no_cache.enable_cache(50);
+        assert!(cube_with_cache.has_cache());
     }
 }
