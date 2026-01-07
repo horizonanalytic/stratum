@@ -5,10 +5,11 @@
 use std::fmt::{self, Display, Formatter};
 
 use super::{
-    BinOp, Block, CompoundOp, ElseBranch, EnumDef, EnumVariant, EnumVariantData, Expr, ExprKind,
-    FieldInit, FieldPattern, Function, Ident, ImplDef, Import, ImportKind, InterfaceDef,
+    BinOp, Block, CallArg, CompoundOp, ElseBranch, EnumDef, EnumVariant, EnumVariantData, Expr,
+    ExprKind, FieldInit, FieldPattern, Function, Ident, ImplDef, Import, ImportKind, InterfaceDef,
     InterfaceMethod, Item, ItemKind, Literal, MatchArm, Module, Param, Pattern, PatternKind, Stmt,
-    StmtKind, StringPart, StructDef, StructField, TypeAnnotation, TypeKind, TypeParam, UnaryOp,
+    StmtKind, StringPart, StructDef, StructField, TopLevelItem, TopLevelLet, TypeAnnotation,
+    TypeKind, TypeParam, UnaryOp,
 };
 
 // ============================================================================
@@ -146,10 +147,18 @@ impl Display for ExprKind {
             ExprKind::Binary { left, op, right } => write!(f, "({left} {op} {right})"),
             ExprKind::Unary { op, expr } => write!(f, "{op}{expr}"),
             ExprKind::Paren(expr) => write!(f, "({expr})"),
-            ExprKind::Call { callee, args } => {
+            ExprKind::Call {
+                callee,
+                args,
+                trailing_closure,
+            } => {
                 write!(f, "{callee}(")?;
                 write_comma_separated(f, args)?;
-                write!(f, ")")
+                write!(f, ")")?;
+                if let Some(closure) = trailing_closure {
+                    write!(f, " {closure}")?;
+                }
+                Ok(())
             }
             ExprKind::Index { expr, index } => write!(f, "{expr}[{index}]"),
             ExprKind::Field { expr, field } => write!(f, "{expr}.{field}"),
@@ -238,6 +247,18 @@ impl Display for ExprKind {
                 }
                 Ok(())
             }
+            ExprKind::Placeholder => write!(f, "_"),
+            ExprKind::ColumnShorthand(ident) => write!(f, ".{}", ident.name),
+            ExprKind::StateBinding(expr) => write!(f, "&{expr}"),
+        }
+    }
+}
+
+impl Display for CallArg {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            CallArg::Positional(expr) => write!(f, "{expr}"),
+            CallArg::Named { name, value, .. } => write!(f, "{name}: {value}"),
         }
     }
 }
@@ -448,13 +469,33 @@ impl Display for Block {
 
 impl Display for Module {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (i, item) in self.items.iter().enumerate() {
+        for (i, tl_item) in self.top_level.iter().enumerate() {
             if i > 0 {
                 writeln!(f)?;
             }
-            write!(f, "{item}")?;
+            write!(f, "{tl_item}")?;
         }
         Ok(())
+    }
+}
+
+impl Display for TopLevelItem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            TopLevelItem::Item(item) => write!(f, "{item}"),
+            TopLevelItem::Let(let_decl) => write!(f, "{let_decl}"),
+            TopLevelItem::Statement(stmt) => write!(f, "{stmt}"),
+        }
+    }
+}
+
+impl Display for TopLevelLet {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "let {}", self.pattern)?;
+        if let Some(ty) = &self.ty {
+            write!(f, ": {ty}")?;
+        }
+        write!(f, " = {}", self.value)
     }
 }
 

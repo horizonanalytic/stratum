@@ -168,6 +168,12 @@ pub enum RuntimeErrorKind {
     /// Await outside async function
     AwaitOutsideAsync,
 
+    /// Async operation failed
+    AsyncError(String),
+
+    /// Data operation error (DataFrame/Series)
+    DataError(String),
+
     /// Internal VM error
     Internal(String),
 }
@@ -236,6 +242,8 @@ impl fmt::Display for RuntimeErrorKind {
             RuntimeErrorKind::AwaitOutsideAsync => {
                 write!(f, "await outside of async function")
             }
+            RuntimeErrorKind::AsyncError(msg) => write!(f, "async error: {msg}"),
+            RuntimeErrorKind::DataError(msg) => write!(f, "data error: {msg}"),
             RuntimeErrorKind::Internal(msg) => write!(f, "internal error: {msg}"),
         }
     }

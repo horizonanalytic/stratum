@@ -1,0 +1,23 @@
+[package]
+name = "stratum-lsp"
+description = "Language Server Protocol implementation for Stratum"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+stratum-core = { path = "../stratum-core" }
+tower-lsp.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "io-std", "macros"] }
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

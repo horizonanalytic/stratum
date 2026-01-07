@@ -1,0 +1,26 @@
+// Final top-level statements test
+
+// Top-level let bindings
+let name = "Stratum"
+let greeting = "Hello"
+
+// Top-level function
+fx add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+// Use the function at top level
+let result = add(10, 20)
+
+// Print strings
+println(name)
+println(greeting)
+
+// Use a function that references globals
+fx get_name() -> String {
+    name
+}
+
+println(get_name())
+
+println("All tests passed!")

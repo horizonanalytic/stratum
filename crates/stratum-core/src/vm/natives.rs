@@ -1,15 +1,20 @@
 //! Native namespace implementations for File, Dir, Path, Env, Args, Shell, Http,
-//! Json, Toml, Yaml, Base64, Url, DateTime, Duration, Time, Regex, Hash, Uuid, Random
+//! Json, Toml, Yaml, Base64, Url, DateTime, Duration, Time, Regex, Gzip, Zip,
+//! Hash, Uuid, Random, Crypto
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
-use std::fs;
-use std::io::Write;
+use std::fs::{self, File};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::time::{Duration as StdDuration, Instant};
+
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 
 use base64::Engine;
 use chrono::{DateTime as ChronoDateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
@@ -23,8 +28,22 @@ use serde_json;
 use sha2::{Digest, Sha256, Sha512};
 use uuid::Uuid;
 use hex;
+use aes_gcm::{
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+    Aes256Gcm, Nonce,
+};
+use pbkdf2::pbkdf2_hmac_array;
 
-use crate::bytecode::{HashableValue, Value};
+use crate::bytecode::{
+    FutureState, HashableValue, TcpListenerWrapper, TcpStreamWrapper, UdpSocketWrapper,
+    WebSocketWrapper, WebSocketServerWrapper, WebSocketServerConnWrapper, Value,
+};
+use std::sync::Arc;
+use crate::data::{
+    read_csv_with_options, read_json, read_parquet, sql_query, write_csv, write_json,
+    write_parquet, AggOp, AggSpec, Cube, CubeAggFunc, CubeBuilder, DataFrame, JoinSpec, Series,
+    SqlContext,
+};
 
 /// Result type for native namespace methods
 pub type NativeResult = Result<Value, String>;
@@ -2263,6 +2282,372 @@ fn get_bytes_arg(value: &Value) -> Result<Vec<u8>, String> {
 }
 
 // ============================================================================
+// Gzip Module
+// ============================================================================
+
+/// Gzip module entry point - compression and decompression
+pub fn gzip_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "compress" => gzip_compress(args),
+        "decompress" => gzip_decompress(args),
+        "compress_text" => gzip_compress_text(args),
+        "decompress_text" => gzip_decompress_text(args),
+        _ => Err(format!("Gzip has no method '{method}'")),
+    }
+}
+
+/// Gzip.compress(bytes: List<Int>) -> List<Int>
+/// Compresses bytes using gzip
+fn gzip_compress(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!(
+            "Gzip.compress() expects 1 argument, got {}",
+            args.len()
+        ));
+    }
+    let bytes = get_bytes_arg(&args[0])?;
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(&bytes)
+        .map_err(|e| format!("gzip compression failed: {}", e))?;
+    let compressed = encoder
+        .finish()
+        .map_err(|e| format!("gzip compression failed: {}", e))?;
+
+    Ok(bytes_to_list(&compressed))
+}
+
+/// Gzip.decompress(bytes: List<Int>) -> List<Int>
+/// Decompresses gzip-encoded bytes
+fn gzip_decompress(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!(
+            "Gzip.decompress() expects 1 argument, got {}",
+            args.len()
+        ));
+    }
+    let bytes = get_bytes_arg(&args[0])?;
+
+    let mut decoder = GzDecoder::new(&bytes[..]);
+    let mut decompressed = Vec::new();
+    decoder
+        .read_to_end(&mut decompressed)
+        .map_err(|e| format!("gzip decompression failed: {}", e))?;
+
+    Ok(bytes_to_list(&decompressed))
+}
+
+/// Gzip.compress_text(text: String) -> List<Int>
+/// Compresses a string using gzip
+fn gzip_compress_text(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!(
+            "Gzip.compress_text() expects 1 argument, got {}",
+            args.len()
+        ));
+    }
+    let text = get_string_arg(&args[0], "text")?;
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(text.as_bytes())
+        .map_err(|e| format!("gzip compression failed: {}", e))?;
+    let compressed = encoder
+        .finish()
+        .map_err(|e| format!("gzip compression failed: {}", e))?;
+
+    Ok(bytes_to_list(&compressed))
+}
+
+/// Gzip.decompress_text(bytes: List<Int>) -> String
+/// Decompresses gzip-encoded bytes to a string
+fn gzip_decompress_text(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!(
+            "Gzip.decompress_text() expects 1 argument, got {}",
+            args.len()
+        ));
+    }
+    let bytes = get_bytes_arg(&args[0])?;
+
+    let mut decoder = GzDecoder::new(&bytes[..]);
+    let mut decompressed = Vec::new();
+    decoder
+        .read_to_end(&mut decompressed)
+        .map_err(|e| format!("gzip decompression failed: {}", e))?;
+
+    String::from_utf8(decompressed)
+        .map(Value::string)
+        .map_err(|e| format!("decompressed data is not valid UTF-8: {}", e))
+}
+
+/// Helper to convert bytes to Value::List
+fn bytes_to_list(bytes: &[u8]) -> Value {
+    let values: Vec<Value> = bytes.iter().map(|b| Value::Int(i64::from(*b))).collect();
+    Value::list(values)
+}
+
+// ============================================================================
+// Zip Module
+// ============================================================================
+
+/// Zip module entry point - zip archive operations
+pub fn zip_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "list" => zip_list(args),
+        "extract" => zip_extract(args),
+        "extract_file" => zip_extract_file(args),
+        "create" => zip_create(args),
+        "read_text" => zip_read_text(args),
+        "read_bytes" => zip_read_bytes(args),
+        _ => Err(format!("Zip has no method '{method}'")),
+    }
+}
+
+/// Zip.list(path: String) -> List<Map>
+/// Lists all entries in a zip archive
+fn zip_list(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Zip.list() expects 1 argument, got {}", args.len()));
+    }
+    let path = get_string_arg(&args[0], "path")?;
+
+    let file =
+        File::open(&path).map_err(|e| format!("failed to open zip file '{}': {}", path, e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("failed to read zip archive '{}': {}", path, e))?;
+
+    let mut entries = Vec::new();
+    for i in 0..archive.len() {
+        let entry = archive
+            .by_index(i)
+            .map_err(|e| format!("failed to read entry {}: {}", i, e))?;
+
+        let mut map = HashMap::new();
+        map.insert(
+            HashableValue::String(Rc::new("name".to_string())),
+            Value::string(entry.name()),
+        );
+        map.insert(
+            HashableValue::String(Rc::new("size".to_string())),
+            Value::Int(entry.size() as i64),
+        );
+        map.insert(
+            HashableValue::String(Rc::new("compressed_size".to_string())),
+            Value::Int(entry.compressed_size() as i64),
+        );
+        map.insert(
+            HashableValue::String(Rc::new("is_dir".to_string())),
+            Value::Bool(entry.is_dir()),
+        );
+
+        entries.push(Value::Map(Rc::new(RefCell::new(map))));
+    }
+
+    Ok(Value::list(entries))
+}
+
+/// Zip.extract(path: String, output_dir: String) -> nil
+/// Extracts all entries from a zip archive to a directory
+fn zip_extract(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!(
+            "Zip.extract() expects 2 arguments, got {}",
+            args.len()
+        ));
+    }
+    let zip_path = get_string_arg(&args[0], "path")?;
+    let output_dir = get_string_arg(&args[1], "output_dir")?;
+
+    let file = File::open(&zip_path)
+        .map_err(|e| format!("failed to open zip file '{}': {}", zip_path, e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("failed to read zip archive '{}': {}", zip_path, e))?;
+
+    let output_path = Path::new(&output_dir);
+    fs::create_dir_all(output_path)
+        .map_err(|e| format!("failed to create output directory '{}': {}", output_dir, e))?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| format!("failed to read entry {}: {}", i, e))?;
+
+        let entry_path = output_path.join(entry.name());
+
+        if entry.is_dir() {
+            fs::create_dir_all(&entry_path)
+                .map_err(|e| format!("failed to create directory {:?}: {}", entry_path, e))?;
+        } else {
+            if let Some(parent) = entry_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("failed to create parent directory {:?}: {}", parent, e))?;
+            }
+            let mut outfile = File::create(&entry_path)
+                .map_err(|e| format!("failed to create file {:?}: {}", entry_path, e))?;
+            std::io::copy(&mut entry, &mut outfile)
+                .map_err(|e| format!("failed to extract file {:?}: {}", entry_path, e))?;
+        }
+    }
+
+    Ok(Value::Null)
+}
+
+/// Zip.extract_file(zip_path: String, entry_name: String, output_path: String) -> nil
+/// Extracts a single file from a zip archive
+fn zip_extract_file(args: &[Value]) -> NativeResult {
+    if args.len() != 3 {
+        return Err(format!(
+            "Zip.extract_file() expects 3 arguments, got {}",
+            args.len()
+        ));
+    }
+    let zip_path = get_string_arg(&args[0], "zip_path")?;
+    let entry_name = get_string_arg(&args[1], "entry_name")?;
+    let output_path = get_string_arg(&args[2], "output_path")?;
+
+    let file = File::open(&zip_path)
+        .map_err(|e| format!("failed to open zip file '{}': {}", zip_path, e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("failed to read zip archive '{}': {}", zip_path, e))?;
+
+    let mut entry = archive
+        .by_name(&entry_name)
+        .map_err(|e| format!("entry '{}' not found in archive: {}", entry_name, e))?;
+
+    let out_path = Path::new(&output_path);
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create parent directory {:?}: {}", parent, e))?;
+    }
+
+    let mut outfile =
+        File::create(out_path).map_err(|e| format!("failed to create file {:?}: {}", out_path, e))?;
+    std::io::copy(&mut entry, &mut outfile)
+        .map_err(|e| format!("failed to extract file '{}': {}", entry_name, e))?;
+
+    Ok(Value::Null)
+}
+
+/// Zip.create(output_path: String, files: List<String>) -> nil
+/// Creates a new zip archive from a list of files
+fn zip_create(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!(
+            "Zip.create() expects 2 arguments, got {}",
+            args.len()
+        ));
+    }
+    let output_path = get_string_arg(&args[0], "output_path")?;
+    let files = match &args[1] {
+        Value::List(list) => list.borrow().clone(),
+        _ => {
+            return Err(format!(
+                "files must be List, got {}",
+                args[1].type_name()
+            ))
+        }
+    };
+
+    let zip_file = File::create(&output_path)
+        .map_err(|e| format!("failed to create zip file '{}': {}", output_path, e))?;
+    let mut zip_writer = zip::ZipWriter::new(zip_file);
+
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    for file_val in files {
+        let file_path = get_string_arg(&file_val, "file")?;
+        let path = Path::new(&file_path);
+
+        if !path.exists() {
+            return Err(format!("file not found: '{}'", file_path));
+        }
+
+        // Use the file name as the entry name in the archive
+        let entry_name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| file_path.clone());
+
+        zip_writer
+            .start_file(&entry_name, options)
+            .map_err(|e| format!("failed to add '{}' to archive: {}", entry_name, e))?;
+
+        let content = fs::read(path)
+            .map_err(|e| format!("failed to read file '{}': {}", file_path, e))?;
+        zip_writer
+            .write_all(&content)
+            .map_err(|e| format!("failed to write '{}' to archive: {}", entry_name, e))?;
+    }
+
+    zip_writer
+        .finish()
+        .map_err(|e| format!("failed to finalize zip archive: {}", e))?;
+
+    Ok(Value::Null)
+}
+
+/// Zip.read_text(zip_path: String, entry_name: String) -> String
+/// Reads a file from a zip archive as text
+fn zip_read_text(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!(
+            "Zip.read_text() expects 2 arguments, got {}",
+            args.len()
+        ));
+    }
+    let zip_path = get_string_arg(&args[0], "zip_path")?;
+    let entry_name = get_string_arg(&args[1], "entry_name")?;
+
+    let file = File::open(&zip_path)
+        .map_err(|e| format!("failed to open zip file '{}': {}", zip_path, e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("failed to read zip archive '{}': {}", zip_path, e))?;
+
+    let mut entry = archive
+        .by_name(&entry_name)
+        .map_err(|e| format!("entry '{}' not found in archive: {}", entry_name, e))?;
+
+    let mut content = String::new();
+    entry
+        .read_to_string(&mut content)
+        .map_err(|e| format!("failed to read entry '{}': {}", entry_name, e))?;
+
+    Ok(Value::string(content))
+}
+
+/// Zip.read_bytes(zip_path: String, entry_name: String) -> List<Int>
+/// Reads a file from a zip archive as bytes
+fn zip_read_bytes(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!(
+            "Zip.read_bytes() expects 2 arguments, got {}",
+            args.len()
+        ));
+    }
+    let zip_path = get_string_arg(&args[0], "zip_path")?;
+    let entry_name = get_string_arg(&args[1], "entry_name")?;
+
+    let file = File::open(&zip_path)
+        .map_err(|e| format!("failed to open zip file '{}': {}", zip_path, e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("failed to read zip archive '{}': {}", zip_path, e))?;
+
+    let mut entry = archive
+        .by_name(&entry_name)
+        .map_err(|e| format!("entry '{}' not found in archive: {}", entry_name, e))?;
+
+    let mut content = Vec::new();
+    entry
+        .read_to_end(&mut content)
+        .map_err(|e| format!("failed to read entry '{}': {}", entry_name, e))?;
+
+    Ok(bytes_to_list(&content))
+}
+
+// ============================================================================
 // Hash Module
 // ============================================================================
 
@@ -2365,9 +2750,9 @@ fn hash_hmac_sha256(args: &[Value]) -> NativeResult {
     let message = get_string_arg(&args[1], "message")?;
 
     type HmacSha256 = Hmac<Sha256>;
-    let mut mac = HmacSha256::new_from_slice(key.as_bytes())
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(key.as_bytes())
         .map_err(|e| format!("HMAC key error: {e}"))?;
-    mac.update(message.as_bytes());
+    Mac::update(&mut mac, message.as_bytes());
     let result = mac.finalize();
     Ok(Value::string(hex::encode(result.into_bytes())))
 }
@@ -2381,11 +2766,174 @@ fn hash_hmac_sha512(args: &[Value]) -> NativeResult {
     let message = get_string_arg(&args[1], "message")?;
 
     type HmacSha512 = Hmac<Sha512>;
-    let mut mac = HmacSha512::new_from_slice(key.as_bytes())
+    let mut mac = <HmacSha512 as Mac>::new_from_slice(key.as_bytes())
         .map_err(|e| format!("HMAC key error: {e}"))?;
-    mac.update(message.as_bytes());
+    Mac::update(&mut mac, message.as_bytes());
     let result = mac.finalize();
     Ok(Value::string(hex::encode(result.into_bytes())))
+}
+
+// ============================================================================
+// Crypto Module (Advanced Cryptography)
+// ============================================================================
+
+/// Crypto module entry point
+pub fn crypto_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "random_bytes" => crypto_random_bytes(args),
+        "aes_encrypt" => crypto_aes_encrypt(args),
+        "aes_decrypt" => crypto_aes_decrypt(args),
+        "pbkdf2" => crypto_pbkdf2(args),
+        _ => Err(format!("Crypto has no method '{method}'")),
+    }
+}
+
+/// Crypto.random_bytes(n: Int) -> List<Int>
+/// Generates cryptographically secure random bytes using the OS random number generator.
+fn crypto_random_bytes(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Crypto.random_bytes() expects 1 argument, got {}", args.len()));
+    }
+    let n = get_int_arg(&args[0], "n")?;
+    if n < 0 {
+        return Err(format!("Crypto.random_bytes(): n must be non-negative, got {n}"));
+    }
+    if n > 1_000_000 {
+        return Err("Crypto.random_bytes(): n too large (max 1000000)".to_string());
+    }
+
+    use rand::RngCore;
+    let mut bytes = vec![0u8; n as usize];
+    OsRng.fill_bytes(&mut bytes);
+    let values: Vec<Value> = bytes.into_iter().map(|b| Value::Int(i64::from(b))).collect();
+    Ok(Value::list(values))
+}
+
+/// Crypto.aes_encrypt(data: String, key: String) -> String
+/// Encrypts data using AES-256-GCM authenticated encryption.
+/// Key must be 32 bytes (256 bits) - can be derived using Crypto.pbkdf2().
+/// Returns base64-encoded ciphertext (nonce + ciphertext + auth tag).
+fn crypto_aes_encrypt(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!("Crypto.aes_encrypt() expects 2 arguments (data, key), got {}", args.len()));
+    }
+    let data = get_string_arg(&args[0], "data")?;
+    let key_str = get_string_arg(&args[1], "key")?;
+
+    // Key can be hex-encoded (64 chars) or raw bytes as string (32 chars)
+    let key_bytes = if key_str.len() == 64 && key_str.chars().all(|c| c.is_ascii_hexdigit()) {
+        hex::decode(&key_str).map_err(|e| format!("Invalid hex key: {e}"))?
+    } else if key_str.len() == 32 {
+        key_str.as_bytes().to_vec()
+    } else {
+        return Err(format!(
+            "Crypto.aes_encrypt(): key must be 32 bytes (raw) or 64 hex chars, got {} chars",
+            key_str.len()
+        ));
+    };
+
+    if key_bytes.len() != 32 {
+        return Err(format!(
+            "Crypto.aes_encrypt(): key must be exactly 32 bytes, got {}",
+            key_bytes.len()
+        ));
+    }
+
+    let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
+    let cipher = Aes256Gcm::new(key);
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+
+    let ciphertext = cipher
+        .encrypt(&nonce, data.as_bytes())
+        .map_err(|e| format!("Encryption failed: {e}"))?;
+
+    // Prepend nonce to ciphertext for storage (nonce is 12 bytes)
+    let mut result = nonce.to_vec();
+    result.extend(ciphertext);
+
+    // Return base64-encoded result
+    Ok(Value::string(base64::engine::general_purpose::STANDARD.encode(&result)))
+}
+
+/// Crypto.aes_decrypt(encrypted: String, key: String) -> String
+/// Decrypts data encrypted with Crypto.aes_encrypt().
+/// Key must be the same 32-byte key used for encryption.
+fn crypto_aes_decrypt(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!("Crypto.aes_decrypt() expects 2 arguments (encrypted, key), got {}", args.len()));
+    }
+    let encrypted_b64 = get_string_arg(&args[0], "encrypted")?;
+    let key_str = get_string_arg(&args[1], "key")?;
+
+    // Decode base64 input
+    let encrypted = base64::engine::general_purpose::STANDARD
+        .decode(&encrypted_b64)
+        .map_err(|e| format!("Invalid base64 input: {e}"))?;
+
+    // Key can be hex-encoded (64 chars) or raw bytes as string (32 chars)
+    let key_bytes = if key_str.len() == 64 && key_str.chars().all(|c| c.is_ascii_hexdigit()) {
+        hex::decode(&key_str).map_err(|e| format!("Invalid hex key: {e}"))?
+    } else if key_str.len() == 32 {
+        key_str.as_bytes().to_vec()
+    } else {
+        return Err(format!(
+            "Crypto.aes_decrypt(): key must be 32 bytes (raw) or 64 hex chars, got {} chars",
+            key_str.len()
+        ));
+    };
+
+    if key_bytes.len() != 32 {
+        return Err(format!(
+            "Crypto.aes_decrypt(): key must be exactly 32 bytes, got {}",
+            key_bytes.len()
+        ));
+    }
+
+    // Nonce is first 12 bytes
+    if encrypted.len() < 12 {
+        return Err("Crypto.aes_decrypt(): encrypted data too short".to_string());
+    }
+    let (nonce_bytes, ciphertext) = encrypted.split_at(12);
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
+    let cipher = Aes256Gcm::new(key);
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| "Decryption failed: invalid key or corrupted data".to_string())?;
+
+    String::from_utf8(plaintext)
+        .map(Value::string)
+        .map_err(|e| format!("Decrypted data is not valid UTF-8: {e}"))
+}
+
+/// Crypto.pbkdf2(password: String, salt: String, iterations: Int) -> String
+/// Derives a 256-bit key from a password using PBKDF2-HMAC-SHA256.
+/// Returns hex-encoded 32-byte key suitable for use with aes_encrypt/aes_decrypt.
+fn crypto_pbkdf2(args: &[Value]) -> NativeResult {
+    if args.len() != 3 {
+        return Err(format!("Crypto.pbkdf2() expects 3 arguments (password, salt, iterations), got {}", args.len()));
+    }
+    let password = get_string_arg(&args[0], "password")?;
+    let salt = get_string_arg(&args[1], "salt")?;
+    let iterations = get_int_arg(&args[2], "iterations")?;
+
+    if iterations < 1 {
+        return Err("Crypto.pbkdf2(): iterations must be at least 1".to_string());
+    }
+    if iterations > 10_000_000 {
+        return Err("Crypto.pbkdf2(): iterations too high (max 10000000)".to_string());
+    }
+
+    // Derive 32-byte (256-bit) key using PBKDF2-HMAC-SHA256
+    let key: [u8; 32] = pbkdf2_hmac_array::<Sha256, 32>(
+        password.as_bytes(),
+        salt.as_bytes(),
+        iterations as u32,
+    );
+
+    Ok(Value::string(hex::encode(key)))
 }
 
 // ============================================================================
@@ -2565,6 +3113,472 @@ fn random_bytes(args: &[Value]) -> NativeResult {
         .collect();
 
     Ok(Value::List(Rc::new(RefCell::new(bytes))))
+}
+
+// ============================================================================
+// Math Module - Mathematical constants and functions
+// ============================================================================
+
+/// Math module entry point
+pub fn math_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        // Constants
+        "pi" | "PI" => Ok(Value::Float(std::f64::consts::PI)),
+        "e" | "E" => Ok(Value::Float(std::f64::consts::E)),
+        "tau" | "TAU" => Ok(Value::Float(std::f64::consts::TAU)),
+        "infinity" | "INFINITY" => Ok(Value::Float(f64::INFINITY)),
+        "neg_infinity" | "NEG_INFINITY" => Ok(Value::Float(f64::NEG_INFINITY)),
+        "nan" | "NAN" => Ok(Value::Float(f64::NAN)),
+
+        // Basic functions
+        "abs" => math_abs(args),
+        "floor" => math_floor(args),
+        "ceil" => math_ceil(args),
+        "round" => math_round(args),
+        "trunc" => math_trunc(args),
+        "sign" | "signum" => math_sign(args),
+        "fract" => math_fract(args),
+
+        // Trigonometric functions
+        "sin" => math_sin(args),
+        "cos" => math_cos(args),
+        "tan" => math_tan(args),
+        "asin" => math_asin(args),
+        "acos" => math_acos(args),
+        "atan" => math_atan(args),
+        "atan2" => math_atan2(args),
+        "sinh" => math_sinh(args),
+        "cosh" => math_cosh(args),
+        "tanh" => math_tanh(args),
+
+        // Exponential and logarithmic functions
+        "exp" => math_exp(args),
+        "exp2" => math_exp2(args),
+        "ln" | "log" => math_ln(args),
+        "log2" => math_log2(args),
+        "log10" => math_log10(args),
+        "pow" => math_pow(args),
+        "sqrt" => math_sqrt(args),
+        "cbrt" => math_cbrt(args),
+
+        // Utility functions
+        "min" => math_min(args),
+        "max" => math_max(args),
+        "clamp" => math_clamp(args),
+        "hypot" => math_hypot(args),
+
+        // Angle conversions
+        "degrees" | "to_degrees" => math_to_degrees(args),
+        "radians" | "to_radians" => math_to_radians(args),
+
+        // Validation
+        "is_nan" => math_is_nan(args),
+        "is_infinite" => math_is_infinite(args),
+        "is_finite" => math_is_finite(args),
+
+        _ => Err(format!("Math has no method '{method}'")),
+    }
+}
+
+// Helper to get a float argument (accepts Int or Float)
+fn get_float_arg_math(arg: &Value, name: &str) -> Result<f64, String> {
+    match arg {
+        Value::Int(n) => Ok(*n as f64),
+        Value::Float(f) => Ok(*f),
+        _ => Err(format!("{name} must be a number (Int or Float), got {}", arg.type_name())),
+    }
+}
+
+/// Math.abs(x) -> number
+fn math_abs(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.abs() expects 1 argument, got {}", args.len()));
+    }
+    match &args[0] {
+        Value::Int(n) => Ok(Value::Int(n.abs())),
+        Value::Float(f) => Ok(Value::Float(f.abs())),
+        _ => Err(format!("Math.abs() expects number, got {}", args[0].type_name())),
+    }
+}
+
+/// Math.floor(x) -> Int
+fn math_floor(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.floor() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Int(x.floor() as i64))
+}
+
+/// Math.ceil(x) -> Int
+fn math_ceil(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.ceil() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Int(x.ceil() as i64))
+}
+
+/// Math.round(x) -> Int
+fn math_round(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.round() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Int(x.round() as i64))
+}
+
+/// Math.trunc(x) -> Int
+fn math_trunc(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.trunc() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Int(x.trunc() as i64))
+}
+
+/// Math.sign(x) -> Int (-1, 0, or 1)
+fn math_sign(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.sign() expects 1 argument, got {}", args.len()));
+    }
+    match &args[0] {
+        Value::Int(n) => Ok(Value::Int(n.signum())),
+        Value::Float(f) => {
+            if f.is_nan() {
+                Ok(Value::Float(f64::NAN))
+            } else if *f > 0.0 {
+                Ok(Value::Int(1))
+            } else if *f < 0.0 {
+                Ok(Value::Int(-1))
+            } else {
+                Ok(Value::Int(0))
+            }
+        }
+        _ => Err(format!("Math.sign() expects number, got {}", args[0].type_name())),
+    }
+}
+
+/// Math.fract(x) -> Float (fractional part)
+fn math_fract(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.fract() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.fract()))
+}
+
+// Trigonometric functions
+
+/// Math.sin(x) -> Float
+fn math_sin(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.sin() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.sin()))
+}
+
+/// Math.cos(x) -> Float
+fn math_cos(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.cos() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.cos()))
+}
+
+/// Math.tan(x) -> Float
+fn math_tan(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.tan() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.tan()))
+}
+
+/// Math.asin(x) -> Float
+fn math_asin(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.asin() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.asin()))
+}
+
+/// Math.acos(x) -> Float
+fn math_acos(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.acos() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.acos()))
+}
+
+/// Math.atan(x) -> Float
+fn math_atan(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.atan() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.atan()))
+}
+
+/// Math.atan2(y, x) -> Float
+fn math_atan2(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!("Math.atan2() expects 2 arguments (y, x), got {}", args.len()));
+    }
+    let y = get_float_arg_math(&args[0], "y")?;
+    let x = get_float_arg_math(&args[1], "x")?;
+    Ok(Value::Float(y.atan2(x)))
+}
+
+/// Math.sinh(x) -> Float
+fn math_sinh(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.sinh() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.sinh()))
+}
+
+/// Math.cosh(x) -> Float
+fn math_cosh(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.cosh() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.cosh()))
+}
+
+/// Math.tanh(x) -> Float
+fn math_tanh(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.tanh() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.tanh()))
+}
+
+// Exponential and logarithmic functions
+
+/// Math.exp(x) -> Float (e^x)
+fn math_exp(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.exp() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.exp()))
+}
+
+/// Math.exp2(x) -> Float (2^x)
+fn math_exp2(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.exp2() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.exp2()))
+}
+
+/// Math.ln(x) -> Float (natural log)
+fn math_ln(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.ln() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.ln()))
+}
+
+/// Math.log2(x) -> Float
+fn math_log2(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.log2() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.log2()))
+}
+
+/// Math.log10(x) -> Float
+fn math_log10(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.log10() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.log10()))
+}
+
+/// Math.pow(base, exp) -> Float
+fn math_pow(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!("Math.pow() expects 2 arguments (base, exp), got {}", args.len()));
+    }
+    let base = get_float_arg_math(&args[0], "base")?;
+    let exp = get_float_arg_math(&args[1], "exp")?;
+    Ok(Value::Float(base.powf(exp)))
+}
+
+/// Math.sqrt(x) -> Float
+fn math_sqrt(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.sqrt() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.sqrt()))
+}
+
+/// Math.cbrt(x) -> Float (cube root)
+fn math_cbrt(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.cbrt() expects 1 argument, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    Ok(Value::Float(x.cbrt()))
+}
+
+// Utility functions
+
+/// Math.min(a, b, ...) -> number
+fn math_min(args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("Math.min() expects at least 1 argument".to_string());
+    }
+
+    let mut result = get_float_arg_math(&args[0], "arg")?;
+    let mut is_int = matches!(&args[0], Value::Int(_));
+
+    for arg in &args[1..] {
+        let val = get_float_arg_math(arg, "arg")?;
+        if val < result {
+            result = val;
+            is_int = matches!(arg, Value::Int(_));
+        }
+    }
+
+    if is_int && result.fract() == 0.0 && result >= i64::MIN as f64 && result <= i64::MAX as f64 {
+        Ok(Value::Int(result as i64))
+    } else {
+        Ok(Value::Float(result))
+    }
+}
+
+/// Math.max(a, b, ...) -> number
+fn math_max(args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("Math.max() expects at least 1 argument".to_string());
+    }
+
+    let mut result = get_float_arg_math(&args[0], "arg")?;
+    let mut is_int = matches!(&args[0], Value::Int(_));
+
+    for arg in &args[1..] {
+        let val = get_float_arg_math(arg, "arg")?;
+        if val > result {
+            result = val;
+            is_int = matches!(arg, Value::Int(_));
+        }
+    }
+
+    if is_int && result.fract() == 0.0 && result >= i64::MIN as f64 && result <= i64::MAX as f64 {
+        Ok(Value::Int(result as i64))
+    } else {
+        Ok(Value::Float(result))
+    }
+}
+
+/// Math.clamp(value, min, max) -> number
+fn math_clamp(args: &[Value]) -> NativeResult {
+    if args.len() != 3 {
+        return Err(format!("Math.clamp() expects 3 arguments (value, min, max), got {}", args.len()));
+    }
+    let value = get_float_arg_math(&args[0], "value")?;
+    let min_val = get_float_arg_math(&args[1], "min")?;
+    let max_val = get_float_arg_math(&args[2], "max")?;
+
+    if min_val > max_val {
+        return Err(format!("Math.clamp(): min ({min_val}) must be <= max ({max_val})"));
+    }
+
+    let result = value.clamp(min_val, max_val);
+
+    // Preserve Int type if all inputs were Int and result is whole
+    if matches!((&args[0], &args[1], &args[2]), (Value::Int(_), Value::Int(_), Value::Int(_)))
+        && result.fract() == 0.0
+        && result >= i64::MIN as f64
+        && result <= i64::MAX as f64
+    {
+        Ok(Value::Int(result as i64))
+    } else {
+        Ok(Value::Float(result))
+    }
+}
+
+/// Math.hypot(x, y) -> Float (sqrt(x^2 + y^2))
+fn math_hypot(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!("Math.hypot() expects 2 arguments (x, y), got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    let y = get_float_arg_math(&args[1], "y")?;
+    Ok(Value::Float(x.hypot(y)))
+}
+
+// Angle conversions
+
+/// Math.to_degrees(radians) -> Float
+fn math_to_degrees(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.to_degrees() expects 1 argument, got {}", args.len()));
+    }
+    let radians = get_float_arg_math(&args[0], "radians")?;
+    Ok(Value::Float(radians.to_degrees()))
+}
+
+/// Math.to_radians(degrees) -> Float
+fn math_to_radians(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.to_radians() expects 1 argument, got {}", args.len()));
+    }
+    let degrees = get_float_arg_math(&args[0], "degrees")?;
+    Ok(Value::Float(degrees.to_radians()))
+}
+
+// Validation functions
+
+/// Math.is_nan(x) -> Bool
+fn math_is_nan(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.is_nan() expects 1 argument, got {}", args.len()));
+    }
+    match &args[0] {
+        Value::Float(f) => Ok(Value::Bool(f.is_nan())),
+        Value::Int(_) => Ok(Value::Bool(false)),
+        _ => Err(format!("Math.is_nan() expects number, got {}", args[0].type_name())),
+    }
+}
+
+/// Math.is_infinite(x) -> Bool
+fn math_is_infinite(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.is_infinite() expects 1 argument, got {}", args.len()));
+    }
+    match &args[0] {
+        Value::Float(f) => Ok(Value::Bool(f.is_infinite())),
+        Value::Int(_) => Ok(Value::Bool(false)),
+        _ => Err(format!("Math.is_infinite() expects number, got {}", args[0].type_name())),
+    }
+}
+
+/// Math.is_finite(x) -> Bool
+fn math_is_finite(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.is_finite() expects 1 argument, got {}", args.len()));
+    }
+    match &args[0] {
+        Value::Float(f) => Ok(Value::Bool(f.is_finite())),
+        Value::Int(_) => Ok(Value::Bool(true)), // Integers are always finite
+        _ => Err(format!("Math.is_finite() expects number, got {}", args[0].type_name())),
+    }
 }
 
 // ============================================================================
@@ -3269,7 +4283,6 @@ fn system_total_memory(args: &[Value]) -> NativeResult {
 // Database Module
 // ============================================================================
 
-use std::sync::Arc;
 use crate::bytecode::{DbConnection, DbConnectionKind};
 use mysql::prelude::Queryable;
 
@@ -4283,6 +5296,1448 @@ fn duckdb_value_to_stratum(value: duckdb::types::ValueRef<'_>) -> Value {
     }
 }
 
+// ============================================================================
+// Async Module - Async utilities (sleep, all, race, timeout)
+// ============================================================================
+
+pub fn async_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "sleep" => async_sleep(args),
+        "ready" => async_ready(args),
+        "failed" => async_failed(args),
+        _ => Err(format!("Async has no method '{method}'")),
+    }
+}
+
+/// Create a pending future that represents an async sleep
+/// In a real async execution, the executor would wait for the specified duration
+/// The returned Future starts as Pending and needs to be resolved by the executor
+fn async_sleep(args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("sleep requires a duration argument (ms as Int)".to_string());
+    }
+    let ms = match &args[0] {
+        Value::Int(n) => *n,
+        _ => return Err("sleep requires an Int (milliseconds)".to_string()),
+    };
+
+    if ms < 0 {
+        return Err("sleep duration cannot be negative".to_string());
+    }
+
+    // Create a pending future
+    // The executor will detect this is a sleep future and wait accordingly
+    // For now, we store the duration info in the result field as metadata
+    let future = FutureState::pending_with_metadata(Value::Int(ms), "sleep".to_string());
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Create a future that is immediately ready with a value
+fn async_ready(args: &[Value]) -> NativeResult {
+    let value = if args.is_empty() {
+        Value::Null
+    } else {
+        args[0].clone()
+    };
+
+    let future = FutureState::ready(value);
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Create a future that is immediately failed with an error
+fn async_failed(args: &[Value]) -> NativeResult {
+    let msg = if args.is_empty() {
+        "unknown error".to_string()
+    } else {
+        match &args[0] {
+            Value::String(s) => (**s).clone(),
+            v => v.to_string(),
+        }
+    };
+
+    let future = FutureState::failed(msg);
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+// ============================================================================
+// TCP Module - TCP networking (client and server)
+// ============================================================================
+
+pub fn tcp_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "connect" => tcp_connect(args),
+        "listen" => tcp_listen(args),
+        _ => Err(format!("Tcp has no method '{method}'")),
+    }
+}
+
+/// Tcp.connect(host, port) - Create a pending future that connects to a TCP server
+/// Returns a Future<TcpStream>
+fn tcp_connect(args: &[Value]) -> NativeResult {
+    if args.len() < 2 {
+        return Err(format!("Tcp.connect() expects 2 arguments (host, port), got {}", args.len()));
+    }
+
+    let host = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err(format!("Tcp.connect() host must be String, got {}", args[0].type_name())),
+    };
+
+    let port = match &args[1] {
+        Value::Int(p) if *p > 0 && *p <= 65535 => *p as u16,
+        Value::Int(p) => return Err(format!("Tcp.connect() port must be 1-65535, got {p}")),
+        _ => return Err(format!("Tcp.connect() port must be Int, got {}", args[1].type_name())),
+    };
+
+    // Store host:port as metadata for the executor to use
+    let metadata = Value::string(format!("{host}:{port}"));
+    let future = FutureState::pending_with_metadata(metadata, "tcp_connect".to_string());
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Tcp.listen(addr, port) - Create a pending future that binds a TCP listener
+/// Returns a Future<TcpListener>
+fn tcp_listen(args: &[Value]) -> NativeResult {
+    if args.len() < 2 {
+        return Err(format!("Tcp.listen() expects 2 arguments (addr, port), got {}", args.len()));
+    }
+
+    let addr = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err(format!("Tcp.listen() addr must be String, got {}", args[0].type_name())),
+    };
+
+    let port = match &args[1] {
+        Value::Int(p) if *p >= 0 && *p <= 65535 => *p as u16,
+        Value::Int(p) => return Err(format!("Tcp.listen() port must be 0-65535, got {p}")),
+        _ => return Err(format!("Tcp.listen() port must be Int, got {}", args[1].type_name())),
+    };
+
+    // Store addr:port as metadata for the executor to use
+    let metadata = Value::string(format!("{addr}:{port}"));
+    let future = FutureState::pending_with_metadata(metadata, "tcp_listen".to_string());
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Methods on TcpStream value type
+pub fn tcp_stream_method(stream: &Arc<TcpStreamWrapper>, method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "read" => tcp_stream_read(stream, args),
+        "read_exact" => tcp_stream_read_exact(stream, args),
+        "write" => tcp_stream_write(stream, args),
+        "close" | "shutdown" => tcp_stream_close(stream),
+        "peer_addr" => Ok(Value::string(&stream.peer_addr)),
+        "local_addr" => Ok(Value::string(&stream.local_addr)),
+        _ => Err(format!("TcpStream has no method '{method}'")),
+    }
+}
+
+/// stream.read(max_bytes?) - Read up to max_bytes from the stream (async)
+fn tcp_stream_read(stream: &Arc<TcpStreamWrapper>, args: &[Value]) -> NativeResult {
+    let max_bytes = if args.is_empty() {
+        8192 // Default buffer size
+    } else {
+        match &args[0] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            Value::Int(n) => return Err(format!("read max_bytes must be positive, got {n}")),
+            _ => return Err(format!("read max_bytes must be Int, got {}", args[0].type_name())),
+        }
+    };
+
+    // Create metadata with stream reference and buffer size
+    let metadata = Value::Map(Rc::new(RefCell::new({
+        let mut m = HashMap::new();
+        m.insert(HashableValue::String(Rc::new("stream_addr".into())), Value::string(&stream.local_addr));
+        m.insert(HashableValue::String(Rc::new("peer_addr".into())), Value::string(&stream.peer_addr));
+        m.insert(HashableValue::String(Rc::new("max_bytes".into())), Value::Int(max_bytes as i64));
+        m
+    })));
+
+    // Store the actual stream Arc in a static map keyed by address for executor to retrieve
+    // For now, we use a simpler approach: create a pending future with metadata
+    let future = FutureState::pending_with_metadata(metadata, "tcp_read".to_string());
+    let future_ref = Rc::new(RefCell::new(future));
+
+    // Store the stream reference in the future's metadata for the executor
+    // The executor will need to handle this specially
+    {
+        let mut fut = future_ref.borrow_mut();
+        // We need to store the stream handle somehow - for now we'll use a global registry
+        // This is a simplified approach; a production system would use a better method
+        fut.metadata = Some(Value::TcpStream(Arc::clone(stream)));
+    }
+
+    Ok(Value::Future(future_ref))
+}
+
+/// stream.read_exact(num_bytes) - Read exactly num_bytes from the stream (async)
+fn tcp_stream_read_exact(stream: &Arc<TcpStreamWrapper>, args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("read_exact requires num_bytes argument".to_string());
+    }
+
+    let num_bytes = match &args[0] {
+        Value::Int(n) if *n > 0 => *n as usize,
+        Value::Int(n) => return Err(format!("read_exact num_bytes must be positive, got {n}")),
+        _ => return Err(format!("read_exact num_bytes must be Int, got {}", args[0].type_name())),
+    };
+
+    let future = FutureState::pending_with_metadata(
+        Value::Map(Rc::new(RefCell::new({
+            let mut m = HashMap::new();
+            m.insert(HashableValue::String(Rc::new("num_bytes".into())), Value::Int(num_bytes as i64));
+            m
+        }))),
+        "tcp_read_exact".to_string(),
+    );
+    let future_ref = Rc::new(RefCell::new(future));
+    future_ref.borrow_mut().metadata = Some(Value::TcpStream(Arc::clone(stream)));
+
+    Ok(Value::Future(future_ref))
+}
+
+/// stream.write(data) - Write data to the stream (async)
+/// data can be String or List of bytes
+fn tcp_stream_write(stream: &Arc<TcpStreamWrapper>, args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("write requires data argument".to_string());
+    }
+
+    let data = match &args[0] {
+        Value::String(s) => Value::String(Rc::clone(s)),
+        Value::List(l) => Value::List(Rc::clone(l)),
+        _ => return Err(format!("write data must be String or List, got {}", args[0].type_name())),
+    };
+
+    // Store stream in metadata, data in result for the executor to use
+    let mut future = FutureState::pending_with_metadata(
+        Value::TcpStream(Arc::clone(stream)),
+        "tcp_write".to_string(),
+    );
+    future.result = Some(data); // Store data to write in result field
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// stream.close() - Close the stream
+fn tcp_stream_close(_stream: &Arc<TcpStreamWrapper>) -> NativeResult {
+    // The stream will be closed when the Arc is dropped
+    // For explicit close, we'd need to track closure state
+    Ok(Value::Null)
+}
+
+/// Methods on TcpListener value type
+pub fn tcp_listener_method(listener: &Arc<TcpListenerWrapper>, method: &str, _args: &[Value]) -> NativeResult {
+    match method {
+        "accept" => tcp_listener_accept(listener),
+        "local_addr" => Ok(Value::string(&listener.local_addr)),
+        "close" => Ok(Value::Null), // Will be closed on drop
+        _ => Err(format!("TcpListener has no method '{method}'")),
+    }
+}
+
+/// listener.accept() - Accept a new connection (async)
+fn tcp_listener_accept(listener: &Arc<TcpListenerWrapper>) -> NativeResult {
+    let future = FutureState::pending_with_metadata(
+        Value::TcpListener(Arc::clone(listener)),
+        "tcp_accept".to_string(),
+    );
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+// ============================================================================
+// UDP Module - UDP networking
+// ============================================================================
+
+pub fn udp_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "bind" => udp_bind(args),
+        _ => Err(format!("Udp has no method '{method}'")),
+    }
+}
+
+/// Udp.bind(addr, port) - Create a UDP socket bound to the given address (async)
+fn udp_bind(args: &[Value]) -> NativeResult {
+    if args.len() < 2 {
+        return Err(format!("Udp.bind() expects 2 arguments (addr, port), got {}", args.len()));
+    }
+
+    let addr = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err(format!("Udp.bind() addr must be String, got {}", args[0].type_name())),
+    };
+
+    let port = match &args[1] {
+        Value::Int(p) if *p >= 0 && *p <= 65535 => *p as u16,
+        Value::Int(p) => return Err(format!("Udp.bind() port must be 0-65535, got {p}")),
+        _ => return Err(format!("Udp.bind() port must be Int, got {}", args[1].type_name())),
+    };
+
+    let metadata = Value::string(format!("{addr}:{port}"));
+    let future = FutureState::pending_with_metadata(metadata, "udp_bind".to_string());
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Methods on UdpSocket value type
+pub fn udp_socket_method(socket: &Arc<UdpSocketWrapper>, method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "send_to" => udp_socket_send_to(socket, args),
+        "recv_from" => udp_socket_recv_from(socket, args),
+        "local_addr" => Ok(Value::string(&socket.local_addr)),
+        "close" => Ok(Value::Null), // Will be closed on drop
+        _ => Err(format!("UdpSocket has no method '{method}'")),
+    }
+}
+
+/// socket.send_to(data, host, port) - Send data to a specific address (async)
+fn udp_socket_send_to(socket: &Arc<UdpSocketWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() < 3 {
+        return Err(format!("send_to expects 3 arguments (data, host, port), got {}", args.len()));
+    }
+
+    let data = match &args[0] {
+        Value::String(s) => Value::String(Rc::clone(s)),
+        Value::List(l) => Value::List(Rc::clone(l)),
+        _ => return Err(format!("send_to data must be String or List, got {}", args[0].type_name())),
+    };
+
+    let host = match &args[1] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err(format!("send_to host must be String, got {}", args[1].type_name())),
+    };
+
+    let port = match &args[2] {
+        Value::Int(p) if *p > 0 && *p <= 65535 => *p as u16,
+        Value::Int(p) => return Err(format!("send_to port must be 1-65535, got {p}")),
+        _ => return Err(format!("send_to port must be Int, got {}", args[2].type_name())),
+    };
+
+    // Store socket in metadata, data/addr map in result for the executor
+    let data_map = Value::Map(Rc::new(RefCell::new({
+        let mut m = HashMap::new();
+        m.insert(HashableValue::String(Rc::new("data".into())), data);
+        m.insert(HashableValue::String(Rc::new("addr".into())), Value::string(format!("{host}:{port}")));
+        m
+    })));
+
+    let mut future = FutureState::pending_with_metadata(
+        Value::UdpSocket(Arc::clone(socket)),
+        "udp_send_to".to_string(),
+    );
+    future.result = Some(data_map); // Store data/addr in result field
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// socket.recv_from(max_bytes?) - Receive data from any sender (async)
+/// Returns a map with 'data', 'host', 'port'
+fn udp_socket_recv_from(socket: &Arc<UdpSocketWrapper>, args: &[Value]) -> NativeResult {
+    let max_bytes = if args.is_empty() {
+        65535 // Max UDP datagram size
+    } else {
+        match &args[0] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            Value::Int(n) => return Err(format!("recv_from max_bytes must be positive, got {n}")),
+            _ => return Err(format!("recv_from max_bytes must be Int, got {}", args[0].type_name())),
+        }
+    };
+
+    let metadata = Value::Int(max_bytes as i64);
+    let future = FutureState::pending_with_metadata(metadata, "udp_recv_from".to_string());
+    let future_ref = Rc::new(RefCell::new(future));
+    future_ref.borrow_mut().metadata = Some(Value::UdpSocket(Arc::clone(socket)));
+
+    Ok(Value::Future(future_ref))
+}
+
+// ============================================================================
+// WebSocket Module - WebSocket client and server support
+// ============================================================================
+
+/// WebSocket namespace methods
+pub fn ws_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "connect" => ws_connect(args),
+        "listen" | "server" => ws_listen(args),
+        _ => Err(format!("WebSocket has no method '{method}'")),
+    }
+}
+
+/// WebSocket.connect(url) - Connect to a WebSocket server (async)
+/// Returns a Future<WebSocket>
+fn ws_connect(args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("WebSocket.connect() expects 1 argument (url)".to_string());
+    }
+
+    let url = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err(format!("WebSocket.connect() url must be String, got {}", args[0].type_name())),
+    };
+
+    // Validate URL scheme
+    if !url.starts_with("ws://") && !url.starts_with("wss://") {
+        return Err(format!("WebSocket.connect() url must start with ws:// or wss://, got '{url}'"));
+    }
+
+    // Store URL as metadata for the executor to use
+    let metadata = Value::string(url);
+    let future = FutureState::pending_with_metadata(metadata, "ws_connect".to_string());
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// WebSocket.listen(addr, port) - Create a WebSocket server (async)
+/// Returns a Future<WebSocketServer>
+fn ws_listen(args: &[Value]) -> NativeResult {
+    if args.len() < 2 {
+        return Err(format!("WebSocket.listen() expects 2 arguments (addr, port), got {}", args.len()));
+    }
+
+    let addr = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err(format!("WebSocket.listen() addr must be String, got {}", args[0].type_name())),
+    };
+
+    let port = match &args[1] {
+        Value::Int(p) if *p >= 0 && *p <= 65535 => *p as u16,
+        Value::Int(p) => return Err(format!("WebSocket.listen() port must be 0-65535, got {p}")),
+        _ => return Err(format!("WebSocket.listen() port must be Int, got {}", args[1].type_name())),
+    };
+
+    // Store addr:port as metadata for the executor to use
+    let metadata = Value::string(format!("{addr}:{port}"));
+    let future = FutureState::pending_with_metadata(metadata, "ws_listen".to_string());
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Methods on WebSocket client value type
+pub fn websocket_method(ws: &Arc<WebSocketWrapper>, method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "send" => ws_send(ws, args),
+        "send_text" => ws_send_text(ws, args),
+        "send_binary" => ws_send_binary(ws, args),
+        "receive" | "recv" => ws_receive(ws),
+        "close" => ws_close(ws),
+        "url" => Ok(Value::string(&ws.url)),
+        "is_closed" => Ok(Value::Bool(ws.is_closed())),
+        _ => Err(format!("WebSocket has no method '{method}'")),
+    }
+}
+
+/// ws.send(message) - Send a message (text or binary) to the WebSocket server (async)
+fn ws_send(ws: &Arc<WebSocketWrapper>, args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("send requires a message argument".to_string());
+    }
+
+    if ws.is_closed() {
+        return Err("WebSocket is closed".to_string());
+    }
+
+    let message = match &args[0] {
+        Value::String(s) => Value::String(Rc::clone(s)),
+        Value::List(l) => Value::List(Rc::clone(l)), // Binary data as list of bytes
+        _ => return Err(format!("send message must be String or List of bytes, got {}", args[0].type_name())),
+    };
+
+    // Store WebSocket in metadata, message in result
+    let mut future = FutureState::pending_with_metadata(
+        Value::WebSocket(Arc::clone(ws)),
+        "ws_send".to_string(),
+    );
+    future.result = Some(message);
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// ws.send_text(text) - Send a text message (async)
+fn ws_send_text(ws: &Arc<WebSocketWrapper>, args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("send_text requires a text argument".to_string());
+    }
+
+    if ws.is_closed() {
+        return Err("WebSocket is closed".to_string());
+    }
+
+    let text = match &args[0] {
+        Value::String(s) => Value::String(Rc::clone(s)),
+        _ => return Err(format!("send_text message must be String, got {}", args[0].type_name())),
+    };
+
+    let mut future = FutureState::pending_with_metadata(
+        Value::WebSocket(Arc::clone(ws)),
+        "ws_send_text".to_string(),
+    );
+    future.result = Some(text);
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// ws.send_binary(data) - Send a binary message (async)
+fn ws_send_binary(ws: &Arc<WebSocketWrapper>, args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("send_binary requires a data argument".to_string());
+    }
+
+    if ws.is_closed() {
+        return Err("WebSocket is closed".to_string());
+    }
+
+    let data = match &args[0] {
+        Value::List(l) => Value::List(Rc::clone(l)),
+        _ => return Err(format!("send_binary data must be List of bytes, got {}", args[0].type_name())),
+    };
+
+    let mut future = FutureState::pending_with_metadata(
+        Value::WebSocket(Arc::clone(ws)),
+        "ws_send_binary".to_string(),
+    );
+    future.result = Some(data);
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// ws.receive() - Receive the next message from the WebSocket (async)
+/// Returns a map with 'type' ("text" or "binary") and 'data' (String or List)
+fn ws_receive(ws: &Arc<WebSocketWrapper>) -> NativeResult {
+    if ws.is_closed() {
+        return Err("WebSocket is closed".to_string());
+    }
+
+    let future = FutureState::pending_with_metadata(
+        Value::WebSocket(Arc::clone(ws)),
+        "ws_receive".to_string(),
+    );
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// ws.close() - Close the WebSocket connection (async)
+fn ws_close(ws: &Arc<WebSocketWrapper>) -> NativeResult {
+    if ws.is_closed() {
+        return Ok(Value::Null); // Already closed
+    }
+
+    let future = FutureState::pending_with_metadata(
+        Value::WebSocket(Arc::clone(ws)),
+        "ws_close".to_string(),
+    );
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Methods on WebSocketServer value type
+pub fn websocket_server_method(server: &Arc<WebSocketServerWrapper>, method: &str, _args: &[Value]) -> NativeResult {
+    match method {
+        "accept" => ws_server_accept(server),
+        "local_addr" | "addr" => Ok(Value::string(&server.local_addr)),
+        "close" => Ok(Value::Null), // Will be closed on drop
+        _ => Err(format!("WebSocketServer has no method '{method}'")),
+    }
+}
+
+/// server.accept() - Accept a new WebSocket connection (async)
+/// Returns a Future<WebSocketServerConn>
+fn ws_server_accept(server: &Arc<WebSocketServerWrapper>) -> NativeResult {
+    let future = FutureState::pending_with_metadata(
+        Value::WebSocketServer(Arc::clone(server)),
+        "ws_accept".to_string(),
+    );
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Methods on WebSocketServerConn value type (accepted connection from server)
+pub fn websocket_server_conn_method(conn: &Arc<WebSocketServerConnWrapper>, method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "send" => ws_conn_send(conn, args),
+        "send_text" => ws_conn_send_text(conn, args),
+        "send_binary" => ws_conn_send_binary(conn, args),
+        "receive" | "recv" => ws_conn_receive(conn),
+        "close" => ws_conn_close(conn),
+        "peer_addr" => Ok(Value::string(&conn.peer_addr)),
+        "local_addr" => Ok(Value::string(&conn.local_addr)),
+        "is_closed" => Ok(Value::Bool(conn.is_closed())),
+        _ => Err(format!("WebSocketServerConn has no method '{method}'")),
+    }
+}
+
+/// conn.send(message) - Send a message to the connected client (async)
+fn ws_conn_send(conn: &Arc<WebSocketServerConnWrapper>, args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("send requires a message argument".to_string());
+    }
+
+    if conn.is_closed() {
+        return Err("WebSocket connection is closed".to_string());
+    }
+
+    let message = match &args[0] {
+        Value::String(s) => Value::String(Rc::clone(s)),
+        Value::List(l) => Value::List(Rc::clone(l)),
+        _ => return Err(format!("send message must be String or List of bytes, got {}", args[0].type_name())),
+    };
+
+    let mut future = FutureState::pending_with_metadata(
+        Value::WebSocketServerConn(Arc::clone(conn)),
+        "ws_conn_send".to_string(),
+    );
+    future.result = Some(message);
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// conn.send_text(text) - Send a text message (async)
+fn ws_conn_send_text(conn: &Arc<WebSocketServerConnWrapper>, args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("send_text requires a text argument".to_string());
+    }
+
+    if conn.is_closed() {
+        return Err("WebSocket connection is closed".to_string());
+    }
+
+    let text = match &args[0] {
+        Value::String(s) => Value::String(Rc::clone(s)),
+        _ => return Err(format!("send_text message must be String, got {}", args[0].type_name())),
+    };
+
+    let mut future = FutureState::pending_with_metadata(
+        Value::WebSocketServerConn(Arc::clone(conn)),
+        "ws_conn_send_text".to_string(),
+    );
+    future.result = Some(text);
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// conn.send_binary(data) - Send a binary message (async)
+fn ws_conn_send_binary(conn: &Arc<WebSocketServerConnWrapper>, args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("send_binary requires a data argument".to_string());
+    }
+
+    if conn.is_closed() {
+        return Err("WebSocket connection is closed".to_string());
+    }
+
+    let data = match &args[0] {
+        Value::List(l) => Value::List(Rc::clone(l)),
+        _ => return Err(format!("send_binary data must be List of bytes, got {}", args[0].type_name())),
+    };
+
+    let mut future = FutureState::pending_with_metadata(
+        Value::WebSocketServerConn(Arc::clone(conn)),
+        "ws_conn_send_binary".to_string(),
+    );
+    future.result = Some(data);
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// conn.receive() - Receive the next message from the client (async)
+fn ws_conn_receive(conn: &Arc<WebSocketServerConnWrapper>) -> NativeResult {
+    if conn.is_closed() {
+        return Err("WebSocket connection is closed".to_string());
+    }
+
+    let future = FutureState::pending_with_metadata(
+        Value::WebSocketServerConn(Arc::clone(conn)),
+        "ws_conn_receive".to_string(),
+    );
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// conn.close() - Close the connection (async)
+fn ws_conn_close(conn: &Arc<WebSocketServerConnWrapper>) -> NativeResult {
+    if conn.is_closed() {
+        return Ok(Value::Null);
+    }
+
+    let future = FutureState::pending_with_metadata(
+        Value::WebSocketServerConn(Arc::clone(conn)),
+        "ws_conn_close".to_string(),
+    );
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+// ============================================================================
+// Data Module - DataFrame and Series creation
+// ============================================================================
+
+pub fn data_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "frame" | "dataframe" => data_frame(args),
+        "series" => data_series(args),
+        "from_columns" => data_from_columns(args),
+        // File I/O - readers
+        "read_parquet" => data_read_parquet(args),
+        "read_csv" => data_read_csv(args),
+        "read_json" => data_read_json(args),
+        // File I/O - writers
+        "write_parquet" => data_write_parquet(args),
+        "write_csv" => data_write_csv(args),
+        "write_json" => data_write_json(args),
+        // SQL operations
+        "sql" => data_sql(args),
+        "sql_context" => data_sql_context(args),
+        // Database query to DataFrame
+        "from_query" => data_from_query(args),
+        _ => Err(format!("Data has no method '{method}'")),
+    }
+}
+
+/// Create a DataFrame from a list of maps (each map is a row)
+fn data_frame(args: &[Value]) -> NativeResult {
+    use std::sync::Arc;
+
+    if args.is_empty() {
+        return Err("Data.frame requires at least one row".to_string());
+    }
+
+    // Handle list of rows (maps)
+    let rows = match &args[0] {
+        Value::List(list) => list.borrow().clone(),
+        _ => return Err("Data.frame expects a List of Map rows".to_string()),
+    };
+
+    if rows.is_empty() {
+        return Err("Data.frame requires at least one row".to_string());
+    }
+
+    // Get column names from the first row
+    let first_row = match &rows[0] {
+        Value::Map(map) => map.borrow().clone(),
+        _ => return Err("Each row must be a Map".to_string()),
+    };
+
+    let column_names: Vec<String> = first_row
+        .keys()
+        .filter_map(|k| match k {
+            HashableValue::String(s) => Some((**s).clone()),
+            _ => None,
+        })
+        .collect();
+
+    if column_names.is_empty() {
+        return Err("Rows must have at least one string-keyed column".to_string());
+    }
+
+    // Build columns from all rows
+    let mut column_values: Vec<Vec<Value>> = vec![Vec::new(); column_names.len()];
+
+    for row_val in &rows {
+        let row = match row_val {
+            Value::Map(map) => map.borrow().clone(),
+            _ => return Err("Each row must be a Map".to_string()),
+        };
+
+        for (col_idx, col_name) in column_names.iter().enumerate() {
+            let key = HashableValue::String(Rc::new(col_name.clone()));
+            let value = row.get(&key).cloned().unwrap_or(Value::Null);
+            column_values[col_idx].push(value);
+        }
+    }
+
+    // Convert to Series
+    let series_list: Result<Vec<Series>, _> = column_names
+        .iter()
+        .zip(column_values.iter())
+        .map(|(name, values)| Series::from_values(name, values))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string());
+
+    let series_list = series_list?;
+
+    // Create DataFrame
+    let df = DataFrame::from_series(series_list).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(Arc::new(df)))
+}
+
+/// Create a Series from a name and list of values
+fn data_series(args: &[Value]) -> NativeResult {
+    use std::sync::Arc;
+
+    if args.len() != 2 {
+        return Err("Data.series expects 2 arguments: name and values".to_string());
+    }
+
+    let name = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("First argument must be a String (column name)".to_string()),
+    };
+
+    let values = match &args[1] {
+        Value::List(list) => list.borrow().clone(),
+        _ => return Err("Second argument must be a List of values".to_string()),
+    };
+
+    let series = Series::from_values(&name, &values).map_err(|e| e.to_string())?;
+    Ok(Value::Series(Arc::new(series)))
+}
+
+/// Create a DataFrame from named columns: Data.from_columns("a", [1,2,3], "b", [4,5,6])
+fn data_from_columns(args: &[Value]) -> NativeResult {
+    use std::sync::Arc;
+
+    if args.len() < 2 || args.len() % 2 != 0 {
+        return Err("Data.from_columns expects pairs of (name, values)".to_string());
+    }
+
+    let mut series_list = Vec::new();
+
+    for pair in args.chunks(2) {
+        let name = match &pair[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err("Column name must be a String".to_string()),
+        };
+
+        let values = match &pair[1] {
+            Value::List(list) => list.borrow().clone(),
+            _ => return Err("Column values must be a List".to_string()),
+        };
+
+        let series = Series::from_values(&name, &values).map_err(|e| e.to_string())?;
+        series_list.push(series);
+    }
+
+    let df = DataFrame::from_series(series_list).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(Arc::new(df)))
+}
+
+// ============================================================================
+// Data Module - File I/O
+// ============================================================================
+
+/// Data.read_parquet(path) - Read a Parquet file into a DataFrame
+fn data_read_parquet(args: &[Value]) -> NativeResult {
+    use std::sync::Arc;
+
+    if args.len() != 1 {
+        return Err("Data.read_parquet expects 1 argument: path".to_string());
+    }
+
+    let path = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Data.read_parquet expects a String path".to_string()),
+    };
+
+    let df = read_parquet(&path).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(Arc::new(df)))
+}
+
+/// Data.read_csv(path) or Data.read_csv(path, has_header, delimiter) - Read a CSV file into a DataFrame
+fn data_read_csv(args: &[Value]) -> NativeResult {
+    use std::sync::Arc;
+
+    if args.is_empty() || args.len() > 3 {
+        return Err("Data.read_csv expects 1-3 arguments: path, [has_header], [delimiter]".to_string());
+    }
+
+    let path = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Data.read_csv expects a String path".to_string()),
+    };
+
+    let has_header = if args.len() >= 2 {
+        match &args[1] {
+            Value::Bool(b) => *b,
+            _ => return Err("has_header must be a Bool".to_string()),
+        }
+    } else {
+        true
+    };
+
+    let delimiter = if args.len() >= 3 {
+        match &args[2] {
+            Value::String(s) => {
+                if s.len() != 1 {
+                    return Err("delimiter must be a single character".to_string());
+                }
+                s.bytes().next().unwrap_or(b',')
+            }
+            _ => return Err("delimiter must be a String".to_string()),
+        }
+    } else {
+        b','
+    };
+
+    let df = read_csv_with_options(&path, has_header, delimiter).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(Arc::new(df)))
+}
+
+/// Data.read_json(path) - Read a JSON file (newline-delimited) into a DataFrame
+fn data_read_json(args: &[Value]) -> NativeResult {
+    use std::sync::Arc;
+
+    if args.len() != 1 {
+        return Err("Data.read_json expects 1 argument: path".to_string());
+    }
+
+    let path = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Data.read_json expects a String path".to_string()),
+    };
+
+    let df = read_json(&path).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(Arc::new(df)))
+}
+
+/// Data.write_parquet(df, path) - Write a DataFrame to a Parquet file
+fn data_write_parquet(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err("Data.write_parquet expects 2 arguments: df, path".to_string());
+    }
+
+    let df = match &args[0] {
+        Value::DataFrame(df) => df.clone(),
+        _ => return Err("First argument must be a DataFrame".to_string()),
+    };
+
+    let path = match &args[1] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Second argument must be a String path".to_string()),
+    };
+
+    write_parquet(&df, &path).map_err(|e| e.to_string())?;
+    Ok(Value::Null)
+}
+
+/// Data.write_csv(df, path) - Write a DataFrame to a CSV file
+fn data_write_csv(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err("Data.write_csv expects 2 arguments: df, path".to_string());
+    }
+
+    let df = match &args[0] {
+        Value::DataFrame(df) => df.clone(),
+        _ => return Err("First argument must be a DataFrame".to_string()),
+    };
+
+    let path = match &args[1] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Second argument must be a String path".to_string()),
+    };
+
+    write_csv(&df, &path).map_err(|e| e.to_string())?;
+    Ok(Value::Null)
+}
+
+/// Data.write_json(df, path) - Write a DataFrame to a JSON file
+fn data_write_json(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err("Data.write_json expects 2 arguments: df, path".to_string());
+    }
+
+    let df = match &args[0] {
+        Value::DataFrame(df) => df.clone(),
+        _ => return Err("First argument must be a DataFrame".to_string()),
+    };
+
+    let path = match &args[1] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Second argument must be a String path".to_string()),
+    };
+
+    write_json(&df, &path).map_err(|e| e.to_string())?;
+    Ok(Value::Null)
+}
+
+// ============================================================================
+// Data Module - SQL Operations
+// ============================================================================
+
+/// Data.sql(df, query) - Execute SQL query against a single DataFrame
+fn data_sql(args: &[Value]) -> NativeResult {
+    use std::sync::Arc;
+
+    if args.len() != 2 {
+        return Err("Data.sql expects 2 arguments: df, query".to_string());
+    }
+
+    let df = match &args[0] {
+        Value::DataFrame(df) => df.clone(),
+        _ => return Err("First argument must be a DataFrame".to_string()),
+    };
+
+    let query = match &args[1] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Second argument must be a SQL query String".to_string()),
+    };
+
+    let result = sql_query(&df, &query).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(Arc::new(result)))
+}
+
+/// Data.sql_context() - Create a new SQL context for multi-table queries
+fn data_sql_context(_args: &[Value]) -> NativeResult {
+    let ctx = SqlContext::new().map_err(|e| e.to_string())?;
+    Ok(Value::SqlContext(std::sync::Arc::new(std::sync::Mutex::new(ctx))))
+}
+
+/// Data.from_query(db, sql, params?) - Execute SQL query against database and return DataFrame
+///
+/// This is a convenience function that combines database query with DataFrame creation.
+/// ```stratum
+/// let db = Db.sqlite(":memory:")
+/// db.execute("CREATE TABLE users (id INT, name TEXT)")
+/// db.execute("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')")
+/// let df = Data.from_query(db, "SELECT * FROM users")
+/// ```
+fn data_from_query(args: &[Value]) -> NativeResult {
+    use std::sync::Arc;
+
+    if args.is_empty() || args.len() > 3 {
+        return Err("Data.from_query expects 2-3 arguments: db, sql, [params]".to_string());
+    }
+
+    let conn = match &args[0] {
+        Value::DbConnection(conn) => conn.clone(),
+        _ => return Err("First argument must be a DbConnection".to_string()),
+    };
+
+    let sql = match &args[1] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Second argument must be a SQL query String".to_string()),
+    };
+
+    let params = if args.len() > 2 {
+        extract_params(&args[2])?
+    } else {
+        Vec::new()
+    };
+
+    // Execute the query and get results as List of Maps
+    let query_result = match &conn.kind {
+        DbConnectionKind::Sqlite(c) => sqlite_query(c, &sql, &params),
+        DbConnectionKind::Postgres(c) => postgres_query(c, &sql, &params),
+        DbConnectionKind::MySql(c) => mysql_query(c, &sql, &params),
+        DbConnectionKind::DuckDb(c) => duckdb_query(c, &sql, &params),
+    }?;
+
+    // Convert the List of Maps to a DataFrame
+    let rows = match query_result {
+        Value::List(list) => list.borrow().clone(),
+        _ => return Err("Query did not return a list".to_string()),
+    };
+
+    // Handle empty results - return empty DataFrame
+    if rows.is_empty() {
+        let df = DataFrame::from_series(vec![]).map_err(|e| e.to_string())?;
+        return Ok(Value::DataFrame(Arc::new(df)));
+    }
+
+    // Get column names from the first row
+    let first_row = match &rows[0] {
+        Value::Map(map) => map.borrow().clone(),
+        _ => return Err("Query results must be a list of maps".to_string()),
+    };
+
+    let column_names: Vec<String> = first_row
+        .keys()
+        .filter_map(|k| match k {
+            HashableValue::String(s) => Some((**s).clone()),
+            _ => None,
+        })
+        .collect();
+
+    if column_names.is_empty() {
+        let df = DataFrame::from_series(vec![]).map_err(|e| e.to_string())?;
+        return Ok(Value::DataFrame(Arc::new(df)));
+    }
+
+    // Build columns from all rows
+    let mut column_values: Vec<Vec<Value>> = vec![Vec::new(); column_names.len()];
+
+    for row_val in &rows {
+        let row = match row_val {
+            Value::Map(map) => map.borrow().clone(),
+            _ => return Err("Each row must be a Map".to_string()),
+        };
+
+        for (col_idx, col_name) in column_names.iter().enumerate() {
+            let key = HashableValue::String(Rc::new(col_name.clone()));
+            let value = row.get(&key).cloned().unwrap_or(Value::Null);
+            column_values[col_idx].push(value);
+        }
+    }
+
+    // Convert to Series
+    let series_list: Result<Vec<Series>, _> = column_names
+        .iter()
+        .zip(column_values.iter())
+        .map(|(name, values)| Series::from_values(name, values))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string());
+
+    let series_list = series_list?;
+
+    // Create DataFrame
+    let df = DataFrame::from_series(series_list).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(Arc::new(df)))
+}
+
+// ============================================================================
+// SqlContext Methods
+// ============================================================================
+
+/// Method dispatch for SqlContext values
+pub fn sql_context_method(
+    ctx: &std::sync::Arc<std::sync::Mutex<SqlContext>>,
+    method: &str,
+    args: &[Value],
+) -> NativeResult {
+    match method {
+        "register" => sql_context_register(ctx, args),
+        "query" | "sql" => sql_context_query(ctx, args),
+        "tables" => sql_context_tables(ctx),
+        _ => Err(format!("SqlContext has no method '{method}'")),
+    }
+}
+
+/// ctx.register(name, df) - Register a DataFrame as a table
+fn sql_context_register(
+    ctx: &std::sync::Arc<std::sync::Mutex<SqlContext>>,
+    args: &[Value],
+) -> NativeResult {
+    if args.len() != 2 {
+        return Err("register expects 2 arguments: name, df".to_string());
+    }
+
+    let name = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("First argument must be a String (table name)".to_string()),
+    };
+
+    let df = match &args[1] {
+        Value::DataFrame(df) => df.clone(),
+        _ => return Err("Second argument must be a DataFrame".to_string()),
+    };
+
+    let guard = ctx.lock().map_err(|e| format!("Lock error: {e}"))?;
+    guard.register(&name, &df).map_err(|e| e.to_string())?;
+    Ok(Value::Null)
+}
+
+/// ctx.query(sql) or ctx.sql(sql) - Execute a SQL query
+fn sql_context_query(
+    ctx: &std::sync::Arc<std::sync::Mutex<SqlContext>>,
+    args: &[Value],
+) -> NativeResult {
+    if args.len() != 1 {
+        return Err("query expects 1 argument: sql".to_string());
+    }
+
+    let sql = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Argument must be a SQL query String".to_string()),
+    };
+
+    let guard = ctx.lock().map_err(|e| format!("Lock error: {e}"))?;
+    let result = guard.query(&sql).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(std::sync::Arc::new(result)))
+}
+
+/// ctx.tables() - Get list of registered table names
+fn sql_context_tables(
+    ctx: &std::sync::Arc<std::sync::Mutex<SqlContext>>,
+) -> NativeResult {
+    let guard = ctx.lock().map_err(|e| format!("Lock error: {e}"))?;
+    let tables = guard.tables();
+    let list: Vec<Value> = tables
+        .into_iter()
+        .map(|s| Value::String(std::rc::Rc::new(s)))
+        .collect();
+    Ok(Value::List(std::rc::Rc::new(std::cell::RefCell::new(list))))
+}
+
+// ============================================================================
+// Agg Module - Aggregation specification builders
+// ============================================================================
+
+/// Aggregation builder methods for creating AggSpec values
+pub fn agg_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "sum" => agg_sum(args),
+        "mean" | "avg" => agg_mean(args),
+        "min" => agg_min(args),
+        "max" => agg_max(args),
+        "count" => agg_count(args),
+        "first" => agg_first(args),
+        "last" => agg_last(args),
+        _ => Err(format!("Agg has no method '{method}'")),
+    }
+}
+
+/// Agg.sum("column", "output_name") or Agg.sum("column") - creates a sum aggregation spec
+fn agg_sum(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "sum")?;
+    let spec = AggSpec::new(AggOp::Sum, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.mean("column", "output_name") - creates a mean aggregation spec
+fn agg_mean(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "mean")?;
+    let spec = AggSpec::new(AggOp::Mean, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.min("column", "output_name") - creates a min aggregation spec
+fn agg_min(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "min")?;
+    let spec = AggSpec::new(AggOp::Min, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.max("column", "output_name") - creates a max aggregation spec
+fn agg_max(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "max")?;
+    let spec = AggSpec::new(AggOp::Max, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.count("output_name") - creates a count aggregation spec
+fn agg_count(args: &[Value]) -> NativeResult {
+    let output = if args.is_empty() {
+        "count".to_string()
+    } else if args.len() == 1 {
+        match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err("Agg.count expects a String output name".to_string()),
+        }
+    } else {
+        return Err("Agg.count expects 0 or 1 arguments".to_string());
+    };
+    let spec = AggSpec::new(AggOp::Count, None, output);
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.first("column", "output_name") - creates a first aggregation spec
+fn agg_first(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "first")?;
+    let spec = AggSpec::new(AggOp::First, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.last("column", "output_name") - creates a last aggregation spec
+fn agg_last(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "last")?;
+    let spec = AggSpec::new(AggOp::Last, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Parse aggregation arguments: (column) or (column, output_name)
+fn parse_agg_args(args: &[Value], method: &str) -> Result<(String, Option<String>), String> {
+    if args.is_empty() || args.len() > 2 {
+        return Err(format!("Agg.{method} expects 1 or 2 arguments"));
+    }
+
+    let column = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err(format!("Agg.{method} first argument must be a column name (String)")),
+    };
+
+    let output = if args.len() == 2 {
+        match &args[1] {
+            Value::String(s) => Some((**s).clone()),
+            _ => return Err(format!("Agg.{method} second argument must be an output name (String)")),
+        }
+    } else {
+        None
+    };
+
+    Ok((column, output))
+}
+
+// ============================================================================
+// Join Module - Builder pattern for DataFrame joins
+// ============================================================================
+
+/// Dispatch Join.method calls
+pub fn join_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "on" => join_on(args),
+        "cols" => join_cols(args),
+        "inner" => join_inner(args),
+        "inner_cols" => join_inner_cols(args),
+        "left" => join_left(args),
+        "left_cols" => join_left_cols(args),
+        "right" => join_right(args),
+        "right_cols" => join_right_cols(args),
+        "outer" => join_outer(args),
+        "outer_cols" => join_outer_cols(args),
+        _ => Err(format!("Join has no method '{method}'")),
+    }
+}
+
+/// Join.on("column") - creates an inner join spec on the same column name
+fn join_on(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err("Join.on expects 1 argument (column name)".to_string());
+    }
+    let column = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Join.on expects a String column name".to_string()),
+    };
+    let spec = JoinSpec::on(&column);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Join.cols("left_col", "right_col") - creates an inner join spec on different column names
+fn join_cols(args: &[Value]) -> NativeResult {
+    let (left, right) = parse_join_cols_args(args, "cols")?;
+    let spec = JoinSpec::cols(&left, &right);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Join.inner("column") - explicit inner join on same column name
+fn join_inner(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err("Join.inner expects 1 argument (column name)".to_string());
+    }
+    let column = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Join.inner expects a String column name".to_string()),
+    };
+    let spec = JoinSpec::inner(&column);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Join.inner_cols("left", "right") - inner join on different columns
+fn join_inner_cols(args: &[Value]) -> NativeResult {
+    let (left, right) = parse_join_cols_args(args, "inner_cols")?;
+    let spec = JoinSpec::inner_cols(&left, &right);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Join.left("column") - left join on same column name
+fn join_left(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err("Join.left expects 1 argument (column name)".to_string());
+    }
+    let column = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Join.left expects a String column name".to_string()),
+    };
+    let spec = JoinSpec::left(&column);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Join.left_cols("left", "right") - left join on different columns
+fn join_left_cols(args: &[Value]) -> NativeResult {
+    let (left, right) = parse_join_cols_args(args, "left_cols")?;
+    let spec = JoinSpec::left_cols(&left, &right);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Join.right("column") - right join on same column name
+fn join_right(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err("Join.right expects 1 argument (column name)".to_string());
+    }
+    let column = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Join.right expects a String column name".to_string()),
+    };
+    let spec = JoinSpec::right(&column);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Join.right_cols("left", "right") - right join on different columns
+fn join_right_cols(args: &[Value]) -> NativeResult {
+    let (left, right) = parse_join_cols_args(args, "right_cols")?;
+    let spec = JoinSpec::right_cols(&left, &right);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Join.outer("column") - outer join on same column name
+fn join_outer(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err("Join.outer expects 1 argument (column name)".to_string());
+    }
+    let column = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err("Join.outer expects a String column name".to_string()),
+    };
+    let spec = JoinSpec::outer(&column);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Join.outer_cols("left", "right") - outer join on different columns
+fn join_outer_cols(args: &[Value]) -> NativeResult {
+    let (left, right) = parse_join_cols_args(args, "outer_cols")?;
+    let spec = JoinSpec::outer_cols(&left, &right);
+    Ok(Value::JoinSpec(std::sync::Arc::new(spec)))
+}
+
+/// Parse (left_col, right_col) arguments for join methods
+fn parse_join_cols_args(args: &[Value], method: &str) -> Result<(String, String), String> {
+    if args.len() != 2 {
+        return Err(format!("Join.{method} expects 2 arguments (left_column, right_column)"));
+    }
+    let left = match &args[0] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err(format!("Join.{method} first argument must be a column name (String)")),
+    };
+    let right = match &args[1] {
+        Value::String(s) => (**s).clone(),
+        _ => return Err(format!("Join.{method} second argument must be a column name (String)")),
+    };
+    Ok((left, right))
+}
+
+// ============================================================================
+// Cube Module (OLAP Cube for multi-dimensional analysis)
+// ============================================================================
+
+/// Dispatch a method call on the Cube namespace
+pub fn cube_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "from" => cube_from(args),
+        _ => Err(format!("Cube has no method '{method}'")),
+    }
+}
+
+/// Cube.from(df) or Cube.from("name", df) - Create a CubeBuilder from a DataFrame
+fn cube_from(args: &[Value]) -> NativeResult {
+    use std::sync::{Arc, Mutex};
+
+    match args.len() {
+        1 => {
+            // Cube.from(df)
+            let df = match &args[0] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "Cube.from expects a DataFrame, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+            let builder = CubeBuilder::from_dataframe(df).map_err(|e| e.to_string())?;
+            Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(builder)))))
+        }
+        2 => {
+            // Cube.from("name", df)
+            let name = match &args[0] {
+                Value::String(s) => (**s).clone(),
+                other => {
+                    return Err(format!(
+                        "Cube.from first argument must be a name (String), got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+            let df = match &args[1] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "Cube.from second argument must be a DataFrame, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+            let builder =
+                CubeBuilder::from_dataframe_with_name(&name, df).map_err(|e| e.to_string())?;
+            Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(builder)))))
+        }
+        n => Err(format!(
+            "Cube.from expects 1 or 2 arguments (DataFrame or name + DataFrame), got {n}"
+        )),
+    }
+}
+
 /// Dispatch a method call on a native namespace
 pub fn dispatch_namespace_method(namespace: &str, method: &str, args: &[Value]) -> NativeResult {
     match namespace {
@@ -4298,17 +6753,29 @@ pub fn dispatch_namespace_method(namespace: &str, method: &str, args: &[Value]) 
         "Yaml" => yaml_method(method, args),
         "Base64" => base64_method(method, args),
         "Url" => url_method(method, args),
+        "Gzip" => gzip_method(method, args),
+        "Zip" => zip_method(method, args),
         "DateTime" => datetime_method(method, args),
         "Duration" => duration_method(method, args),
         "Time" => time_method(method, args),
         "Regex" => regex_method(method, args),
         "Hash" => hash_method(method, args),
+        "Crypto" => crypto_method(method, args),
         "Uuid" => uuid_method(method, args),
         "Random" => random_method(method, args),
+        "Math" => math_method(method, args),
         "Input" => input_method(method, args),
         "Log" => log_method(method, args),
         "System" => system_method(method, args),
         "Db" => db_method(method, args),
+        "Async" => async_method(method, args),
+        "Tcp" => tcp_method(method, args),
+        "Udp" => udp_method(method, args),
+        "WebSocket" => ws_method(method, args),
+        "Data" => data_method(method, args),
+        "Agg" => agg_method(method, args),
+        "Join" => join_method(method, args),
+        "Cube" => cube_method(method, args),
         _ => Err(format!("unknown namespace '{}'", namespace)),
     }
 }
@@ -5195,6 +7662,166 @@ mod tests {
     }
 
     // ============================================================================
+    // Gzip Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_gzip_compress_decompress() {
+        // Create test bytes
+        let test_bytes: Vec<Value> = b"Hello, World!"
+            .iter()
+            .map(|b| Value::Int(i64::from(*b)))
+            .collect();
+        let input = Value::list(test_bytes.clone());
+
+        // Compress
+        let compressed = gzip_method("compress", &[input]).unwrap();
+
+        // Decompress
+        let decompressed = gzip_method("decompress", &[compressed]).unwrap();
+
+        // Verify
+        if let Value::List(list) = decompressed {
+            let bytes: Vec<u8> = list
+                .borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::Int(i) => *i as u8,
+                    _ => panic!("Expected Int"),
+                })
+                .collect();
+            assert_eq!(bytes, b"Hello, World!");
+        } else {
+            panic!("Expected List");
+        }
+    }
+
+    #[test]
+    fn test_gzip_compress_text_decompress_text() {
+        let input = Value::string("Hello, Stratum!");
+
+        // Compress text
+        let compressed = gzip_method("compress_text", &[input]).unwrap();
+
+        // Decompress to text
+        let decompressed = gzip_method("decompress_text", &[compressed]).unwrap();
+
+        assert_eq!(decompressed, Value::string("Hello, Stratum!"));
+    }
+
+    // ============================================================================
+    // Zip Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_zip_create_and_list() {
+        let dir = tempdir().unwrap();
+
+        // Create test files
+        let file1_path = dir.path().join("file1.txt");
+        let file2_path = dir.path().join("file2.txt");
+        fs::write(&file1_path, "Content 1").unwrap();
+        fs::write(&file2_path, "Content 2").unwrap();
+
+        // Create zip
+        let zip_path = dir.path().join("test.zip");
+        let zip_path_str = zip_path.to_string_lossy().to_string();
+        let files = Value::list(vec![
+            Value::string(file1_path.to_string_lossy()),
+            Value::string(file2_path.to_string_lossy()),
+        ]);
+
+        let result = zip_method("create", &[Value::string(&zip_path_str), files]).unwrap();
+        assert_eq!(result, Value::Null);
+        assert!(zip_path.exists());
+
+        // List contents
+        let entries = zip_method("list", &[Value::string(&zip_path_str)]).unwrap();
+        if let Value::List(list) = entries {
+            let list = list.borrow();
+            assert_eq!(list.len(), 2);
+
+            // Check that both files are present
+            let names: Vec<String> = list
+                .iter()
+                .filter_map(|v| {
+                    if let Value::Map(map) = v {
+                        let map = map.borrow();
+                        let key = HashableValue::String(Rc::new("name".to_string()));
+                        map.get(&key).and_then(|v| {
+                            if let Value::String(s) = v {
+                                Some(s.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert!(names.contains(&"file1.txt".to_string()));
+            assert!(names.contains(&"file2.txt".to_string()));
+        } else {
+            panic!("Expected List");
+        }
+    }
+
+    #[test]
+    fn test_zip_extract() {
+        let dir = tempdir().unwrap();
+
+        // Create a test file and zip it
+        let file_path = dir.path().join("test.txt");
+        fs::write(&file_path, "Test content").unwrap();
+
+        let zip_path = dir.path().join("test.zip");
+        let zip_path_str = zip_path.to_string_lossy().to_string();
+        let files = Value::list(vec![Value::string(file_path.to_string_lossy())]);
+
+        zip_method("create", &[Value::string(&zip_path_str), files]).unwrap();
+
+        // Extract to new directory
+        let extract_dir = dir.path().join("extracted");
+        let extract_dir_str = extract_dir.to_string_lossy().to_string();
+
+        let result = zip_method(
+            "extract",
+            &[Value::string(&zip_path_str), Value::string(&extract_dir_str)],
+        )
+        .unwrap();
+        assert_eq!(result, Value::Null);
+
+        // Verify extracted file
+        let extracted_file = extract_dir.join("test.txt");
+        assert!(extracted_file.exists());
+        assert_eq!(fs::read_to_string(extracted_file).unwrap(), "Test content");
+    }
+
+    #[test]
+    fn test_zip_read_text() {
+        let dir = tempdir().unwrap();
+
+        // Create a test file and zip it
+        let file_path = dir.path().join("readme.txt");
+        fs::write(&file_path, "Hello from zip!").unwrap();
+
+        let zip_path = dir.path().join("test.zip");
+        let zip_path_str = zip_path.to_string_lossy().to_string();
+        let files = Value::list(vec![Value::string(file_path.to_string_lossy())]);
+
+        zip_method("create", &[Value::string(&zip_path_str), files]).unwrap();
+
+        // Read file directly from zip
+        let content = zip_method(
+            "read_text",
+            &[Value::string(&zip_path_str), Value::string("readme.txt")],
+        )
+        .unwrap();
+        assert_eq!(content, Value::string("Hello from zip!"));
+    }
+
+    // ============================================================================
     // DateTime Module Tests
     // ============================================================================
 
@@ -6022,6 +8649,396 @@ mod tests {
     }
 
     // ============================================================================
+    // Math Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_math_constants() {
+        // PI
+        let result = math_method("PI", &[]).unwrap();
+        assert_eq!(result, Value::Float(std::f64::consts::PI));
+
+        // E
+        let result = math_method("E", &[]).unwrap();
+        assert_eq!(result, Value::Float(std::f64::consts::E));
+
+        // TAU
+        let result = math_method("TAU", &[]).unwrap();
+        assert_eq!(result, Value::Float(std::f64::consts::TAU));
+
+        // INFINITY
+        let result = math_method("INFINITY", &[]).unwrap();
+        if let Value::Float(f) = result {
+            assert!(f.is_infinite() && f.is_sign_positive());
+        } else {
+            panic!("Expected Float");
+        }
+    }
+
+    #[test]
+    fn test_math_abs() {
+        // Int positive
+        let result = math_method("abs", &[Value::Int(5)]).unwrap();
+        assert_eq!(result, Value::Int(5));
+
+        // Int negative
+        let result = math_method("abs", &[Value::Int(-5)]).unwrap();
+        assert_eq!(result, Value::Int(5));
+
+        // Float
+        let result = math_method("abs", &[Value::Float(-3.14)]).unwrap();
+        assert_eq!(result, Value::Float(3.14));
+    }
+
+    #[test]
+    fn test_math_floor_ceil_round() {
+        // floor
+        let result = math_method("floor", &[Value::Float(3.7)]).unwrap();
+        assert_eq!(result, Value::Int(3));
+
+        let result = math_method("floor", &[Value::Float(-3.7)]).unwrap();
+        assert_eq!(result, Value::Int(-4));
+
+        // ceil
+        let result = math_method("ceil", &[Value::Float(3.2)]).unwrap();
+        assert_eq!(result, Value::Int(4));
+
+        // round
+        let result = math_method("round", &[Value::Float(3.5)]).unwrap();
+        assert_eq!(result, Value::Int(4));
+
+        let result = math_method("round", &[Value::Float(3.4)]).unwrap();
+        assert_eq!(result, Value::Int(3));
+    }
+
+    #[test]
+    fn test_math_trunc_sign_fract() {
+        // trunc
+        let result = math_method("trunc", &[Value::Float(3.7)]).unwrap();
+        assert_eq!(result, Value::Int(3));
+
+        let result = math_method("trunc", &[Value::Float(-3.7)]).unwrap();
+        assert_eq!(result, Value::Int(-3));
+
+        // sign
+        let result = math_method("sign", &[Value::Int(5)]).unwrap();
+        assert_eq!(result, Value::Int(1));
+
+        let result = math_method("sign", &[Value::Int(-5)]).unwrap();
+        assert_eq!(result, Value::Int(-1));
+
+        let result = math_method("sign", &[Value::Int(0)]).unwrap();
+        assert_eq!(result, Value::Int(0));
+
+        // fract
+        let result = math_method("fract", &[Value::Float(3.75)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 0.75).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+    }
+
+    #[test]
+    fn test_math_trig() {
+        // sin(0) = 0
+        let result = math_method("sin", &[Value::Float(0.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!(f.abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // cos(0) = 1
+        let result = math_method("cos", &[Value::Float(0.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 1.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // sin(PI/2) = 1
+        let result = math_method("sin", &[Value::Float(std::f64::consts::FRAC_PI_2)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 1.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // tan(0) = 0
+        let result = math_method("tan", &[Value::Float(0.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!(f.abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+    }
+
+    #[test]
+    fn test_math_inverse_trig() {
+        // asin(0) = 0
+        let result = math_method("asin", &[Value::Float(0.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!(f.abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // acos(1) = 0
+        let result = math_method("acos", &[Value::Float(1.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!(f.abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // atan(0) = 0
+        let result = math_method("atan", &[Value::Float(0.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!(f.abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // atan2(1, 1) = PI/4
+        let result = math_method("atan2", &[Value::Float(1.0), Value::Float(1.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - std::f64::consts::FRAC_PI_4).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+    }
+
+    #[test]
+    fn test_math_hyperbolic() {
+        // sinh(0) = 0
+        let result = math_method("sinh", &[Value::Float(0.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!(f.abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // cosh(0) = 1
+        let result = math_method("cosh", &[Value::Float(0.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 1.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // tanh(0) = 0
+        let result = math_method("tanh", &[Value::Float(0.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!(f.abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+    }
+
+    #[test]
+    fn test_math_exp_log() {
+        // exp(0) = 1
+        let result = math_method("exp", &[Value::Float(0.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 1.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // exp(1) = e
+        let result = math_method("exp", &[Value::Float(1.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - std::f64::consts::E).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // ln(1) = 0
+        let result = math_method("ln", &[Value::Float(1.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!(f.abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // ln(e) = 1
+        let result = math_method("ln", &[Value::Float(std::f64::consts::E)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 1.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // log2(8) = 3
+        let result = math_method("log2", &[Value::Float(8.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 3.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // log10(100) = 2
+        let result = math_method("log10", &[Value::Float(100.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 2.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // exp2(3) = 8
+        let result = math_method("exp2", &[Value::Float(3.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 8.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+    }
+
+    #[test]
+    fn test_math_pow_sqrt_cbrt() {
+        // pow(2, 3) = 8
+        let result = math_method("pow", &[Value::Float(2.0), Value::Float(3.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 8.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // sqrt(16) = 4
+        let result = math_method("sqrt", &[Value::Float(16.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 4.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // cbrt(27) = 3
+        let result = math_method("cbrt", &[Value::Float(27.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 3.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+    }
+
+    #[test]
+    fn test_math_min_max() {
+        // min with ints
+        let result = math_method("min", &[Value::Int(3), Value::Int(1), Value::Int(2)]).unwrap();
+        assert_eq!(result, Value::Int(1));
+
+        // max with ints
+        let result = math_method("max", &[Value::Int(3), Value::Int(1), Value::Int(2)]).unwrap();
+        assert_eq!(result, Value::Int(3));
+
+        // min with floats
+        let result = math_method("min", &[Value::Float(3.5), Value::Float(1.5)]).unwrap();
+        assert_eq!(result, Value::Float(1.5));
+
+        // max with single value
+        let result = math_method("max", &[Value::Int(42)]).unwrap();
+        assert_eq!(result, Value::Int(42));
+    }
+
+    #[test]
+    fn test_math_clamp() {
+        // value within range
+        let result = math_method("clamp", &[Value::Int(5), Value::Int(0), Value::Int(10)]).unwrap();
+        assert_eq!(result, Value::Int(5));
+
+        // value below min
+        let result = math_method("clamp", &[Value::Int(-5), Value::Int(0), Value::Int(10)]).unwrap();
+        assert_eq!(result, Value::Int(0));
+
+        // value above max
+        let result = math_method("clamp", &[Value::Int(15), Value::Int(0), Value::Int(10)]).unwrap();
+        assert_eq!(result, Value::Int(10));
+
+        // invalid range (min > max)
+        let result = math_method("clamp", &[Value::Int(5), Value::Int(10), Value::Int(0)]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_math_hypot() {
+        // 3, 4, 5 triangle
+        let result = math_method("hypot", &[Value::Float(3.0), Value::Float(4.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 5.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+    }
+
+    #[test]
+    fn test_math_degrees_radians() {
+        // 180 degrees = PI radians
+        let result = math_method("to_radians", &[Value::Float(180.0)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - std::f64::consts::PI).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+
+        // PI radians = 180 degrees
+        let result = math_method("to_degrees", &[Value::Float(std::f64::consts::PI)]).unwrap();
+        if let Value::Float(f) = result {
+            assert!((f - 180.0).abs() < 1e-10);
+        } else {
+            panic!("Expected Float");
+        }
+    }
+
+    #[test]
+    fn test_math_is_nan_infinite_finite() {
+        // is_nan
+        assert_eq!(math_method("is_nan", &[Value::Float(f64::NAN)]), Ok(Value::Bool(true)));
+        assert_eq!(math_method("is_nan", &[Value::Float(1.0)]), Ok(Value::Bool(false)));
+        assert_eq!(math_method("is_nan", &[Value::Int(1)]), Ok(Value::Bool(false)));
+
+        // is_infinite
+        assert_eq!(math_method("is_infinite", &[Value::Float(f64::INFINITY)]), Ok(Value::Bool(true)));
+        assert_eq!(math_method("is_infinite", &[Value::Float(f64::NEG_INFINITY)]), Ok(Value::Bool(true)));
+        assert_eq!(math_method("is_infinite", &[Value::Float(1.0)]), Ok(Value::Bool(false)));
+        assert_eq!(math_method("is_infinite", &[Value::Int(1)]), Ok(Value::Bool(false)));
+
+        // is_finite
+        assert_eq!(math_method("is_finite", &[Value::Float(1.0)]), Ok(Value::Bool(true)));
+        assert_eq!(math_method("is_finite", &[Value::Float(f64::INFINITY)]), Ok(Value::Bool(false)));
+        assert_eq!(math_method("is_finite", &[Value::Int(1)]), Ok(Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_math_wrong_args() {
+        // abs with wrong type
+        let result = math_method("abs", &[Value::string("hello")]);
+        assert!(result.is_err());
+
+        // abs with wrong arity
+        let result = math_method("abs", &[]);
+        assert!(result.is_err());
+
+        // pow with wrong arity
+        let result = math_method("pow", &[Value::Int(2)]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_math_unknown_method() {
+        let result = math_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method"));
+    }
+
+    #[test]
+    fn test_dispatch_math_namespace() {
+        let result = dispatch_namespace_method("Math", "PI", &[]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Float(std::f64::consts::PI));
+    }
+
+    // ============================================================================
     // Input Module Tests
     // ============================================================================
     // Note: Most Input functions require actual stdin interaction, so we test
@@ -6757,5 +9774,537 @@ mod tests {
         // Verify Db is properly routed through dispatch
         let result = dispatch_namespace_method("Db", "sqlite", &[Value::string(":memory:")]);
         assert!(result.is_ok());
+    }
+
+    // ============================================================================
+    // Async Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_async_sleep() {
+        let result = async_method("sleep", &[Value::Int(100)]);
+        assert!(result.is_ok());
+        let future = result.unwrap();
+        match future {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("sleep"));
+                assert_eq!(fut.metadata(), Some(&Value::Int(100)));
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_async_sleep_negative() {
+        let result = async_method("sleep", &[Value::Int(-100)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot be negative"));
+    }
+
+    #[test]
+    fn test_async_sleep_no_args() {
+        let result = async_method("sleep", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("requires a duration"));
+    }
+
+    #[test]
+    fn test_async_sleep_wrong_type() {
+        let result = async_method("sleep", &[Value::string("100")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("requires an Int"));
+    }
+
+    #[test]
+    fn test_async_ready() {
+        let result = async_method("ready", &[Value::Int(42)]);
+        assert!(result.is_ok());
+        let future = result.unwrap();
+        match future {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_ready());
+                assert_eq!(fut.result, Some(Value::Int(42)));
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_async_ready_no_args() {
+        let result = async_method("ready", &[]);
+        assert!(result.is_ok());
+        let future = result.unwrap();
+        match future {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_ready());
+                assert_eq!(fut.result, Some(Value::Null));
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_async_failed() {
+        let result = async_method("failed", &[Value::string("test error")]);
+        assert!(result.is_ok());
+        let future = result.unwrap();
+        match future {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(!fut.is_pending());
+                assert!(!fut.is_ready());
+                match &fut.status {
+                    crate::bytecode::FutureStatus::Failed(msg) => {
+                        assert_eq!(msg, "test error");
+                    }
+                    _ => panic!("Expected Failed status"),
+                }
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_async_failed_no_args() {
+        let result = async_method("failed", &[]);
+        assert!(result.is_ok());
+        let future = result.unwrap();
+        match future {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                match &fut.status {
+                    crate::bytecode::FutureStatus::Failed(msg) => {
+                        assert_eq!(msg, "unknown error");
+                    }
+                    _ => panic!("Expected Failed status"),
+                }
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_async_unknown_method() {
+        let result = async_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method"));
+    }
+
+    #[test]
+    fn test_dispatch_async_namespace() {
+        let result = dispatch_namespace_method("Async", "ready", &[Value::Int(42)]);
+        assert!(result.is_ok());
+    }
+
+    // ============================================================================
+    // TCP Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tcp_connect_creates_future() {
+        let result = tcp_method("connect", &[Value::string("127.0.0.1"), Value::Int(8080)]);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("tcp_connect"));
+                assert_eq!(fut.metadata(), Some(&Value::string("127.0.0.1:8080")));
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_tcp_connect_validates_port() {
+        // Port too high
+        let result = tcp_method("connect", &[Value::string("localhost"), Value::Int(70000)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("port must be 1-65535"));
+
+        // Port zero (invalid for connect)
+        let result = tcp_method("connect", &[Value::string("localhost"), Value::Int(0)]);
+        assert!(result.is_err());
+
+        // Port negative
+        let result = tcp_method("connect", &[Value::string("localhost"), Value::Int(-1)]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tcp_connect_wrong_args() {
+        // Missing args
+        let result = tcp_method("connect", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 2 arguments"));
+
+        // Wrong type for host
+        let result = tcp_method("connect", &[Value::Int(123), Value::Int(8080)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("host must be String"));
+
+        // Wrong type for port
+        let result = tcp_method("connect", &[Value::string("localhost"), Value::string("8080")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("port must be Int"));
+    }
+
+    #[test]
+    fn test_tcp_listen_creates_future() {
+        let result = tcp_method("listen", &[Value::string("0.0.0.0"), Value::Int(0)]);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("tcp_listen"));
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_tcp_unknown_method() {
+        let result = tcp_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method"));
+    }
+
+    #[test]
+    fn test_dispatch_tcp_namespace() {
+        let result = dispatch_namespace_method("Tcp", "connect", &[Value::string("localhost"), Value::Int(80)]);
+        assert!(result.is_ok());
+    }
+
+    // ============================================================================
+    // UDP Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_udp_bind_creates_future() {
+        let result = udp_method("bind", &[Value::string("0.0.0.0"), Value::Int(0)]);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("udp_bind"));
+                assert_eq!(fut.metadata(), Some(&Value::string("0.0.0.0:0")));
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_udp_bind_validates_port() {
+        // Port too high
+        let result = udp_method("bind", &[Value::string("0.0.0.0"), Value::Int(70000)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("port must be 0-65535"));
+    }
+
+    #[test]
+    fn test_udp_bind_wrong_args() {
+        // Missing args
+        let result = udp_method("bind", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 2 arguments"));
+
+        // Wrong type for addr
+        let result = udp_method("bind", &[Value::Int(123), Value::Int(8080)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("addr must be String"));
+    }
+
+    #[test]
+    fn test_udp_unknown_method() {
+        let result = udp_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method"));
+    }
+
+    #[test]
+    fn test_dispatch_udp_namespace() {
+        let result = dispatch_namespace_method("Udp", "bind", &[Value::string("0.0.0.0"), Value::Int(0)]);
+        assert!(result.is_ok());
+    }
+
+    // ============================================================================
+    // WebSocket Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_ws_connect_creates_future() {
+        let result = ws_method("connect", &[Value::string("ws://localhost:8080")]);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("ws_connect"));
+                assert_eq!(fut.metadata(), Some(&Value::string("ws://localhost:8080")));
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_ws_connect_validates_url_scheme() {
+        // Missing ws:// or wss://
+        let result = ws_method("connect", &[Value::string("http://localhost:8080")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must start with ws://"));
+
+        // Valid wss:// scheme
+        let result = ws_method("connect", &[Value::string("wss://localhost:8080/socket")]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ws_connect_wrong_args() {
+        // Missing args
+        let result = ws_method("connect", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 1 argument"));
+
+        // Wrong type for url
+        let result = ws_method("connect", &[Value::Int(8080)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("url must be String"));
+    }
+
+    #[test]
+    fn test_ws_listen_creates_future() {
+        let result = ws_method("listen", &[Value::string("0.0.0.0"), Value::Int(0)]);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("ws_listen"));
+                assert_eq!(fut.metadata(), Some(&Value::string("0.0.0.0:0")));
+            }
+            _ => panic!("Expected Future value"),
+        }
+    }
+
+    #[test]
+    fn test_ws_listen_validates_port() {
+        // Port too high
+        let result = ws_method("listen", &[Value::string("localhost"), Value::Int(70000)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("port must be 0-65535"));
+
+        // Port negative
+        let result = ws_method("listen", &[Value::string("localhost"), Value::Int(-1)]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ws_listen_wrong_args() {
+        // Missing args
+        let result = ws_method("listen", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 2 arguments"));
+
+        // Wrong type for addr
+        let result = ws_method("listen", &[Value::Int(123), Value::Int(8080)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("addr must be String"));
+
+        // Wrong type for port
+        let result = ws_method("listen", &[Value::string("localhost"), Value::string("8080")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("port must be Int"));
+    }
+
+    #[test]
+    fn test_ws_unknown_method() {
+        let result = ws_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method"));
+    }
+
+    #[test]
+    fn test_dispatch_websocket_namespace() {
+        let result = dispatch_namespace_method("WebSocket", "connect", &[Value::string("ws://localhost:8080")]);
+        assert!(result.is_ok());
+    }
+
+    // ============================================================================
+    // Crypto Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_crypto_random_bytes() {
+        // Generate 32 random bytes
+        let result = crypto_method("random_bytes", &[Value::Int(32)]).unwrap();
+        if let Value::List(bytes) = result {
+            assert_eq!(bytes.borrow().len(), 32);
+            // All values should be in 0-255 range
+            for b in bytes.borrow().iter() {
+                if let Value::Int(i) = b {
+                    assert!(*i >= 0 && *i <= 255);
+                } else {
+                    panic!("Expected Int in random bytes list");
+                }
+            }
+        } else {
+            panic!("Expected List from random_bytes");
+        }
+    }
+
+    #[test]
+    fn test_crypto_random_bytes_zero() {
+        let result = crypto_method("random_bytes", &[Value::Int(0)]).unwrap();
+        if let Value::List(bytes) = result {
+            assert_eq!(bytes.borrow().len(), 0);
+        } else {
+            panic!("Expected empty List");
+        }
+    }
+
+    #[test]
+    fn test_crypto_random_bytes_error_negative() {
+        let result = crypto_method("random_bytes", &[Value::Int(-1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("non-negative"));
+    }
+
+    #[test]
+    fn test_crypto_pbkdf2() {
+        // Known test vector for PBKDF2-HMAC-SHA256
+        let result = crypto_method("pbkdf2", &[
+            Value::string("password"),
+            Value::string("salt"),
+            Value::Int(1),
+        ]).unwrap();
+
+        if let Value::String(key) = result {
+            // Key should be 64 hex chars (32 bytes)
+            assert_eq!(key.len(), 64);
+            // Known value for 1 iteration
+            assert_eq!(key.as_str(), "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b");
+        } else {
+            panic!("Expected String from pbkdf2");
+        }
+    }
+
+    #[test]
+    fn test_crypto_pbkdf2_iterations() {
+        // With more iterations, result should be different
+        let result1 = crypto_method("pbkdf2", &[
+            Value::string("password"),
+            Value::string("salt"),
+            Value::Int(1000),
+        ]).unwrap();
+
+        let result2 = crypto_method("pbkdf2", &[
+            Value::string("password"),
+            Value::string("salt"),
+            Value::Int(1),
+        ]).unwrap();
+
+        assert_ne!(result1, result2);
+    }
+
+    #[test]
+    fn test_crypto_pbkdf2_error_zero_iterations() {
+        let result = crypto_method("pbkdf2", &[
+            Value::string("password"),
+            Value::string("salt"),
+            Value::Int(0),
+        ]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("at least 1"));
+    }
+
+    #[test]
+    fn test_crypto_aes_roundtrip() {
+        // Generate a key using pbkdf2
+        let key = crypto_method("pbkdf2", &[
+            Value::string("test_password"),
+            Value::string("test_salt"),
+            Value::Int(1000),
+        ]).unwrap();
+
+        let plaintext = "Hello, World! This is a test message.";
+
+        // Encrypt
+        let encrypted = crypto_method("aes_encrypt", &[
+            Value::string(plaintext),
+            key.clone(),
+        ]).unwrap();
+
+        // Encrypted should be base64 string
+        if let Value::String(enc_str) = &encrypted {
+            assert!(!enc_str.is_empty());
+            // Should be valid base64
+            assert!(base64::engine::general_purpose::STANDARD.decode(enc_str.as_str()).is_ok());
+        } else {
+            panic!("Expected String from aes_encrypt");
+        }
+
+        // Decrypt
+        let decrypted = crypto_method("aes_decrypt", &[
+            encrypted,
+            key,
+        ]).unwrap();
+
+        assert_eq!(decrypted, Value::string(plaintext));
+    }
+
+    #[test]
+    fn test_crypto_aes_different_key_fails() {
+        // Encrypt with one key
+        let key1 = crypto_method("pbkdf2", &[
+            Value::string("password1"),
+            Value::string("salt"),
+            Value::Int(1000),
+        ]).unwrap();
+
+        let encrypted = crypto_method("aes_encrypt", &[
+            Value::string("secret"),
+            key1,
+        ]).unwrap();
+
+        // Try to decrypt with different key
+        let key2 = crypto_method("pbkdf2", &[
+            Value::string("password2"),
+            Value::string("salt"),
+            Value::Int(1000),
+        ]).unwrap();
+
+        let result = crypto_method("aes_decrypt", &[encrypted, key2]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Decryption failed"));
+    }
+
+    #[test]
+    fn test_crypto_aes_invalid_key_length() {
+        let result = crypto_method("aes_encrypt", &[
+            Value::string("test"),
+            Value::string("short_key"),
+        ]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("32 bytes"));
+    }
+
+    #[test]
+    fn test_crypto_dispatch() {
+        // Verify Crypto namespace is properly registered
+        let result = dispatch_namespace_method("Crypto", "random_bytes", &[Value::Int(16)]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_crypto_unknown_method() {
+        let result = crypto_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method"));
     }
 }

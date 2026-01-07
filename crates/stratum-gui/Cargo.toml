@@ -1,0 +1,24 @@
+[package]
+name = "stratum-gui"
+description = "GUI framework for the Stratum programming language"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Core Stratum types for Value bridging
+stratum-core = { path = "../stratum-core" }
+
+# GUI framework
+iced = { workspace = true, features = ["image"] }
+
+# Error handling
+thiserror.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

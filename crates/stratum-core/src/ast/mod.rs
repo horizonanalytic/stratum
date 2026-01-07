@@ -3,12 +3,14 @@
 //! This module defines the data structures that represent parsed Stratum source code.
 //! All AST nodes include source location information via [`Span`] for error reporting.
 
+mod comment;
 mod expr;
 mod item;
 mod pretty;
 mod stmt;
 mod types;
 
+pub use comment::*;
 pub use expr::*;
 pub use item::*;
 pub use stmt::*;

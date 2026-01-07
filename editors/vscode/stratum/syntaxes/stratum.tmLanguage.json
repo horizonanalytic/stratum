@@ -1,0 +1,387 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Stratum",
+  "scopeName": "source.stratum",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#operators" },
+    { "include": "#attributes" },
+    { "include": "#function-definition" },
+    { "include": "#struct-definition" },
+    { "include": "#enum-definition" },
+    { "include": "#interface-definition" },
+    { "include": "#impl-block" },
+    { "include": "#function-call" },
+    { "include": "#type-annotation" },
+    { "include": "#identifiers" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.stratum",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.double-slash.stratum",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.stratum",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "captures": {
+            "0": { "name": "punctuation.definition.comment.stratum" }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.stratum",
+          "begin": "\"",
+          "end": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.stratum" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.stratum" }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.stratum",
+              "match": "\\\\[nrt\\\\\"{}0]"
+            },
+            {
+              "name": "meta.interpolation.stratum",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": { "name": "punctuation.definition.interpolation.begin.stratum" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.definition.interpolation.end.stratum" }
+              },
+              "contentName": "source.stratum.embedded",
+              "patterns": [
+                { "include": "#comments" },
+                { "include": "#numbers" },
+                { "include": "#keywords" },
+                { "include": "#operators" },
+                { "include": "#function-call" },
+                { "include": "#identifiers" },
+                { "include": "#punctuation" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.stratum",
+          "match": "\\b0[xX][0-9a-fA-F][0-9a-fA-F_]*\\b"
+        },
+        {
+          "name": "constant.numeric.binary.stratum",
+          "match": "\\b0[bB][01][01_]*\\b"
+        },
+        {
+          "name": "constant.numeric.octal.stratum",
+          "match": "\\b0[oO][0-7][0-7_]*\\b"
+        },
+        {
+          "name": "constant.numeric.float.stratum",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9][0-9_]*)?\\b"
+        },
+        {
+          "name": "constant.numeric.float.stratum",
+          "match": "\\b[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*\\b"
+        },
+        {
+          "name": "constant.numeric.integer.stratum",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.stratum",
+          "match": "\\b(if|else|for|while|match|return|break|continue|in)\\b"
+        },
+        {
+          "name": "keyword.other.function.stratum",
+          "match": "\\b(fx)\\b"
+        },
+        {
+          "name": "keyword.other.declaration.stratum",
+          "match": "\\b(let|struct|enum|interface|impl)\\b"
+        },
+        {
+          "name": "keyword.other.async.stratum",
+          "match": "\\b(async|await)\\b"
+        },
+        {
+          "name": "keyword.control.exception.stratum",
+          "match": "\\b(try|catch|throw)\\b"
+        },
+        {
+          "name": "keyword.control.import.stratum",
+          "match": "\\b(import)\\b"
+        },
+        {
+          "name": "constant.language.boolean.stratum",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.stratum",
+          "match": "\\b(null)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.pipeline.stratum",
+          "match": "\\|>"
+        },
+        {
+          "name": "keyword.operator.arrow.stratum",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.fat-arrow.stratum",
+          "match": "=>"
+        },
+        {
+          "name": "keyword.operator.null-coalescing.stratum",
+          "match": "\\?\\?"
+        },
+        {
+          "name": "keyword.operator.optional-chaining.stratum",
+          "match": "\\?\\."
+        },
+        {
+          "name": "keyword.operator.range.stratum",
+          "match": "\\.\\.=?"
+        },
+        {
+          "name": "keyword.operator.path.stratum",
+          "match": "::"
+        },
+        {
+          "name": "keyword.operator.comparison.stratum",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.logical.stratum",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.assignment.compound.stratum",
+          "match": "\\+=|-=|\\*=|/=|%="
+        },
+        {
+          "name": "keyword.operator.assignment.stratum",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.arithmetic.stratum",
+          "match": "\\+|-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.bitwise.stratum",
+          "match": "&|\\|"
+        }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "name": "meta.attribute.stratum",
+          "begin": "#\\[",
+          "end": "\\]",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.attribute.begin.stratum" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.attribute.end.stratum" }
+          },
+          "patterns": [
+            {
+              "name": "entity.name.attribute.stratum",
+              "match": "[a-zA-Z_][a-zA-Z0-9_]*"
+            },
+            { "include": "#strings" },
+            { "include": "#numbers" },
+            { "include": "#punctuation" }
+          ]
+        }
+      ]
+    },
+    "function-definition": {
+      "patterns": [
+        {
+          "match": "\\b(fx)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\(|<)",
+          "captures": {
+            "1": { "name": "keyword.other.function.stratum" },
+            "2": { "name": "entity.name.function.stratum" }
+          }
+        }
+      ]
+    },
+    "struct-definition": {
+      "patterns": [
+        {
+          "match": "\\b(struct)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\{|<)",
+          "captures": {
+            "1": { "name": "keyword.other.declaration.stratum" },
+            "2": { "name": "entity.name.type.struct.stratum" }
+          }
+        }
+      ]
+    },
+    "enum-definition": {
+      "patterns": [
+        {
+          "match": "\\b(enum)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\{|<)",
+          "captures": {
+            "1": { "name": "keyword.other.declaration.stratum" },
+            "2": { "name": "entity.name.type.enum.stratum" }
+          }
+        }
+      ]
+    },
+    "interface-definition": {
+      "patterns": [
+        {
+          "match": "\\b(interface)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\{|<)",
+          "captures": {
+            "1": { "name": "keyword.other.declaration.stratum" },
+            "2": { "name": "entity.name.type.interface.stratum" }
+          }
+        }
+      ]
+    },
+    "impl-block": {
+      "patterns": [
+        {
+          "match": "\\b(impl)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\{|<|for)",
+          "captures": {
+            "1": { "name": "keyword.other.declaration.stratum" },
+            "2": { "name": "entity.name.type.stratum" }
+          }
+        }
+      ]
+    },
+    "function-call": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.call.stratum" }
+          }
+        }
+      ]
+    },
+    "type-annotation": {
+      "patterns": [
+        {
+          "match": ":\\s*([A-Z][a-zA-Z0-9_]*)(<[^>]+>)?(\\?)?",
+          "captures": {
+            "1": { "name": "entity.name.type.stratum" },
+            "2": { "name": "entity.name.type.generic.stratum" },
+            "3": { "name": "keyword.operator.nullable.stratum" }
+          }
+        },
+        {
+          "match": "->\\s*([A-Z][a-zA-Z0-9_]*)(<[^>]+>)?(\\?)?",
+          "captures": {
+            "1": { "name": "entity.name.type.stratum" },
+            "2": { "name": "entity.name.type.generic.stratum" },
+            "3": { "name": "keyword.operator.nullable.stratum" }
+          }
+        },
+        {
+          "match": "->\\s*(\\(\\))",
+          "captures": {
+            "1": { "name": "entity.name.type.unit.stratum" }
+          }
+        },
+        {
+          "match": "->\\s*(!)",
+          "captures": {
+            "1": { "name": "entity.name.type.never.stratum" }
+          }
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.constant.stratum",
+          "match": "\\b[A-Z][A-Z0-9_]+\\b"
+        },
+        {
+          "name": "entity.name.type.stratum",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        },
+        {
+          "name": "variable.other.stratum",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.comma.stratum",
+          "match": ","
+        },
+        {
+          "name": "punctuation.terminator.semicolon.stratum",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.separator.colon.stratum",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.accessor.dot.stratum",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.section.braces.begin.stratum",
+          "match": "\\{"
+        },
+        {
+          "name": "punctuation.section.braces.end.stratum",
+          "match": "\\}"
+        },
+        {
+          "name": "punctuation.section.brackets.begin.stratum",
+          "match": "\\["
+        },
+        {
+          "name": "punctuation.section.brackets.end.stratum",
+          "match": "\\]"
+        },
+        {
+          "name": "punctuation.section.parens.begin.stratum",
+          "match": "\\("
+        },
+        {
+          "name": "punctuation.section.parens.end.stratum",
+          "match": "\\)"
+        }
+      ]
+    }
+  }
+}

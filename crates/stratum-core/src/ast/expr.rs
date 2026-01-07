@@ -88,9 +88,10 @@ impl BinOp {
     /// Returns true if the operator is left-associative
     #[must_use]
     pub const fn is_left_associative(self) -> bool {
-        // Pipeline is right-associative for chaining: a |> b |> c = a |> (b |> c)
+        // Pipeline is LEFT-associative for chaining: a |> b |> c = (a |> b) |> c
+        // This means: 5 |> double |> add_one = add_one(double(5))
         // Null coalescing is right-associative: a ?? b ?? c = a ?? (b ?? c)
-        !matches!(self, BinOp::Pipe | BinOp::NullCoalesce)
+        !matches!(self, BinOp::NullCoalesce)
     }
 
     /// Returns the symbol representation of the operator
@@ -210,8 +211,14 @@ pub enum ExprKind {
     /// Parenthesized expression
     Paren(Box<Expr>),
 
-    /// Function call (callee(args...))
-    Call { callee: Box<Expr>, args: Vec<Expr> },
+    /// Function call (callee(args...) or callee(args...) { trailing_closure })
+    /// Supports both positional and named arguments, plus optional trailing closure
+    Call {
+        callee: Box<Expr>,
+        args: Vec<CallArg>,
+        /// Optional trailing closure: Button("Click") { ... }
+        trailing_closure: Option<Box<Expr>>,
+    },
 
     /// Index access (expr[index])
     Index { expr: Box<Expr>, index: Box<Expr> },
@@ -276,6 +283,21 @@ pub enum ExprKind {
         variant: Ident,
         data: Option<Box<Expr>>,
     },
+
+    /// Pipeline placeholder (_)
+    /// Used in pipeline expressions to mark where the piped value should be inserted
+    /// Example: `x |> f(_, b)` becomes `f(x, b)`
+    Placeholder,
+
+    /// Column shorthand (`.column_name`)
+    /// Used in DataFrame operations to reference columns concisely
+    /// Example: `df |> filter(.amount > 100)` becomes `df |> filter(|$row| $row.amount > 100)`
+    ColumnShorthand(Ident),
+
+    /// State binding (`&state.field`)
+    /// Creates a two-way binding to a state field for reactive GUI updates
+    /// Example: `TextField(&state.name)` binds the text field to state.name
+    StateBinding(Box<Expr>),
 }
 
 /// A part of an interpolated string
@@ -424,4 +446,52 @@ pub struct FieldInit {
     pub value: Option<Expr>,
     /// Source location
     pub span: Span,
+}
+
+/// An argument in a function call (positional or named)
+#[derive(Debug, Clone, PartialEq)]
+pub enum CallArg {
+    /// Positional argument (just an expression)
+    Positional(Expr),
+    /// Named argument (name: expression)
+    Named {
+        name: Ident,
+        value: Expr,
+        span: Span,
+    },
+}
+
+impl CallArg {
+    /// Get the expression value of this argument
+    #[must_use]
+    pub fn value(&self) -> &Expr {
+        match self {
+            CallArg::Positional(expr) => expr,
+            CallArg::Named { value, .. } => value,
+        }
+    }
+
+    /// Get the span of this argument
+    #[must_use]
+    pub fn span(&self) -> Span {
+        match self {
+            CallArg::Positional(expr) => expr.span,
+            CallArg::Named { span, .. } => *span,
+        }
+    }
+
+    /// Returns true if this is a named argument
+    #[must_use]
+    pub fn is_named(&self) -> bool {
+        matches!(self, CallArg::Named { .. })
+    }
+
+    /// Get the name if this is a named argument
+    #[must_use]
+    pub fn name(&self) -> Option<&Ident> {
+        match self {
+            CallArg::Positional(_) => None,
+            CallArg::Named { name, .. } => Some(name),
+        }
+    }
 }

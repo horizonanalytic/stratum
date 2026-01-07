@@ -3,9 +3,9 @@
 use std::rc::Rc;
 
 use crate::ast::{
-    BinOp, Block, CatchClause, CompoundOp, ElseBranch, Expr, ExprKind, FieldInit, Function, Ident,
-    Item, ItemKind, Literal, MatchArm, Module, Param, Pattern, PatternKind, Stmt, StmtKind,
-    StringPart, UnaryOp,
+    BinOp, Block, CallArg, CatchClause, CompoundOp, ElseBranch, ExecutionMode, ExecutionModeOverride,
+    Expr, ExprKind, FieldInit, Function, Ident, Item, ItemKind, Literal, MatchArm, Module, Param,
+    Pattern, PatternKind, Stmt, StmtKind, StringPart, TopLevelItem, TopLevelLet, UnaryOp,
 };
 use crate::lexer::Span;
 
@@ -91,10 +91,13 @@ struct CompilerState {
 
     /// Enclosing compiler state (for nested functions)
     enclosing: Option<Box<CompilerState>>,
+
+    /// Whether this function is async
+    is_async: bool,
 }
 
 impl CompilerState {
-    fn new(function_type: FunctionType, name: String) -> Self {
+    fn new(function_type: FunctionType, name: String, is_async: bool) -> Self {
         let mut state = Self {
             function: BytecodeFunction::new(name, 0),
             function_type,
@@ -103,6 +106,7 @@ impl CompilerState {
             scope_depth: 0,
             loops: Vec::new(),
             enclosing: None,
+            is_async,
         };
 
         // Reserve slot 0 for 'this' in methods or empty slot in functions
@@ -147,6 +151,12 @@ pub struct Compiler {
 
     /// Source file name
     source_name: Option<String>,
+
+    /// Module-level execution mode (from #![compile] or #![interpret] directives)
+    module_mode: Option<ExecutionMode>,
+
+    /// CLI override for execution mode (overrides all directives)
+    mode_override: Option<ExecutionModeOverride>,
 }
 
 impl Compiler {
@@ -154,9 +164,11 @@ impl Compiler {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            current: CompilerState::new(FunctionType::Script, "<script>".to_string()),
+            current: CompilerState::new(FunctionType::Script, "<script>".to_string(), false),
             errors: Vec::new(),
             source_name: None,
+            module_mode: None,
+            mode_override: None,
         }
     }
 
@@ -170,10 +182,47 @@ impl Compiler {
         compiler
     }
 
+    /// Set the execution mode override for this compilation
+    ///
+    /// When set, this overrides all function and module-level directives.
+    #[must_use]
+    pub fn with_mode_override(mut self, mode_override: Option<ExecutionModeOverride>) -> Self {
+        self.mode_override = mode_override;
+        self
+    }
+
+    /// Resolve the execution mode for a function, considering overrides and defaults
+    fn resolve_function_mode(&self, func: &Function) -> ExecutionMode {
+        // CLI override takes precedence over everything
+        if let Some(override_mode) = self.mode_override {
+            return match override_mode {
+                ExecutionModeOverride::InterpretAll => ExecutionMode::Interpret,
+                ExecutionModeOverride::CompileAll => ExecutionMode::Compile,
+            };
+        }
+
+        // Otherwise, use the function's resolution with module default
+        func.resolve_execution_mode(self.module_mode, ExecutionMode::Interpret)
+    }
+
     /// Compile a module to bytecode
     pub fn compile_module(mut self, module: &Module) -> Result<Rc<BytecodeFunction>, Vec<CompileError>> {
-        for item in &module.items {
-            self.compile_item(item);
+        // Capture module-level execution mode from inner attributes (e.g., #![compile])
+        self.module_mode = module.execution_mode();
+
+        // First pass: compile all function definitions (hoisted)
+        // This ensures functions are available before they're called
+        for tl_item in &module.top_level {
+            if let TopLevelItem::Item(item) = tl_item {
+                if matches!(item.kind, ItemKind::Function(_)) {
+                    self.compile_item(item);
+                }
+            }
+        }
+
+        // Second pass: compile top-level lets, statements, and non-function items in order
+        for tl_item in &module.top_level {
+            self.compile_top_level_item(tl_item);
         }
 
         // Emit implicit return
@@ -183,6 +232,50 @@ impl Compiler {
             Ok(Rc::new(self.current.function))
         } else {
             Err(self.errors)
+        }
+    }
+
+    /// Compile a top-level item
+    fn compile_top_level_item(&mut self, tl_item: &TopLevelItem) {
+        match tl_item {
+            TopLevelItem::Item(item) => {
+                // Functions are compiled in the first pass (hoisted), skip them here
+                if !matches!(item.kind, ItemKind::Function(_)) {
+                    self.compile_item(item);
+                }
+            }
+            TopLevelItem::Let(let_decl) => self.compile_top_level_let(let_decl),
+            TopLevelItem::Statement(stmt) => {
+                // The statement() method handles popping for expression statements
+                self.statement(stmt);
+            }
+        }
+    }
+
+    /// Compile a top-level let declaration
+    fn compile_top_level_let(&mut self, let_decl: &TopLevelLet) {
+        let line = self.line_from_span(let_decl.span);
+
+        // Compile the value expression
+        self.expression(&let_decl.value);
+
+        // Handle the pattern binding
+        // For now, we only support simple identifier patterns at the top level
+        match &let_decl.pattern.kind {
+            PatternKind::Ident(ident) => {
+                // Declare and define as a global variable
+                self.declare_variable(ident);
+                self.define_variable(ident, line);
+            }
+            PatternKind::Wildcard => {
+                // Just pop the value - it's not bound to anything
+                self.emit_op(OpCode::Pop, line);
+            }
+            _ => {
+                // For complex patterns, we need destructuring support
+                // For now, emit an error
+                self.error(CompileErrorKind::UnsupportedPattern, let_decl.pattern.span);
+            }
         }
     }
 
@@ -222,6 +315,59 @@ impl Compiler {
 
         // Return the result
         self.emit_op(OpCode::Return, line);
+
+        if self.errors.is_empty() {
+            Ok(Rc::new(self.current.function))
+        } else {
+            Err(self.errors)
+        }
+    }
+
+    /// Compile REPL input (expression, statement(s), or function definition)
+    ///
+    /// For expressions: compiles and returns the result
+    /// For statements: compiles, executes, and returns null
+    /// For functions: compiles and registers globally, returns null
+    pub fn compile_repl_input(
+        mut self,
+        input: &crate::parser::ReplInput,
+    ) -> Result<Rc<BytecodeFunction>, Vec<CompileError>> {
+        use crate::parser::ReplInput;
+
+        match input {
+            ReplInput::Expression(expr) => {
+                // Compile expression and return its value
+                self.expression(expr);
+                let line = self.line_from_span(expr.span);
+                self.emit_op(OpCode::Return, line);
+            }
+            ReplInput::Statement(stmt) => {
+                // Compile statement(s) and return null
+                self.statement(stmt);
+                let line = self.line_from_span(stmt.span);
+                self.emit_op(OpCode::Null, line);
+                self.emit_op(OpCode::Return, line);
+            }
+            ReplInput::Statements(stmts) => {
+                // Compile multiple statements and return the last expression value (or null)
+                let mut last_span = Span::new(0, 0);
+                for stmt in stmts {
+                    self.statement(stmt);
+                    last_span = stmt.span;
+                }
+                // If the last statement was an expression, we need to retrieve its value
+                // For now, just return null (the value was popped by statement())
+                self.emit_op(OpCode::Null, self.line_from_span(last_span));
+                self.emit_op(OpCode::Return, self.line_from_span(last_span));
+            }
+            ReplInput::Function(func) => {
+                // Compile function definition and return null
+                let line = self.line_from_span(func.span);
+                self.compile_function_def(func);
+                self.emit_op(OpCode::Null, line);
+                self.emit_op(OpCode::Return, line);
+            }
+        }
 
         if self.errors.is_empty() {
             Ok(Rc::new(self.current.function))
@@ -280,12 +426,12 @@ impl Compiler {
 
     fn function(&mut self, func: &Function, function_type: FunctionType) {
         let name = func.name.name.clone();
-        let line = self.line_from_span(func.span);
+        let _line = self.line_from_span(func.span);
 
         // Start a new compiler state for the function
         let enclosing = std::mem::replace(
             &mut self.current,
-            CompilerState::new(function_type, name),
+            CompilerState::new(function_type, name, func.is_async),
         );
         self.current.enclosing = Some(Box::new(enclosing));
         self.begin_scope();
@@ -321,19 +467,22 @@ impl Compiler {
 
         // Get the completed function - need to take enclosing first to avoid borrow issue
         let enclosing = self.current.enclosing.take().unwrap();
-        let function = std::mem::replace(&mut self.current, *enclosing);
+        let function_state = std::mem::replace(&mut self.current, *enclosing);
 
         // Emit closure instruction
-        let upvalue_count = function.upvalues.len();
-        let mut completed_function = function.function;
+        let upvalue_count = function_state.upvalues.len();
+        let mut completed_function = function_state.function;
         completed_function.upvalue_count = upvalue_count as u16;
+
+        // Set execution mode based on function attributes and module mode
+        completed_function.execution_mode = self.resolve_function_mode(func);
 
         let func_value = Value::Function(Rc::new(completed_function));
         if let Some(const_idx) = self.current.chunk_mut().add_constant(func_value) {
             self.emit_op_u16(OpCode::Closure, const_idx, line);
 
             // Emit upvalue descriptors
-            for upvalue in &function.upvalues {
+            for upvalue in &function_state.upvalues {
                 self.emit_byte(if upvalue.is_local { 1 } else { 0 }, line);
                 self.emit_byte(upvalue.index, line);
             }
@@ -523,10 +672,17 @@ impl Compiler {
         });
 
         // Get next item or jump to end
+        // LoadLocal pushes a copy of the iterator onto the stack
+        // IterNext peeks that copy and pushes the next value (or jumps if exhausted)
         self.emit_op_u16(OpCode::LoadLocal, iter_slot as u16, line);
         let exit_jump = self.emit_jump(OpCode::IterNext, line);
 
-        // Bind loop variable
+        // After IterNext (when not jumping), stack has: [..., iterator_copy, next_value]
+        // Use PopBelow to remove the iterator copy while keeping next_value on top
+        // This ensures next_value is at the correct slot for the loop variable
+        self.emit_op_u8(OpCode::PopBelow, 1, line);
+
+        // Bind loop variable (now at the correct stack slot)
         match &pattern.kind {
             PatternKind::Ident(name) => {
                 self.declare_variable(name);
@@ -543,16 +699,17 @@ impl Compiler {
         // Compile body
         self.block(body);
 
-        // Pop loop variable (but keep iterator)
+        // Pop loop variable (but keep iterator in its slot)
         self.emit_op(OpCode::Pop, line);
 
         // Loop back
         self.emit_loop(loop_start, line);
 
-        // Patch exit jump
+        // Patch exit jump - when IterNext jumps here, stack has: [..., iterator_copy]
+        // (IterNext pushed nothing because iterator was exhausted)
         self.patch_jump(exit_jump);
 
-        // Pop iterator
+        // Pop the iterator copy that LoadLocal pushed
         self.emit_op(OpCode::Pop, line);
 
         // Patch break jumps
@@ -662,11 +819,14 @@ impl Compiler {
     ) {
         let line = self.line_from_span(span);
 
-        // Emit handler setup
-        let handler_jump = self.emit_jump(OpCode::PushHandler, line);
-        // Reserve space for finally offset
-        self.emit_byte(0, line);
-        self.emit_byte(0, line);
+        // Emit PushHandler with placeholders for catch and finally offsets
+        self.emit_op(OpCode::PushHandler, line);
+        let catch_offset_pos = self.current.chunk().current_offset();
+        self.emit_byte(0, line); // catch offset placeholder byte 1
+        self.emit_byte(0, line); // catch offset placeholder byte 2
+        let finally_offset_pos = self.current.chunk().current_offset();
+        self.emit_byte(0, line); // finally offset placeholder byte 1
+        self.emit_byte(0, line); // finally offset placeholder byte 2
 
         // Compile try block
         self.block(try_block);
@@ -677,8 +837,10 @@ impl Compiler {
         // Jump over catch blocks
         let end_jump = self.emit_jump(OpCode::Jump, line);
 
-        // Patch handler jump to here
-        self.patch_jump(handler_jump);
+        // Patch catch offset to here (offset is from AFTER reading both offsets, i.e., finally_offset_pos + 2)
+        let catch_target = self.current.chunk().current_offset();
+        let catch_offset = (catch_target as isize - (finally_offset_pos as isize + 2)) as i16;
+        self.current.chunk_mut().patch_i16(catch_offset_pos, catch_offset);
 
         // Compile catch clauses
         for catch in catches {
@@ -734,8 +896,12 @@ impl Compiler {
                 self.expression(inner);
             }
 
-            ExprKind::Call { callee, args } => {
-                self.call(callee, args, line, expr.span);
+            ExprKind::Call {
+                callee,
+                args,
+                trailing_closure,
+            } => {
+                self.call(callee, args, trailing_closure.as_deref(), line, expr.span);
             }
 
             ExprKind::Index {
@@ -841,6 +1007,60 @@ impl Compiler {
             } => {
                 self.enum_variant(enum_name.as_ref(), variant, data.as_deref(), line, expr.span);
             }
+
+            ExprKind::Placeholder => {
+                // Placeholder (_) is only valid inside pipeline expressions.
+                // If we reach here, it means _ was used outside of a |> context.
+                self.error(
+                    CompileErrorKind::InvalidPlaceholder,
+                    expr.span,
+                );
+            }
+
+            ExprKind::ColumnShorthand(ident) => {
+                // Column shorthand (.column_name) should have been transformed into a lambda
+                // by call_expr when it appears as a function argument. If we reach here,
+                // it means .column was used in an unsupported context.
+                self.error(
+                    CompileErrorKind::InvalidColumnShorthand(ident.name.clone()),
+                    expr.span,
+                );
+            }
+
+            ExprKind::StateBinding(inner) => {
+                // State binding (&state.field) creates a reference for reactive GUI updates.
+                // The inner expression should be a field access path like "state.field".
+                // For now, we compile it as a special StateBinding value that wraps the path.
+                self.compile_state_binding(inner, line, expr.span);
+            }
+        }
+    }
+
+    /// Compile a state binding expression (&state.field)
+    fn compile_state_binding(&mut self, expr: &Expr, line: u32, span: Span) {
+        // Extract the field path from the expression
+        let path = self.extract_field_path(expr);
+
+        // Emit the state binding opcode with the path as a string constant
+        if let Some(idx) = self.current.chunk_mut().add_constant(Value::string(path)) {
+            self.emit_op_u16(OpCode::StateBinding, idx, line);
+        } else {
+            self.error(CompileErrorKind::TooManyConstants, span);
+        }
+    }
+
+    /// Extract a dotted field path from an expression (e.g., "state.user.name")
+    fn extract_field_path(&self, expr: &Expr) -> String {
+        match &expr.kind {
+            ExprKind::Ident(ident) => ident.name.clone(),
+            ExprKind::Field { expr: base, field } => {
+                let base_path = self.extract_field_path(base);
+                format!("{}.{}", base_path, field.name)
+            }
+            _ => {
+                // For other expressions, fall back to a placeholder
+                "<expr>".to_string()
+            }
         }
     }
 
@@ -901,16 +1121,67 @@ impl Compiler {
             }
 
             BinOp::Pipe => {
-                // a |> f becomes f(a)
-                // Evaluate argument first
-                self.expression(left);
-                // Then the function
-                self.expression(right);
-                // Swap so function is below argument
-                // Actually, we need to handle this differently
-                // For now, compile as a call with 1 argument
-                // The right side should be a function
-                self.emit_op_u8(OpCode::Call, 1, line);
+                // Pipeline operator: a |> f or a |> f(b, c) or a |> f(_, b)
+                // Desugaring:
+                // - a |> f           -> f(a)
+                // - a |> f(b)        -> f(a, b)    (no placeholder = prepend)
+                // - a |> f(_, b)     -> f(a, b)    (placeholder marks position)
+                // - a |> f(b, _)     -> f(b, a)
+                // - a |> f(_, _, _)  -> f(a, a, a) (all placeholders get same value)
+
+                match &right.kind {
+                    ExprKind::Call { callee, args, .. } => {
+                        // Check if any argument is a placeholder
+                        let has_placeholder = args
+                            .iter()
+                            .any(|arg| matches!(arg.value().kind, ExprKind::Placeholder));
+
+                        // Check if callee is a function that takes column names (select, group_by)
+                        let is_column_name_func = matches!(&callee.kind, ExprKind::Ident(ident) if ident.name == "select" || ident.name == "group_by");
+
+                        if has_placeholder {
+                            // Compile function first
+                            self.expression(callee);
+                            // For each argument: compile LHS if placeholder, else the arg
+                            for arg in args {
+                                let arg_expr = arg.value();
+                                if matches!(arg_expr.kind, ExprKind::Placeholder) {
+                                    self.expression(left);
+                                } else if is_column_name_func {
+                                    // For select/group_by, emit column names as strings for simple shorthands
+                                    self.compile_select_arg(arg_expr, line);
+                                } else if Self::contains_column_shorthand(arg_expr) {
+                                    self.compile_column_shorthand_lambda(arg_expr, line);
+                                } else {
+                                    self.expression(arg_expr);
+                                }
+                            }
+                            self.emit_op_u8(OpCode::Call, args.len() as u8, line);
+                        } else {
+                            // No placeholder - prepend left as first argument
+                            self.expression(callee);
+                            self.expression(left); // Piped value becomes first arg
+                            for arg in args {
+                                let arg_expr = arg.value();
+                                if is_column_name_func {
+                                    // For select/group_by, emit column names as strings for simple shorthands
+                                    self.compile_select_arg(arg_expr, line);
+                                } else if Self::contains_column_shorthand(arg_expr) {
+                                    self.compile_column_shorthand_lambda(arg_expr, line);
+                                } else {
+                                    self.expression(arg_expr);
+                                }
+                            }
+                            self.emit_op_u8(OpCode::Call, (args.len() + 1) as u8, line);
+                        }
+                    }
+                    _ => {
+                        // Bare function reference: a |> f -> f(a)
+                        self.expression(right); // Function
+                        self.expression(left); // Argument
+                        self.emit_op_u8(OpCode::Call, 1, line);
+                    }
+                }
             }
 
             BinOp::Range => {
@@ -949,8 +1220,18 @@ impl Compiler {
         }
     }
 
-    fn call(&mut self, callee: &Expr, args: &[Expr], line: u32, span: Span) {
-        if args.len() > 255 {
+    fn call(
+        &mut self,
+        callee: &Expr,
+        args: &[CallArg],
+        trailing_closure: Option<&Expr>,
+        line: u32,
+        span: Span,
+    ) {
+        // Calculate total argument count (args + optional trailing closure)
+        let total_args = args.len() + if trailing_closure.is_some() { 1 } else { 0 };
+
+        if total_args > 255 {
             self.error(CompileErrorKind::TooManyArguments, span);
             return;
         }
@@ -958,25 +1239,57 @@ impl Compiler {
         // Check for method call optimization
         if let ExprKind::Field { expr, field } = &callee.kind {
             // This is a method call: obj.method(args)
+            // Check if it's a select/group_by method for special handling
+            let is_column_name_method = field.name == "select" || field.name == "group_by";
+
             self.expression(expr);
             for arg in args {
-                self.expression(arg);
+                let arg_expr = arg.value();
+                if is_column_name_method {
+                    // For select/group_by, emit column names as strings for simple shorthands
+                    self.compile_select_arg(arg_expr, line);
+                } else if Self::contains_column_shorthand(arg_expr) {
+                    // Transform column shorthand arguments into lambdas
+                    self.compile_column_shorthand_lambda(arg_expr, line);
+                } else {
+                    self.expression(arg_expr);
+                }
+            }
+            // Compile trailing closure if present
+            if let Some(closure) = trailing_closure {
+                self.expression(closure);
             }
             if let Some(idx) = self.identifier_constant(&field.name, span) {
                 self.emit_op(OpCode::Invoke, line);
                 self.emit_byte((idx & 0xFF) as u8, line);
                 self.emit_byte((idx >> 8) as u8, line);
-                self.emit_byte(args.len() as u8, line);
+                self.emit_byte(total_args as u8, line);
             }
             return;
         }
 
+        // Check if callee is a function that takes column names (select, group_by)
+        let is_column_name_func = matches!(&callee.kind, ExprKind::Ident(ident) if ident.name == "select" || ident.name == "group_by");
+
         // Regular function call
         self.expression(callee);
         for arg in args {
-            self.expression(arg);
+            let arg_expr = arg.value();
+            if is_column_name_func {
+                // For select/group_by, emit column names as strings for simple shorthands
+                self.compile_select_arg(arg_expr, line);
+            } else if Self::contains_column_shorthand(arg_expr) {
+                // Transform column shorthand arguments into lambdas
+                self.compile_column_shorthand_lambda(arg_expr, line);
+            } else {
+                self.expression(arg_expr);
+            }
         }
-        self.emit_op_u8(OpCode::Call, args.len() as u8, line);
+        // Compile trailing closure if present
+        if let Some(closure) = trailing_closure {
+            self.expression(closure);
+        }
+        self.emit_op_u8(OpCode::Call, total_args as u8, line);
     }
 
     fn if_expression(
@@ -1111,10 +1424,10 @@ impl Compiler {
         // Create synthetic function
         let name = format!("<lambda@{}>", line);
 
-        // Start a new compiler state
+        // Start a new compiler state (lambdas are synchronous)
         let enclosing = std::mem::replace(
             &mut self.current,
-            CompilerState::new(FunctionType::Function, name),
+            CompilerState::new(FunctionType::Function, name, false),
         );
         self.current.enclosing = Some(Box::new(enclosing));
         self.begin_scope();
@@ -1232,8 +1545,15 @@ impl Compiler {
     }
 
     fn struct_init(&mut self, name: &Ident, fields: &[FieldInit], line: u32, span: Span) {
-        // Push field values in order
+        // Push (field_name, field_value) pairs for each field
+        // Stack will be: name1, value1, name2, value2, ...
         for field in fields {
+            // Push field name as constant
+            if let Some(name_idx) = self.identifier_constant(&field.name.name, field.span) {
+                self.emit_op_u16(OpCode::Const, name_idx, line);
+            }
+
+            // Push field value
             if let Some(value) = &field.value {
                 self.expression(value);
             } else {
@@ -1242,9 +1562,10 @@ impl Compiler {
             }
         }
 
-        // Create struct
+        // Create struct with type name and field count
         if let Some(idx) = self.identifier_constant(&name.name, span) {
-            self.emit_op_u16(OpCode::NewStruct, idx, line);
+            let field_count = fields.len() as u16;
+            self.emit_op_u16_u16(OpCode::NewStruct, idx, field_count, line);
         }
     }
 
@@ -1469,6 +1790,11 @@ impl Compiler {
         self.current.chunk_mut().write_op_u16(op, operand, line);
     }
 
+    fn emit_op_u16_u16(&mut self, op: OpCode, operand1: u16, operand2: u16, line: u32) {
+        self.current.chunk_mut().write_op_u16(op, operand1, line);
+        self.current.chunk_mut().write_u16(operand2, line);
+    }
+
     fn emit_byte(&mut self, byte: u8, line: u32) {
         self.current.chunk_mut().write_byte(byte, line);
     }
@@ -1517,6 +1843,268 @@ impl Compiler {
         // For now, use start position as line number
         // A proper implementation would map spans to line numbers
         span.start
+    }
+
+    /// Check if an expression contains any ColumnShorthand nodes
+    fn contains_column_shorthand(expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::ColumnShorthand(_) => true,
+            ExprKind::Binary { left, right, .. } => {
+                Self::contains_column_shorthand(left) || Self::contains_column_shorthand(right)
+            }
+            ExprKind::Unary { expr: e, .. } => Self::contains_column_shorthand(e),
+            ExprKind::Paren(e) => Self::contains_column_shorthand(e),
+            ExprKind::Call { callee, args, trailing_closure } => {
+                Self::contains_column_shorthand(callee)
+                    || args.iter().any(|arg| Self::contains_column_shorthand(arg.value()))
+                    || trailing_closure.as_ref().map_or(false, |tc| Self::contains_column_shorthand(tc))
+            }
+            ExprKind::Index { expr: e, index } => {
+                Self::contains_column_shorthand(e) || Self::contains_column_shorthand(index)
+            }
+            ExprKind::Field { expr: e, .. } => Self::contains_column_shorthand(e),
+            ExprKind::NullSafeField { expr: e, .. } => Self::contains_column_shorthand(e),
+            ExprKind::NullSafeIndex { expr: e, index } => {
+                Self::contains_column_shorthand(e) || Self::contains_column_shorthand(index)
+            }
+            ExprKind::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
+                Self::contains_column_shorthand(cond)
+                    || then_branch.stmts.iter().any(|s| {
+                        if let crate::ast::Stmt {
+                            kind: crate::ast::StmtKind::Expr(e),
+                            ..
+                        } = s
+                        {
+                            Self::contains_column_shorthand(e)
+                        } else {
+                            false
+                        }
+                    })
+                    || then_branch
+                        .expr
+                        .as_ref()
+                        .map_or(false, |e| Self::contains_column_shorthand(e))
+                    || else_branch.as_ref().map_or(false, |eb| match eb {
+                        ElseBranch::Block(b) => {
+                            b.expr
+                                .as_ref()
+                                .map_or(false, |e| Self::contains_column_shorthand(e))
+                        }
+                        ElseBranch::ElseIf(e) => Self::contains_column_shorthand(e),
+                    })
+            }
+            ExprKind::List(items) => items.iter().any(Self::contains_column_shorthand),
+            ExprKind::Map(pairs) => pairs
+                .iter()
+                .any(|(k, v)| Self::contains_column_shorthand(k) || Self::contains_column_shorthand(v)),
+            ExprKind::Lambda { body, .. } => Self::contains_column_shorthand(body),
+            ExprKind::StringInterp { parts } => parts.iter().any(|p| match p {
+                StringPart::Expr(e) => Self::contains_column_shorthand(e),
+                StringPart::Literal(_) => false,
+            }),
+            ExprKind::Await(e) | ExprKind::Try(e) => Self::contains_column_shorthand(e),
+            ExprKind::StateBinding(e) => Self::contains_column_shorthand(e),
+            // Terminals that don't contain column shorthand
+            ExprKind::Literal(_)
+            | ExprKind::Ident(_)
+            | ExprKind::Placeholder
+            | ExprKind::StructInit { .. }
+            | ExprKind::EnumVariant { .. }
+            | ExprKind::Match { .. }
+            | ExprKind::Block(_) => false,
+        }
+    }
+
+    /// Compile an expression containing ColumnShorthand by wrapping it in a lambda.
+    /// The lambda has a single parameter `$row` and all ColumnShorthand nodes
+    /// become field accesses on `$row`.
+    fn compile_column_shorthand_lambda(&mut self, expr: &Expr, line: u32) {
+        // Create synthetic function like regular lambda compilation
+        let name = format!("<column_shorthand_lambda@{}>", line);
+        let row_param_name = "$row";
+
+        // Start a new compiler state (lambdas are synchronous)
+        let enclosing = std::mem::replace(
+            &mut self.current,
+            CompilerState::new(FunctionType::Function, name, false),
+        );
+        self.current.enclosing = Some(Box::new(enclosing));
+        self.begin_scope();
+
+        // Declare the $row parameter
+        self.current.function.arity = 1;
+        // Create a synthetic Ident for the $row parameter
+        let row_ident = crate::ast::Ident::new(row_param_name, expr.span);
+        self.declare_variable(&row_ident);
+        self.mark_initialized();
+
+        // Compile the body expression, transforming column shorthands
+        self.compile_with_column_shorthand_transform(expr, row_param_name, line);
+        self.emit_op(OpCode::Return, line);
+
+        // End function scope
+        self.end_scope(line);
+
+        // Get the completed function
+        let enclosing = self.current.enclosing.take().unwrap();
+        let function = std::mem::replace(&mut self.current, *enclosing);
+
+        // Emit closure instruction
+        let upvalue_count = function.upvalues.len();
+        let mut completed_function = function.function;
+        completed_function.upvalue_count = upvalue_count as u16;
+
+        let func_value = Value::Function(Rc::new(completed_function));
+        if let Some(const_idx) = self.current.chunk_mut().add_constant(func_value) {
+            self.emit_op_u16(OpCode::Closure, const_idx, line);
+
+            // Emit upvalue descriptors
+            for upvalue in &function.upvalues {
+                self.emit_byte(if upvalue.is_local { 1 } else { 0 }, line);
+                self.emit_byte(upvalue.index, line);
+            }
+        } else {
+            self.error(CompileErrorKind::TooManyConstants, expr.span);
+        }
+    }
+
+    /// Compile an argument for the select function.
+    /// For simple ColumnShorthand, emit the column name as a string.
+    /// For other expressions, compile them normally.
+    fn compile_select_arg(&mut self, arg: &Expr, line: u32) {
+        match &arg.kind {
+            ExprKind::ColumnShorthand(ident) => {
+                // For select, emit the column name as a string constant
+                let name = &ident.name;
+                let value = Value::string(name.clone());
+                if let Some(const_idx) = self.current.chunk_mut().add_constant(value) {
+                    self.emit_op_u16(OpCode::Const, const_idx, line);
+                } else {
+                    self.error(CompileErrorKind::TooManyConstants, arg.span);
+                }
+            }
+            // For non-column-shorthand expressions, compile normally
+            _ => {
+                self.expression(arg);
+            }
+        }
+    }
+
+    /// Compile an expression, transforming ColumnShorthand into field access on the given local
+    fn compile_with_column_shorthand_transform(&mut self, expr: &Expr, row_var: &str, line: u32) {
+        match &expr.kind {
+            ExprKind::ColumnShorthand(ident) => {
+                // Transform .column_name into $row.column_name
+                self.get_variable(row_var, line, expr.span);
+                if let Some(idx) = self.identifier_constant(&ident.name, expr.span) {
+                    self.emit_op_u16(OpCode::GetField, idx, line);
+                }
+            }
+            ExprKind::Binary { left, op, right } => {
+                // Handle short-circuit operators specially
+                match op {
+                    BinOp::And => {
+                        self.compile_with_column_shorthand_transform(left, row_var, line);
+                        let end_jump = self.emit_jump(OpCode::JumpIfFalse, line);
+                        self.emit_op(OpCode::Pop, line);
+                        self.compile_with_column_shorthand_transform(right, row_var, line);
+                        self.patch_jump(end_jump);
+                    }
+                    BinOp::Or => {
+                        self.compile_with_column_shorthand_transform(left, row_var, line);
+                        let end_jump = self.emit_jump(OpCode::JumpIfTrue, line);
+                        self.emit_op(OpCode::Pop, line);
+                        self.compile_with_column_shorthand_transform(right, row_var, line);
+                        self.patch_jump(end_jump);
+                    }
+                    BinOp::NullCoalesce => {
+                        self.compile_with_column_shorthand_transform(left, row_var, line);
+                        let end_jump = self.emit_jump(OpCode::JumpIfNotNull, line);
+                        self.emit_op(OpCode::Pop, line);
+                        self.compile_with_column_shorthand_transform(right, row_var, line);
+                        self.patch_jump(end_jump);
+                    }
+                    _ => {
+                        self.compile_with_column_shorthand_transform(left, row_var, line);
+                        self.compile_with_column_shorthand_transform(right, row_var, line);
+                        match op {
+                            BinOp::Add => self.emit_op(OpCode::Add, line),
+                            BinOp::Sub => self.emit_op(OpCode::Sub, line),
+                            BinOp::Mul => self.emit_op(OpCode::Mul, line),
+                            BinOp::Div => self.emit_op(OpCode::Div, line),
+                            BinOp::Mod => self.emit_op(OpCode::Mod, line),
+                            BinOp::Eq => self.emit_op(OpCode::Eq, line),
+                            BinOp::Ne => self.emit_op(OpCode::Ne, line),
+                            BinOp::Lt => self.emit_op(OpCode::Lt, line),
+                            BinOp::Le => self.emit_op(OpCode::Le, line),
+                            BinOp::Gt => self.emit_op(OpCode::Gt, line),
+                            BinOp::Ge => self.emit_op(OpCode::Ge, line),
+                            BinOp::Range => self.emit_op(OpCode::NewRange, line),
+                            BinOp::RangeInclusive => self.emit_op(OpCode::NewRangeInclusive, line),
+                            BinOp::Pipe | BinOp::And | BinOp::Or | BinOp::NullCoalesce => {
+                                // Already handled above
+                            }
+                        }
+                    }
+                }
+            }
+            ExprKind::Unary { op, expr: e } => {
+                self.compile_with_column_shorthand_transform(e, row_var, line);
+                match op {
+                    UnaryOp::Neg => self.emit_op(OpCode::Neg, line),
+                    UnaryOp::Not => self.emit_op(OpCode::Not, line),
+                }
+            }
+            ExprKind::Paren(e) => {
+                self.compile_with_column_shorthand_transform(e, row_var, line);
+            }
+            ExprKind::Field { expr: e, field } => {
+                self.compile_with_column_shorthand_transform(e, row_var, line);
+                if let Some(idx) = self.identifier_constant(&field.name, expr.span) {
+                    self.emit_op_u16(OpCode::GetField, idx, line);
+                }
+            }
+            ExprKind::Call { callee, args, trailing_closure } => {
+                // For nested calls, recursively transform
+                let total_args = args.len() + if trailing_closure.is_some() { 1 } else { 0 };
+                if let ExprKind::Field {
+                    expr: obj,
+                    field,
+                } = &callee.kind
+                {
+                    // Method call
+                    self.compile_with_column_shorthand_transform(obj, row_var, line);
+                    for arg in args {
+                        self.compile_with_column_shorthand_transform(arg.value(), row_var, line);
+                    }
+                    if let Some(tc) = trailing_closure {
+                        self.compile_with_column_shorthand_transform(tc, row_var, line);
+                    }
+                    if let Some(idx) = self.identifier_constant(&field.name, expr.span) {
+                        self.emit_op(OpCode::Invoke, line);
+                        self.emit_byte((idx & 0xFF) as u8, line);
+                        self.emit_byte((idx >> 8) as u8, line);
+                        self.emit_byte(total_args as u8, line);
+                    }
+                } else {
+                    // Regular call
+                    self.compile_with_column_shorthand_transform(callee, row_var, line);
+                    for arg in args {
+                        self.compile_with_column_shorthand_transform(arg.value(), row_var, line);
+                    }
+                    if let Some(tc) = trailing_closure {
+                        self.compile_with_column_shorthand_transform(tc, row_var, line);
+                    }
+                    self.emit_op_u8(OpCode::Call, total_args as u8, line);
+                }
+            }
+            // For expressions without column shorthand, just compile normally
+            _ => self.expression(expr),
+        }
     }
 }
 
@@ -1581,5 +2169,99 @@ mod tests {
     fn compile_function_with_while() {
         let result = compile_module("fx test() { while false { } }");
         assert!(result.is_ok());
+    }
+
+    // ===== Execution Mode Propagation Tests =====
+
+    /// Helper to get a function's execution mode from compiled module
+    fn get_function_mode(script: &BytecodeFunction, name: &str) -> Option<ExecutionMode> {
+        for constant in script.chunk.constants() {
+            if let Value::Function(func) = constant {
+                if func.name == name {
+                    return Some(func.execution_mode);
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn compile_function_default_mode() {
+        // Functions without directives should default to Interpret
+        let result = compile_module("fx add(a, b) { a + b }");
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        assert_eq!(get_function_mode(&script, "add"), Some(ExecutionMode::Interpret));
+    }
+
+    #[test]
+    fn compile_function_with_compile_directive() {
+        // #[compile] should set mode to Compile
+        let result = compile_module("#[compile]\nfx fast() { 42 }");
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        assert_eq!(get_function_mode(&script, "fast"), Some(ExecutionMode::Compile));
+    }
+
+    #[test]
+    fn compile_function_with_interpret_directive() {
+        // #[interpret] should set mode to Interpret
+        let result = compile_module("#[interpret]\nfx slow() { 42 }");
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        assert_eq!(get_function_mode(&script, "slow"), Some(ExecutionMode::Interpret));
+    }
+
+    #[test]
+    fn compile_function_with_compile_hot_directive() {
+        // #[compile(hot)] should set mode to CompileHot
+        let result = compile_module("#[compile(hot)]\nfx hot() { 42 }");
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        assert_eq!(get_function_mode(&script, "hot"), Some(ExecutionMode::CompileHot));
+    }
+
+    #[test]
+    fn compile_module_level_directive() {
+        // Module-level #![compile] should make functions default to Compile
+        let result = compile_module("#![compile]\nfx one() { 1 }\nfx two() { 2 }");
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        assert_eq!(get_function_mode(&script, "one"), Some(ExecutionMode::Compile));
+        assert_eq!(get_function_mode(&script, "two"), Some(ExecutionMode::Compile));
+    }
+
+    #[test]
+    fn compile_function_overrides_module() {
+        // Function directive should override module directive
+        let result = compile_module("#![compile]\n#[interpret]\nfx slow() { 1 }");
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        // Function overrides module
+        assert_eq!(get_function_mode(&script, "slow"), Some(ExecutionMode::Interpret));
+    }
+
+    #[test]
+    fn compile_with_interpret_all_override() {
+        // CLI --interpret-all should override all directives
+        let module = Parser::parse_module("#[compile]\nfx fast() { 42 }").expect("Parse error");
+        let compiler = Compiler::new().with_mode_override(Some(ExecutionModeOverride::InterpretAll));
+        let result = compiler.compile_module(&module);
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        // Should be Interpret despite #[compile] directive
+        assert_eq!(get_function_mode(&script, "fast"), Some(ExecutionMode::Interpret));
+    }
+
+    #[test]
+    fn compile_with_compile_all_override() {
+        // CLI --compile-all should override all directives
+        let module = Parser::parse_module("#[interpret]\nfx slow() { 42 }").expect("Parse error");
+        let compiler = Compiler::new().with_mode_override(Some(ExecutionModeOverride::CompileAll));
+        let result = compiler.compile_module(&module);
+        assert!(result.is_ok());
+        let script = result.unwrap();
+        // Should be Compile despite #[interpret] directive
+        assert_eq!(get_function_mode(&script, "slow"), Some(ExecutionMode::Compile));
     }
 }

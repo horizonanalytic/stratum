@@ -187,8 +187,9 @@ pub enum OpCode {
     NewMap,
 
     /// Create a new struct instance
-    /// Operand: u16 constant index (struct type)
-    /// Stack: field values in order
+    /// Operand 1: u16 constant index (struct type)
+    /// Operand 2: u16 field count
+    /// Stack: (field_name, field_value) pairs - push name, then value for each field
     NewStruct,
 
     // ===== Iteration =====
@@ -264,6 +265,12 @@ pub enum OpCode {
     // ===== Debugging =====
     /// Breakpoint for debugger (no-op in normal execution)
     Breakpoint,
+
+    // ===== GUI Operations =====
+    /// Create a state binding (&state.field)
+    /// Operand: u16 constant index (field path as string)
+    /// Pushes a StateBinding value onto the stack
+    StateBinding,
 }
 
 impl OpCode {
@@ -333,7 +340,8 @@ impl OpCode {
             | OpCode::NewEnumVariant
             | OpCode::MatchVariant
             | OpCode::NullSafeGetField
-            | OpCode::NullSafeGetIndex => 3,
+            | OpCode::NullSafeGetIndex
+            | OpCode::StateBinding => 3,
 
             // u16 + u8 operand (4 bytes)
             OpCode::Invoke => 4,
@@ -410,6 +418,7 @@ impl OpCode {
             OpCode::NullSafeGetIndex => "NULL_SAFE_GET_INDEX",
             OpCode::Await => "AWAIT",
             OpCode::Breakpoint => "BREAKPOINT",
+            OpCode::StateBinding => "STATE_BINDING",
         }
     }
 }
@@ -489,6 +498,7 @@ impl TryFrom<u8> for OpCode {
             60 => Ok(OpCode::NullSafeGetIndex),
             61 => Ok(OpCode::Await),
             62 => Ok(OpCode::Breakpoint),
+            63 => Ok(OpCode::StateBinding),
             _ => Err(value),
         }
     }
@@ -501,7 +511,7 @@ mod tests {
     #[test]
     fn opcode_size_consistency() {
         // Every opcode should have a valid size >= 1
-        for i in 0..=61 {
+        for i in 0..=63 {
             if let Ok(op) = OpCode::try_from(i) {
                 assert!(op.size() >= 1, "OpCode {:?} has invalid size", op);
             }
@@ -511,7 +521,7 @@ mod tests {
     #[test]
     fn opcode_roundtrip() {
         // All opcodes should round-trip through u8
-        for i in 0..=61 {
+        for i in 0..=63 {
             if let Ok(op) = OpCode::try_from(i) {
                 assert_eq!(op as u8, i, "OpCode {:?} has wrong discriminant", op);
             }

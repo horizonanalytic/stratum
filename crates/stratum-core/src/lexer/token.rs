@@ -41,6 +41,8 @@ pub enum TokenKind {
     Try,
     #[token("catch")]
     Catch,
+    #[token("throw")]
+    Throw,
     #[token("break")]
     Break,
     #[token("continue")]
@@ -149,6 +151,10 @@ pub enum TokenKind {
     Pipe,
     #[token("|>")]
     PipeGt,
+
+    /// Ampersand for state binding (&state.field)
+    #[token("&")]
+    Ampersand,
 
     #[token("?")]
     Question,
@@ -286,6 +292,7 @@ impl TokenKind {
                 | Self::Not
                 | Self::Pipe
                 | Self::PipeGt
+                | Self::Ampersand
                 | Self::Question
                 | Self::QuestionDot
                 | Self::DoubleQuestion
@@ -322,6 +329,7 @@ impl std::fmt::Display for TokenKind {
             Self::Await => write!(f, "await"),
             Self::Try => write!(f, "try"),
             Self::Catch => write!(f, "catch"),
+            Self::Throw => write!(f, "throw"),
             Self::Break => write!(f, "break"),
             Self::Continue => write!(f, "continue"),
             Self::In => write!(f, "in"),
@@ -357,6 +365,7 @@ impl std::fmt::Display for TokenKind {
             Self::Not => write!(f, "!"),
             Self::Pipe => write!(f, "|"),
             Self::PipeGt => write!(f, "|>"),
+            Self::Ampersand => write!(f, "&"),
             Self::Question => write!(f, "?"),
             Self::QuestionDot => write!(f, "?."),
             Self::DoubleQuestion => write!(f, "??"),

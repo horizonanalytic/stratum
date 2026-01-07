@@ -104,6 +104,9 @@ impl TypeInference {
             // List types
             (Type::List(elem1), Type::List(elem2)) => self.unify_impl(elem1, elem2, span),
 
+            // Future types
+            (Type::Future(inner1), Type::Future(inner2)) => self.unify_impl(inner1, inner2, span),
+
             // Map types
             (Type::Map(k1, v1), Type::Map(k2, v2)) => {
                 self.unify_impl(k1, k2, span) && self.unify_impl(v1, v2, span)
@@ -268,7 +271,9 @@ impl TypeInference {
         let ty = self.apply(ty);
         match &ty {
             Type::TypeVar(id) => *id == var,
-            Type::List(elem) | Type::Nullable(elem) => self.occurs_in(var, elem),
+            Type::List(elem) | Type::Nullable(elem) | Type::Future(elem) => {
+                self.occurs_in(var, elem)
+            }
             Type::Map(k, v) => self.occurs_in(var, k) || self.occurs_in(var, v),
             Type::Tuple(elems) => elems.iter().any(|e| self.occurs_in(var, e)),
             Type::Function { params, ret } => {
@@ -295,6 +300,7 @@ impl TypeInference {
             Type::List(elem) => Type::List(Box::new(self.apply(elem))),
             Type::Map(k, v) => Type::Map(Box::new(self.apply(k)), Box::new(self.apply(v))),
             Type::Nullable(inner) => Type::Nullable(Box::new(self.apply(inner))),
+            Type::Future(inner) => Type::Future(Box::new(self.apply(inner))),
             Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.apply(e)).collect()),
             Type::Function { params, ret } => Type::Function {
                 params: params.iter().map(|p| self.apply(p)).collect(),
@@ -348,6 +354,7 @@ impl TypeInference {
                 Box::new(self.default_type_vars(v)),
             ),
             Type::Nullable(inner) => Type::Nullable(Box::new(self.default_type_vars(inner))),
+            Type::Future(inner) => Type::Future(Box::new(self.default_type_vars(inner))),
             Type::Tuple(elems) => {
                 Type::Tuple(elems.iter().map(|e| self.default_type_vars(e)).collect())
             }

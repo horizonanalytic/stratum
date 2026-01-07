@@ -95,6 +95,15 @@ pub enum CompileErrorKind {
     /// Unsupported feature (for features not yet implemented)
     Unsupported(String),
 
+    /// Unsupported pattern in a binding position
+    UnsupportedPattern,
+
+    /// Placeholder (_) used outside of pipeline expression
+    InvalidPlaceholder,
+
+    /// Column shorthand (.column) used outside of valid context
+    InvalidColumnShorthand(String),
+
     /// Internal compiler error
     Internal(String),
 }
@@ -146,6 +155,24 @@ impl fmt::Display for CompileErrorKind {
             }
             CompileErrorKind::Unsupported(feature) => {
                 write!(f, "Unsupported feature: {feature}")
+            }
+            CompileErrorKind::UnsupportedPattern => {
+                write!(
+                    f,
+                    "Complex patterns not supported in top-level let bindings"
+                )
+            }
+            CompileErrorKind::InvalidPlaceholder => {
+                write!(
+                    f,
+                    "Placeholder '_' can only be used inside pipeline expressions (|>)"
+                )
+            }
+            CompileErrorKind::InvalidColumnShorthand(name) => {
+                write!(
+                    f,
+                    "Column shorthand '.{name}' can only be used as a function argument in DataFrame operations"
+                )
             }
             CompileErrorKind::Internal(msg) => {
                 write!(f, "Internal compiler error: {msg}")

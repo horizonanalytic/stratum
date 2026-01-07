@@ -1,0 +1,57 @@
+[package]
+name = "stratum-workshop"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Stratum Workshop - Lightweight IDE bundled with Stratum"
+
+[[bin]]
+name = "workshop"
+path = "src/main.rs"
+
+[dependencies]
+# Stratum core and GUI
+stratum-core = { path = "../stratum-core" }
+stratum-gui = { path = "../stratum-gui" }
+
+# GUI framework
+iced.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Serialization for config persistence
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+# File system operations
+dirs = "6"
+
+# Text buffer (efficient rope data structure for large files)
+ropey = "1.6"
+
+# Async runtime
+tokio.workspace = true
+
+# DateTime for timestamps
+chrono.workspace = true
+
+# Clipboard support
+arboard = "3"
+
+# Regex for parsing error locations
+regex.workspace = true
+
+# Native file dialogs
+rfd = "0.15"
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

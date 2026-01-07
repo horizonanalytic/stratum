@@ -316,6 +316,18 @@ pub enum TypeErrorKind {
         /// The method name
         method_name: String,
     },
+
+    /// Await used outside of async function
+    AwaitOutsideAsync,
+
+    /// Await on non-Future type
+    AwaitNonFuture(Type),
+
+    /// Placeholder (_) used outside of pipeline expression
+    PlaceholderOutsidePipeline,
+
+    /// Column shorthand (.column) used outside of DataFrame context
+    ColumnShorthandOutsideContext,
 }
 
 impl fmt::Display for TypeErrorKind {
@@ -488,6 +500,24 @@ impl fmt::Display for TypeErrorKind {
             }
             TypeErrorKind::MethodNotFound { ty, method_name } => {
                 write!(f, "no method `{method_name}` found for type `{ty}`")
+            }
+            TypeErrorKind::AwaitOutsideAsync => {
+                write!(f, "`await` can only be used inside async functions")
+            }
+            TypeErrorKind::AwaitNonFuture(ty) => {
+                write!(f, "cannot await `{ty}`, expected `Future<T>`")
+            }
+            TypeErrorKind::PlaceholderOutsidePipeline => {
+                write!(
+                    f,
+                    "placeholder `_` can only be used inside pipeline expressions (|>)"
+                )
+            }
+            TypeErrorKind::ColumnShorthandOutsideContext => {
+                write!(
+                    f,
+                    "column shorthand `.column` can only be used inside DataFrame operations like filter, select, etc."
+                )
             }
         }
     }

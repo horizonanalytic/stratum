@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use crate::ast::{
     BinOp, Block, CompoundOp, ElseBranch, EnumDef, EnumVariant, EnumVariantData, Expr, ExprKind,
     FieldInit, Function, Ident, ImplDef, InterfaceDef, Item, ItemKind, Literal, Module, Param,
-    Pattern, PatternKind, Stmt, StmtKind, StringPart, StructDef, TypeAnnotation, TypeKind, UnaryOp,
+    Pattern, PatternKind, Stmt, StmtKind, StringPart, StructDef, TopLevelItem, TopLevelLet,
+    TypeAnnotation, TypeKind, UnaryOp,
 };
 use crate::lexer::Span;
 
@@ -35,9 +36,13 @@ pub struct TypeChecker {
     /// Type parameters currently in scope (for generic definitions)
     /// Maps type parameter names (e.g., "T") to their corresponding type variables
     type_params_in_scope: HashMap<String, Type>,
+
+    /// Whether we are currently inside an async function
+    in_async_context: bool,
 }
 
 /// Result of type checking
+#[derive(Debug, Clone)]
 pub struct TypeCheckResult {
     /// Collected errors
     pub errors: Vec<TypeError>,
@@ -56,24 +61,135 @@ impl TypeChecker {
     /// Create a new type checker
     #[must_use]
     pub fn new() -> Self {
-        Self {
+        let mut checker = Self {
             env: super::TypeEnv::new(),
             inference: TypeInference::new(),
             errors: Vec::new(),
             type_params_in_scope: HashMap::new(),
-        }
+            in_async_context: false,
+        };
+        checker.register_builtins();
+        checker
+    }
+
+    /// Register built-in functions and types
+    fn register_builtins(&mut self) {
+        // Built-in functions that are always available
+
+        // print/println: accept any argument
+        // Using a type variable means it accepts any type
+        let any_type = self.inference.fresh_var();
+        self.env.define_var(
+            "print",
+            Type::function(vec![any_type.clone()], Type::Unit),
+            false,
+        );
+        let any_type2 = self.inference.fresh_var();
+        self.env.define_var(
+            "println",
+            Type::function(vec![any_type2], Type::Unit),
+            false,
+        );
+
+        // type_of: returns the type name as a string
+        let any_type3 = self.inference.fresh_var();
+        self.env.define_var(
+            "type_of",
+            Type::function(vec![any_type3], Type::String),
+            false,
+        );
+
+        // assert: accepts a boolean
+        self.env.define_var(
+            "assert",
+            Type::function(vec![Type::Bool], Type::Unit),
+            false,
+        );
+
+        // assert_eq: accepts two values of the same type
+        let assert_type = self.inference.fresh_var();
+        self.env.define_var(
+            "assert_eq",
+            Type::function(vec![assert_type.clone(), assert_type], Type::Unit),
+            false,
+        );
+
+        // to_string: converts any value to string
+        let any_type4 = self.inference.fresh_var();
+        self.env.define_var(
+            "to_string",
+            Type::function(vec![any_type4], Type::String),
+            false,
+        );
+
+        // parse_int: parses a string to an optional int
+        self.env.define_var(
+            "parse_int",
+            Type::function(vec![Type::String], Type::nullable(Type::Int)),
+            false,
+        );
+
+        // parse_float: parses a string to an optional float
+        self.env.define_var(
+            "parse_float",
+            Type::function(vec![Type::String], Type::nullable(Type::Float)),
+            false,
+        );
+
+        // range: creates an exclusive range from start to end
+        self.env.define_var(
+            "range",
+            Type::function(vec![Type::Int, Type::Int], Type::Range),
+            false,
+        );
+
+        // len: returns the length of strings, lists, and maps
+        let len_type = self.inference.fresh_var();
+        self.env.define_var(
+            "len",
+            Type::function(vec![len_type], Type::Int),
+            false,
+        );
+
+        // str: converts any value to string
+        let str_type = self.inference.fresh_var();
+        self.env.define_var(
+            "str",
+            Type::function(vec![str_type], Type::String),
+            false,
+        );
+
+        // int: converts a value to integer
+        let int_type = self.inference.fresh_var();
+        self.env.define_var(
+            "int",
+            Type::function(vec![int_type], Type::Int),
+            false,
+        );
+
+        // float: converts a value to float
+        let float_type = self.inference.fresh_var();
+        self.env.define_var(
+            "float",
+            Type::function(vec![float_type], Type::Float),
+            false,
+        );
     }
 
     /// Type check a complete module
     pub fn check_module(&mut self, module: &Module) -> TypeCheckResult {
-        // First pass: collect all type definitions
-        for item in &module.items {
-            self.register_item(item);
+        // First pass: collect all type definitions (functions, structs, enums, interfaces)
+        // We hoist these so they're available throughout the module
+        for tl_item in &module.top_level {
+            if let TopLevelItem::Item(item) = tl_item {
+                self.register_item(item);
+            }
         }
 
-        // Second pass: type check all items
-        for item in &module.items {
-            self.check_item(item);
+        // Second pass: type check all top-level items in order
+        // This ensures top-to-bottom evaluation for lets and statements
+        for tl_item in &module.top_level {
+            self.check_top_level_item(tl_item);
         }
 
         // Collect inference errors
@@ -83,6 +199,42 @@ impl TypeChecker {
             success: self.errors.is_empty(),
             errors: std::mem::take(&mut self.errors),
         }
+    }
+
+    /// Type check a top-level item
+    fn check_top_level_item(&mut self, tl_item: &TopLevelItem) {
+        match tl_item {
+            TopLevelItem::Item(item) => self.check_item(item),
+            TopLevelItem::Let(let_decl) => self.check_top_level_let(let_decl),
+            TopLevelItem::Statement(stmt) => {
+                // Type check the statement (currently in module-level scope)
+                self.check_stmt(stmt);
+            }
+        }
+    }
+
+    /// Type check a top-level let declaration
+    fn check_top_level_let(&mut self, let_decl: &TopLevelLet) {
+        // Get the type from the annotation or infer from value
+        let declared_type = let_decl.ty.as_ref().map(|t| self.resolve_type_annotation(t));
+        let value_type = self.check_expr(&let_decl.value);
+
+        // If there's a type annotation, ensure the value matches
+        if let Some(ref expected) = declared_type {
+            if !self.inference.unify(expected, &value_type, let_decl.value.span) {
+                self.errors.push(TypeError::new(
+                    TypeErrorKind::TypeMismatch {
+                        expected: self.inference.apply(expected),
+                        found: self.inference.apply(&value_type),
+                    },
+                    let_decl.value.span,
+                ));
+            }
+        }
+
+        // Bind the pattern to the type
+        let ty = declared_type.unwrap_or(value_type);
+        self.check_pattern(&let_decl.pattern, &ty);
     }
 
     /// Register an item's type (first pass)
@@ -295,11 +447,25 @@ impl TypeChecker {
     fn check_function(&mut self, func: &Function) {
         self.env.enter_scope();
 
-        let ret_type = func
+        // Save and set async context
+        let was_async = self.in_async_context;
+        self.in_async_context = func.is_async;
+
+        let declared_ret_type = func
             .return_type
             .as_ref()
             .map_or(Type::Unit, |t| self.resolve_type_annotation(t));
-        self.env.set_return_type(Some(ret_type.clone()));
+
+        // For async functions, the actual return type is Future<T>
+        // but the body should produce T (the wrapped type)
+        let expected_body_type = declared_ret_type.clone();
+        let actual_ret_type = if func.is_async {
+            Type::future(declared_ret_type)
+        } else {
+            declared_ret_type
+        };
+
+        self.env.set_return_type(Some(expected_body_type.clone()));
 
         for param in &func.params {
             let param_type = self.resolve_param_type(&param.ty);
@@ -308,10 +474,10 @@ impl TypeChecker {
 
         let body_type = self.check_block(&func.body);
 
-        if !self.inference.unify(&body_type, &ret_type, func.body.span) {
+        if !self.inference.unify(&body_type, &expected_body_type, func.body.span) {
             self.errors.push(TypeError::new(
                 TypeErrorKind::ReturnTypeMismatch {
-                    expected: ret_type,
+                    expected: actual_ret_type,
                     found: body_type,
                 },
                 func.body.span,
@@ -319,6 +485,7 @@ impl TypeChecker {
         }
 
         self.env.set_return_type(None);
+        self.in_async_context = was_async;
         self.env.exit_scope();
     }
 
@@ -766,6 +933,10 @@ impl TypeChecker {
             }
 
             ExprKind::Binary { left, op, right } => {
+                // Pipeline operator needs special handling for Call expressions on RHS
+                if *op == BinOp::Pipe {
+                    return self.check_pipe_expr(left, right, expr.span);
+                }
                 let left_type = self.check_expr(left);
                 let right_type = self.check_expr(right);
                 self.check_binary_op(*op, &left_type, &right_type, expr.span)
@@ -778,9 +949,19 @@ impl TypeChecker {
 
             ExprKind::Paren(inner) => self.check_expr(inner),
 
-            ExprKind::Call { callee, args } => {
+            ExprKind::Call {
+                callee,
+                args,
+                trailing_closure,
+            } => {
                 let callee_type = self.check_expr(callee);
-                let arg_types: Vec<Type> = args.iter().map(|a| self.check_expr(a)).collect();
+                let arg_types: Vec<Type> =
+                    args.iter().map(|a| self.check_expr(a.value())).collect();
+                // If there's a trailing closure, check its type too
+                if let Some(closure) = trailing_closure {
+                    let _closure_type = self.check_expr(closure);
+                    // For now, trailing closures are not checked against function signature
+                }
                 self.check_call(&callee_type, &arg_types, expr.span)
             }
 
@@ -977,9 +1158,115 @@ impl TypeChecker {
                 data,
             } => self.check_enum_variant(enum_name.as_ref(), variant, data.as_deref(), expr.span),
 
-            ExprKind::Await(inner) => self.check_expr(inner),
+            ExprKind::Await(inner) => {
+                // Validate we're in an async context
+                if !self.in_async_context {
+                    self.errors
+                        .push(TypeError::new(TypeErrorKind::AwaitOutsideAsync, expr.span));
+                    return Type::Error;
+                }
+
+                // Check the inner expression
+                let inner_type = self.check_expr(inner);
+
+                // The inner type must be a Future<T>
+                match &inner_type {
+                    Type::Future(inner_ty) => (**inner_ty).clone(),
+                    Type::Error => Type::Error,
+                    Type::TypeVar(_) => {
+                        // Create a fresh type variable for the result and constrain
+                        // the inner type to be Future<result>
+                        let result_type = Type::fresh_var();
+                        let expected_future = Type::future(result_type.clone());
+                        if self.inference.unify(&inner_type, &expected_future, expr.span) {
+                            result_type
+                        } else {
+                            self.errors.push(TypeError::new(
+                                TypeErrorKind::AwaitNonFuture(inner_type),
+                                expr.span,
+                            ));
+                            Type::Error
+                        }
+                    }
+                    _ => {
+                        self.errors.push(TypeError::new(
+                            TypeErrorKind::AwaitNonFuture(inner_type),
+                            expr.span,
+                        ));
+                        Type::Error
+                    }
+                }
+            }
 
             ExprKind::Try(inner) => self.check_expr(inner),
+
+            ExprKind::Placeholder => {
+                // Placeholder (_) should only appear inside pipeline expressions
+                // If we reach here, it means _ was used outside of a |> context
+                self.errors.push(TypeError::new(
+                    TypeErrorKind::PlaceholderOutsidePipeline,
+                    expr.span,
+                ));
+                Type::Error
+            }
+
+            ExprKind::ColumnShorthand(_) => {
+                // Column shorthand (.column_name) represents a dynamic column access
+                // Its type depends on the row context, so we use a fresh type variable
+                // The bytecode compiler will wrap expressions containing this in a lambda
+                Type::fresh_var()
+            }
+
+            ExprKind::StateBinding(inner) => {
+                // State binding (&state.field) creates a reactive binding
+                // The type is a StateBinding<T> where T is the inner expression's type
+                // For now, we just return the inner type - proper GUI type checking can come later
+                self.check_expr(inner)
+            }
+        }
+    }
+
+    /// Check a pipeline expression (a |> f or a |> f(b))
+    fn check_pipe_expr(&mut self, left: &Expr, right: &Expr, span: Span) -> Type {
+        let left_type = self.check_expr(left);
+
+        match &right.kind {
+            ExprKind::Call { callee, args, .. } => {
+                // Check the callee type
+                let callee_type = self.check_expr(callee);
+
+                // Check if any argument is a placeholder
+                let has_placeholder = args
+                    .iter()
+                    .any(|arg| matches!(arg.value().kind, ExprKind::Placeholder));
+
+                // Build the argument types
+                let arg_types: Vec<Type> = if has_placeholder {
+                    // Placeholder mode: replace placeholders with left type
+                    args.iter()
+                        .map(|arg| {
+                            if matches!(arg.value().kind, ExprKind::Placeholder) {
+                                left_type.clone()
+                            } else {
+                                self.check_expr(arg.value())
+                            }
+                        })
+                        .collect()
+                } else {
+                    // No placeholder: prepend left type to args
+                    std::iter::once(left_type.clone())
+                        .chain(args.iter().map(|arg| self.check_expr(arg.value())))
+                        .collect()
+                };
+
+                // Check the call with the constructed argument types
+                self.check_call(&callee_type, &arg_types, span)
+            }
+            _ => {
+                // Bare function reference: a |> f -> f(a)
+                let right_type = self.check_expr(right);
+                self.check_call(&right_type, &[left_type], span)
+            }
         }
     }
 
@@ -1329,10 +1616,123 @@ impl TypeChecker {
                     Type::Error
                 }
             }
+            // Built-in String methods
+            Type::String => self.check_string_method(field, span),
+            // Built-in List methods
+            Type::List(elem_type) => self.check_list_method(field, elem_type, span),
+            // Built-in Map methods
+            Type::Map(key_type, value_type) => {
+                self.check_map_method(field, key_type, value_type, span)
+            }
             Type::Error => Type::Error,
             _ => {
                 self.errors
                     .push(TypeError::no_such_field(obj.clone(), field, span));
+                Type::Error
+            }
+        }
+    }
+
+    /// Get the type of a String method (returns function type for methods)
+    fn check_string_method(&mut self, method: &str, span: Span) -> Type {
+        match method {
+            "len" | "length" => Type::function(vec![], Type::Int),
+            "is_empty" => Type::function(vec![], Type::Bool),
+            "contains" => Type::function(vec![Type::String], Type::Bool),
+            "starts_with" => Type::function(vec![Type::String], Type::Bool),
+            "ends_with" => Type::function(vec![Type::String], Type::Bool),
+            "to_upper" | "to_uppercase" => Type::function(vec![], Type::String),
+            "to_lower" | "to_lowercase" => Type::function(vec![], Type::String),
+            "trim" => Type::function(vec![], Type::String),
+            "trim_start" => Type::function(vec![], Type::String),
+            "trim_end" => Type::function(vec![], Type::String),
+            "split" => Type::function(vec![Type::String], Type::list(Type::String)),
+            "replace" => Type::function(vec![Type::String, Type::String], Type::String),
+            "repeat" => Type::function(vec![Type::Int], Type::String),
+            "substring" => Type::function(vec![Type::Int, Type::Int], Type::String),
+            "chars" => Type::function(vec![], Type::list(Type::String)),
+            "index_of" => Type::function(vec![Type::String], Type::nullable(Type::Int)),
+            _ => {
+                self.errors
+                    .push(TypeError::no_such_field(Type::String, method, span));
+                Type::Error
+            }
+        }
+    }
+
+    /// Get the type of a List method (returns function type for methods)
+    fn check_list_method(&mut self, method: &str, elem_type: &Type, span: Span) -> Type {
+        let elem = elem_type.clone();
+        match method {
+            "len" | "length" => Type::function(vec![], Type::Int),
+            "is_empty" => Type::function(vec![], Type::Bool),
+            "first" => Type::function(vec![], Type::nullable(elem.clone())),
+            "last" => Type::function(vec![], Type::nullable(elem.clone())),
+            "push" => Type::function(vec![elem.clone()], Type::Unit),
+            "pop" => Type::function(vec![], Type::nullable(elem.clone())),
+            "contains" => Type::function(vec![elem.clone()], Type::Bool),
+            "reverse" => Type::function(vec![], Type::list(elem.clone())),
+            "sort" => Type::function(vec![], Type::list(elem.clone())),
+            "join" => Type::function(vec![Type::String], Type::String),
+            "get" => Type::function(vec![Type::Int], Type::nullable(elem.clone())),
+            // Higher-order methods - use type variables for flexibility
+            "map" => {
+                let result_type = self.inference.fresh_var();
+                let mapper_type = Type::function(vec![elem.clone()], result_type.clone());
+                Type::function(vec![mapper_type], Type::list(result_type))
+            }
+            "filter" => {
+                let predicate_type = Type::function(vec![elem.clone()], Type::Bool);
+                Type::function(vec![predicate_type], Type::list(elem.clone()))
+            }
+            "reduce" => {
+                let acc_type = self.inference.fresh_var();
+                let reducer_type =
+                    Type::function(vec![acc_type.clone(), elem.clone()], acc_type.clone());
+                // reduce(reducer, initial_value) -> acc_type
+                Type::function(vec![reducer_type, acc_type.clone()], acc_type)
+            }
+            "find" => {
+                let predicate_type = Type::function(vec![elem.clone()], Type::Bool);
+                Type::function(vec![predicate_type], Type::nullable(elem.clone()))
+            }
+            _ => {
+                self.errors
+                    .push(TypeError::no_such_field(Type::list(elem), method, span));
+                Type::Error
+            }
+        }
+    }
+
+    /// Get the type of a Map method (returns function type for methods)
+    fn check_map_method(
+        &mut self,
+        method: &str,
+        key_type: &Type,
+        value_type: &Type,
+        span: Span,
+    ) -> Type {
+        let key = key_type.clone();
+        let value = value_type.clone();
+        match method {
+            "len" => Type::function(vec![], Type::Int),
+            "is_empty" => Type::function(vec![], Type::Bool),
+            "get" => Type::function(vec![key.clone()], Type::nullable(value.clone())),
+            "set" => Type::function(vec![key.clone(), value.clone()], Type::Unit),
+            "remove" => Type::function(vec![key.clone()], Type::nullable(value.clone())),
+            "contains_key" => Type::function(vec![key.clone()], Type::Bool),
+            "keys" => Type::function(vec![], Type::list(key.clone())),
+            "values" => Type::function(vec![], Type::list(value.clone())),
+            "entries" => {
+                Type::function(vec![], Type::list(Type::Tuple(vec![key.clone(), value.clone()])))
+            }
+            "clear" => Type::function(vec![], Type::Unit),
+            _ => {
+                self.errors.push(TypeError::no_such_field(
+                    Type::Map(Box::new(key), Box::new(value)),
+                    method,
+                    span,
+                ));
                 Type::Error
             }
         }
@@ -1912,6 +2312,9 @@ impl TypeChecker {
             Type::Nullable(inner) => {
                 Type::nullable(Self::substitute_type_vars(inner, old_ids, new_types))
             }
+            Type::Future(inner) => {
+                Type::future(Self::substitute_type_vars(inner, old_ids, new_types))
+            }
             Type::Tuple(elems) => Type::Tuple(
                 elems
                     .iter()
@@ -1957,7 +2360,8 @@ impl TypeChecker {
             | Type::Null
             | Type::Unit
             | Type::Never
-            | Type::Error => ty.clone(),
+            | Type::Error
+            | Type::Range => ty.clone(),
         }
     }
 }

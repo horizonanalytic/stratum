@@ -1,0 +1,117 @@
+{
+  "name": "stratum",
+  "displayName": "Stratum",
+  "description": "Language support for Stratum - a Goldilocks programming language",
+  "version": "0.1.0",
+  "publisher": "horizon-analytic-studios",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/horizon-analytic-studios/stratum"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "stratum",
+    "programming language",
+    "data",
+    "dataframe"
+  ],
+  "activationEvents": [
+    "onLanguage:stratum"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "stratum",
+        "aliases": [
+          "Stratum",
+          "stratum"
+        ],
+        "extensions": [
+          ".strat"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "stratum",
+        "scopeName": "source.stratum",
+        "path": "./syntaxes/stratum.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "stratum",
+        "path": "./snippets/stratum.json"
+      }
+    ],
+    "configuration": {
+      "title": "Stratum",
+      "properties": {
+        "stratum.server.path": {
+          "type": "string",
+          "default": "stratum",
+          "description": "Path to the Stratum executable. Defaults to 'stratum' (assumes it's in PATH)."
+        },
+        "stratum.server.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "lsp"
+          ],
+          "description": "Arguments to pass to the Stratum language server."
+        },
+        "stratum.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the Stratum language server."
+        },
+        "stratum.format.onSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Format Stratum files on save."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "stratum.restartServer",
+        "title": "Stratum: Restart Language Server"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "npm run compile && mocha out/test/**/*.test.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.55.0",
+    "mocha": "^10.2.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

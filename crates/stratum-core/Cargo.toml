@@ -25,6 +25,10 @@ sha2.workspace = true
 md-5.workspace = true
 hmac.workspace = true
 hex.workspace = true
+aes-gcm.workspace = true
+pbkdf2.workspace = true
+flate2.workspace = true
+zip.workspace = true
 uuid.workspace = true
 rand.workspace = true
 rpassword.workspace = true
@@ -38,6 +42,39 @@ r2d2.workspace = true
 r2d2_sqlite.workspace = true
 r2d2_postgres.workspace = true
 r2d2_mysql.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures-util.workspace = true
+
+# DataFrame / Arrow
+arrow.workspace = true
+arrow-schema.workspace = true
+arrow-array.workspace = true
+arrow-cast.workspace = true
+arrow-csv.workspace = true
+arrow-json.workspace = true
+parquet.workspace = true
+datafusion.workspace = true
+
+# OLAP Cube
+elasticube-core.workspace = true
+
+# JIT/AOT compilation
+cranelift-codegen.workspace = true
+cranelift-frontend.workspace = true
+cranelift-module.workspace = true
+cranelift-jit.workspace = true
+cranelift-object.workspace = true
+cranelift-native.workspace = true
+target-lexicon.workspace = true
+cc.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "data_operations"
+harness = false
 
 [lints]
 workspace = true

@@ -152,12 +152,13 @@ fn disassemble_instruction_to_string(chunk: &Chunk, offset: usize, output: &mut 
             offset + 3
         }
 
-        // u16 field name operand
+        // u16 field name/path operand
         OpCode::GetField
         | OpCode::SetField
         | OpCode::GetProperty
         | OpCode::NullSafeGetField
-        | OpCode::NullSafeGetIndex => {
+        | OpCode::NullSafeGetIndex
+        | OpCode::StateBinding => {
             let idx = chunk.read_u16(offset + 1).unwrap_or(0);
             let name = chunk.get_constant(idx);
             writeln!(
@@ -179,7 +180,7 @@ fn disassemble_instruction_to_string(chunk: &Chunk, offset: usize, output: &mut 
         }
 
         // u16 type/struct name operand
-        OpCode::NewStruct | OpCode::IsInstance | OpCode::NewEnumVariant | OpCode::MatchVariant => {
+        OpCode::IsInstance | OpCode::NewEnumVariant | OpCode::MatchVariant => {
             let idx = chunk.read_u16(offset + 1).unwrap_or(0);
             let name = chunk.get_constant(idx);
             writeln!(
@@ -191,6 +192,23 @@ fn disassemble_instruction_to_string(chunk: &Chunk, offset: usize, output: &mut 
             )
             .unwrap();
             offset + 3
+        }
+
+        // NewStruct: u16 type name index, u16 field count
+        OpCode::NewStruct => {
+            let idx = chunk.read_u16(offset + 1).unwrap_or(0);
+            let count = chunk.read_u16(offset + 3).unwrap_or(0);
+            let name = chunk.get_constant(idx);
+            writeln!(
+                output,
+                "{:16} {:4} {} (fields: {})",
+                opcode.name(),
+                idx,
+                format_constant(name),
+                count
+            )
+            .unwrap();
+            offset + 5
         }
 
         // i16 offset for iterator

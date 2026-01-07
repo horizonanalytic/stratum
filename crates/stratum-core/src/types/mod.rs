@@ -12,7 +12,7 @@ mod error;
 mod inference;
 mod narrowing;
 
-pub use checker::TypeChecker;
+pub use checker::{TypeCheckResult, TypeChecker};
 pub use env::TypeEnv;
 pub use error::{TypeError, TypeErrorKind};
 pub use inference::TypeInference;
@@ -149,6 +149,14 @@ pub enum Type {
 
     /// An error type (used to continue type checking after errors)
     Error,
+
+    /// Future type (result of async functions)
+    /// Future<T> represents an asynchronous computation that will produce a value of type T
+    Future(Box<Type>),
+
+    /// Range type for iterating over integer sequences
+    /// Range represents start..end (exclusive end)
+    Range,
 }
 
 impl Type {
@@ -182,6 +190,12 @@ impl Type {
         } else {
             Self::Nullable(Box::new(inner))
         }
+    }
+
+    /// Create a future type
+    #[must_use]
+    pub fn future(inner: Type) -> Self {
+        Self::Future(Box::new(inner))
     }
 
     /// Create a fresh type variable
@@ -246,6 +260,12 @@ impl Type {
         matches!(self, Type::Never)
     }
 
+    /// Returns true if this is a future type
+    #[must_use]
+    pub const fn is_future(&self) -> bool {
+        matches!(self, Type::Future(_))
+    }
+
     /// Get the inner type if this is nullable, otherwise return self
     #[must_use]
     pub fn unwrap_nullable(&self) -> &Type {
@@ -255,12 +275,21 @@ impl Type {
         }
     }
 
+    /// Get the inner type if this is a future, otherwise return self
+    #[must_use]
+    pub fn unwrap_future(&self) -> &Type {
+        match self {
+            Type::Future(inner) => inner,
+            other => other,
+        }
+    }
+
     /// Check if this type contains any type variables
     #[must_use]
     pub fn has_type_vars(&self) -> bool {
         match self {
             Type::TypeVar(_) => true,
-            Type::List(t) | Type::Nullable(t) => t.has_type_vars(),
+            Type::List(t) | Type::Nullable(t) | Type::Future(t) => t.has_type_vars(),
             Type::Map(k, v) => k.has_type_vars() || v.has_type_vars(),
             Type::Tuple(ts) => ts.iter().any(Type::has_type_vars),
             Type::Function { params, ret } => {
@@ -281,7 +310,7 @@ impl Type {
                     vars.push(*id);
                 }
             }
-            Type::List(t) | Type::Nullable(t) => t.collect_type_vars(vars),
+            Type::List(t) | Type::Nullable(t) | Type::Future(t) => t.collect_type_vars(vars),
             Type::Map(k, v) => {
                 k.collect_type_vars(vars);
                 v.collect_type_vars(vars);
@@ -322,6 +351,7 @@ impl fmt::Display for Type {
             Type::List(t) => write!(f, "List<{t}>"),
             Type::Map(k, v) => write!(f, "Map<{k}, {v}>"),
             Type::Nullable(t) => write!(f, "{t}?"),
+            Type::Future(t) => write!(f, "Future<{t}>"),
             Type::Tuple(ts) => {
                 write!(f, "(")?;
                 for (i, t) in ts.iter().enumerate() {
@@ -374,6 +404,7 @@ impl fmt::Display for Type {
                 }
                 Ok(())
             }
+            Type::Range => write!(f, "Range"),
         }
     }
 }
@@ -448,5 +479,21 @@ mod tests {
         assert!(Type::Float.is_numeric());
         assert!(!Type::String.is_numeric());
         assert!(!Type::Bool.is_numeric());
+    }
+
+    #[test]
+    fn test_future_type() {
+        let future_int = Type::future(Type::Int);
+        assert_eq!(future_int.to_string(), "Future<Int>");
+        assert!(future_int.is_future());
+        assert!(!Type::Int.is_future());
+        assert_eq!(*future_int.unwrap_future(), Type::Int);
+    }
+
+    #[test]
+    fn test_future_has_type_vars() {
+        TypeVarId::reset_counter();
+        assert!(!Type::future(Type::Int).has_type_vars());
+        assert!(Type::future(Type::fresh_var()).has_type_vars());
     }
 }

@@ -20,6 +20,10 @@ pub use debug::{disassemble_chunk, disassemble_instruction, trace_instruction};
 pub use error::{CompileError, CompileErrorKind, CompileResult};
 pub use opcode::OpCode;
 pub use value::{
-    BoundMethod, Closure, DbConnection, DbConnectionKind, EnumVariantInstance, Function,
-    HashableValue, NativeFunction, Range, StructInstance, Upvalue, Value,
+    BoundMethod, Closure, CoroutineState, CoroutineStatus, DbConnection, DbConnectionKind,
+    EnumVariantInstance, Function, FutureState, FutureStatus, GuiValue, HashableValue,
+    NativeFunction, Range, SavedCallFrame, SavedExceptionHandler, StructInstance,
+    TcpListenerWrapper, TcpStreamWrapper, UdpSocketWrapper,
+    WebSocketWrapper, WebSocketServerWrapper, WebSocketServerConnWrapper,
+    Upvalue, Value,
 };

@@ -2,7 +2,32 @@
 
 use crate::lexer::Span;
 
-use super::{Block, Expr, Ident, Param, Spanned, TypeAnnotation, TypeParam};
+use super::{Block, Expr, Ident, Param, Spanned, Trivia, TypeAnnotation, TypeParam};
+
+/// Execution mode for a function or module
+///
+/// Controls whether code should be interpreted, compiled, or JIT-compiled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExecutionMode {
+    /// Interpret the code using the bytecode VM (default)
+    #[default]
+    Interpret,
+    /// Compile the code to native code ahead of time
+    Compile,
+    /// Compile to native code when the function becomes "hot" (JIT)
+    CompileHot,
+}
+
+/// CLI override for execution mode
+///
+/// When set, this overrides all function-level and module-level directives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionModeOverride {
+    /// Force interpret all functions (--interpret-all)
+    InterpretAll,
+    /// Force compile all functions with JIT (--compile-all)
+    CompileAll,
+}
 
 /// An attribute on a function or other item
 /// Syntax: #[name] or #[name(args)]
@@ -47,6 +72,41 @@ impl Attribute {
             AttributeArg::NameValue { name, .. } => name.name == "should_panic",
         })
     }
+
+    /// Check if this is an interpret directive
+    #[must_use]
+    pub fn is_interpret(&self) -> bool {
+        self.name.name == "interpret"
+    }
+
+    /// Check if this is a compile directive
+    #[must_use]
+    pub fn is_compile(&self) -> bool {
+        self.name.name == "compile"
+    }
+
+    /// Check if this compile directive has the "hot" argument
+    #[must_use]
+    pub fn is_compile_hot(&self) -> bool {
+        self.is_compile() && self.args.iter().any(|arg| match arg {
+            AttributeArg::Ident(ident) => ident.name == "hot",
+            _ => false,
+        })
+    }
+
+    /// Get the execution mode specified by this attribute, if any
+    #[must_use]
+    pub fn execution_mode(&self) -> Option<ExecutionMode> {
+        if self.is_interpret() {
+            Some(ExecutionMode::Interpret)
+        } else if self.is_compile_hot() {
+            Some(ExecutionMode::CompileHot)
+        } else if self.is_compile() {
+            Some(ExecutionMode::Compile)
+        } else {
+            None
+        }
+    }
 }
 
 impl Spanned for Attribute {
@@ -67,17 +127,143 @@ pub enum AttributeArg {
 /// A complete source file / module
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
-    /// The items in this module
-    pub items: Vec<Item>,
+    /// Inner attributes (file-level directives like `#![interpret]`)
+    pub inner_attributes: Vec<Attribute>,
+    /// The top-level items in this module (functions, structs, lets, statements)
+    pub top_level: Vec<TopLevelItem>,
     /// Source location of the entire module
     pub span: Span,
+    /// Leading comments at the start of the file
+    pub trivia: Trivia,
 }
 
 impl Module {
-    /// Create a new module
+    /// Create a new module from top-level items
     #[must_use]
-    pub fn new(items: Vec<Item>, span: Span) -> Self {
-        Self { items, span }
+    pub fn new(inner_attributes: Vec<Attribute>, top_level: Vec<TopLevelItem>, span: Span) -> Self {
+        Self { inner_attributes, top_level, span, trivia: Trivia::empty() }
+    }
+
+    /// Create a new module with trivia
+    #[must_use]
+    pub fn with_trivia(inner_attributes: Vec<Attribute>, top_level: Vec<TopLevelItem>, span: Span, trivia: Trivia) -> Self {
+        Self { inner_attributes, top_level, span, trivia }
+    }
+
+    /// Create a new module from just items (for backwards compatibility)
+    #[must_use]
+    pub fn from_items(items: Vec<Item>, span: Span) -> Self {
+        let top_level = items.into_iter().map(TopLevelItem::Item).collect();
+        Self { inner_attributes: Vec::new(), top_level, span, trivia: Trivia::empty() }
+    }
+
+    /// Get all items in the module (excluding top-level lets and statements)
+    #[must_use]
+    pub fn items(&self) -> Vec<&Item> {
+        self.top_level
+            .iter()
+            .filter_map(|tl| match tl {
+                TopLevelItem::Item(item) => Some(item),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Get all top-level let declarations
+    #[must_use]
+    pub fn top_level_lets(&self) -> Vec<&TopLevelLet> {
+        self.top_level
+            .iter()
+            .filter_map(|tl| match tl {
+                TopLevelItem::Let(let_decl) => Some(let_decl),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Check if this module has any top-level statements (not lets or items)
+    #[must_use]
+    pub fn has_top_level_statements(&self) -> bool {
+        self.top_level.iter().any(|tl| matches!(tl, TopLevelItem::Statement(_)))
+    }
+
+    /// Get the default execution mode for this module from inner attributes
+    ///
+    /// Returns `None` if no execution mode directive is specified.
+    #[must_use]
+    pub fn execution_mode(&self) -> Option<ExecutionMode> {
+        self.inner_attributes
+            .iter()
+            .find_map(Attribute::execution_mode)
+    }
+}
+
+/// A top-level item in a module (preserves source order)
+#[derive(Debug, Clone, PartialEq)]
+pub enum TopLevelItem {
+    /// A definition (function, struct, enum, etc.)
+    Item(Item),
+    /// A top-level let binding
+    Let(TopLevelLet),
+    /// A top-level statement (only allowed in entry files)
+    Statement(super::Stmt),
+}
+
+impl TopLevelItem {
+    /// Get the span of this top-level item
+    #[must_use]
+    pub fn span(&self) -> Span {
+        match self {
+            TopLevelItem::Item(item) => item.span,
+            TopLevelItem::Let(let_decl) => let_decl.span,
+            TopLevelItem::Statement(stmt) => stmt.span,
+        }
+    }
+}
+
+/// A top-level let declaration
+#[derive(Debug, Clone, PartialEq)]
+pub struct TopLevelLet {
+    /// Variable name or destructuring pattern
+    pub pattern: super::Pattern,
+    /// Optional type annotation
+    pub ty: Option<super::TypeAnnotation>,
+    /// Initial value
+    pub value: super::Expr,
+    /// Source location
+    pub span: Span,
+    /// Comments associated with this let
+    pub trivia: Trivia,
+}
+
+impl TopLevelLet {
+    /// Create a new top-level let declaration
+    #[must_use]
+    pub fn new(
+        pattern: super::Pattern,
+        ty: Option<super::TypeAnnotation>,
+        value: super::Expr,
+        span: Span,
+    ) -> Self {
+        Self { pattern, ty, value, span, trivia: Trivia::empty() }
+    }
+
+    /// Create a new top-level let declaration with trivia
+    #[must_use]
+    pub fn with_trivia(
+        pattern: super::Pattern,
+        ty: Option<super::TypeAnnotation>,
+        value: super::Expr,
+        span: Span,
+        trivia: Trivia,
+    ) -> Self {
+        Self { pattern, ty, value, span, trivia }
+    }
+}
+
+impl Spanned for TopLevelLet {
+    fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -145,6 +331,8 @@ pub struct Function {
     pub attributes: Vec<Attribute>,
     /// Source location
     pub span: Span,
+    /// Comments associated with this function
+    pub trivia: Trivia,
 }
 
 impl Function {
@@ -170,6 +358,34 @@ impl Function {
             is_async,
             attributes,
             span,
+            trivia: Trivia::empty(),
+        }
+    }
+
+    /// Create a new function with trivia
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_trivia(
+        name: Ident,
+        type_params: Vec<TypeParam>,
+        params: Vec<Param>,
+        return_type: Option<TypeAnnotation>,
+        body: Block,
+        is_async: bool,
+        attributes: Vec<Attribute>,
+        span: Span,
+        trivia: Trivia,
+    ) -> Self {
+        Self {
+            name,
+            type_params,
+            params,
+            return_type,
+            body,
+            is_async,
+            attributes,
+            span,
+            trivia,
         }
     }
 
@@ -186,6 +402,38 @@ impl Function {
             .iter()
             .filter(|a| a.is_test())
             .any(Attribute::should_panic)
+    }
+
+    /// Get the execution mode specified by this function's attributes
+    ///
+    /// Returns `None` if no execution mode directive is specified on this function.
+    #[must_use]
+    pub fn execution_mode(&self) -> Option<ExecutionMode> {
+        self.attributes
+            .iter()
+            .find_map(Attribute::execution_mode)
+    }
+
+    /// Resolve the execution mode for this function, considering module defaults
+    ///
+    /// Function-level directives override module-level defaults.
+    /// If neither is specified, returns the provided default.
+    #[must_use]
+    pub fn resolve_execution_mode(
+        &self,
+        module_mode: Option<ExecutionMode>,
+        default: ExecutionMode,
+    ) -> ExecutionMode {
+        // Function directive takes precedence
+        if let Some(mode) = self.execution_mode() {
+            return mode;
+        }
+        // Then module directive
+        if let Some(mode) = module_mode {
+            return mode;
+        }
+        // Finally, use the default
+        default
     }
 }
 
@@ -206,6 +454,8 @@ pub struct StructDef {
     pub fields: Vec<StructField>,
     /// Source location
     pub span: Span,
+    /// Comments associated with this struct
+    pub trivia: Trivia,
 }
 
 impl StructDef {
@@ -222,6 +472,7 @@ impl StructDef {
             type_params,
             fields,
             span,
+            trivia: Trivia::empty(),
         }
     }
 }
@@ -275,6 +526,8 @@ pub struct EnumDef {
     pub variants: Vec<EnumVariant>,
     /// Source location
     pub span: Span,
+    /// Comments associated with this enum
+    pub trivia: Trivia,
 }
 
 impl EnumDef {
@@ -291,6 +544,7 @@ impl EnumDef {
             type_params,
             variants,
             span,
+            trivia: Trivia::empty(),
         }
     }
 }
@@ -356,6 +610,8 @@ pub struct InterfaceDef {
     pub methods: Vec<InterfaceMethod>,
     /// Source location
     pub span: Span,
+    /// Comments associated with this interface
+    pub trivia: Trivia,
 }
 
 impl InterfaceDef {
@@ -372,6 +628,7 @@ impl InterfaceDef {
             type_params,
             methods,
             span,
+            trivia: Trivia::empty(),
         }
     }
 }
@@ -445,6 +702,8 @@ pub struct ImplDef {
     pub methods: Vec<Function>,
     /// Source location
     pub span: Span,
+    /// Comments associated with this impl
+    pub trivia: Trivia,
 }
 
 impl ImplDef {
@@ -463,6 +722,7 @@ impl ImplDef {
             target,
             methods,
             span,
+            trivia: Trivia::empty(),
         }
     }
 }

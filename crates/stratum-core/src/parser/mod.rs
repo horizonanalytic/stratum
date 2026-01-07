@@ -23,11 +23,11 @@ mod error;
 pub use error::{ExpectedToken, ParseError, ParseErrorKind};
 
 use crate::ast::{
-    Attribute, AttributeArg, BinOp, Block, CatchClause, CompoundOp, ElseBranch, EnumDef,
-    EnumVariant, EnumVariantData, Expr, ExprKind, FieldInit, FieldPattern, Function, Ident,
-    ImplDef, Import, ImportItem, ImportKind, InterfaceDef, InterfaceMethod, Item, ItemKind,
+    Attribute, AttributeArg, BinOp, Block, CallArg, CatchClause, Comment, CompoundOp, ElseBranch,
+    EnumDef, EnumVariant, EnumVariantData, Expr, ExprKind, FieldInit, FieldPattern, Function,
+    Ident, ImplDef, Import, ImportItem, ImportKind, InterfaceDef, InterfaceMethod, Item, ItemKind,
     Literal, MatchArm, Module, Param, Pattern, PatternKind, Stmt, StmtKind, StringPart, StructDef,
-    StructField, TypeAnnotation, TypeKind, TypeParam, UnaryOp,
+    StructField, TopLevelItem, TopLevelLet, Trivia, TypeAnnotation, TypeKind, TypeParam, UnaryOp,
 };
 use crate::lexer::{Lexer, Span, SpannedError, Token, TokenKind};
 
@@ -38,6 +38,20 @@ pub type ParseResult<T> = Result<T, ParseError>;
 enum StmtOrExpr {
     Stmt(Stmt),
     Expr(Expr),
+}
+
+/// Result of parsing REPL input
+/// Represents what can be typed at the REPL prompt
+#[derive(Debug, Clone)]
+pub enum ReplInput {
+    /// A single expression (e.g., `1 + 2`, `foo.bar()`)
+    Expression(Expr),
+    /// A statement (e.g., `let x = 5`, `for i in range(10) { ... }`)
+    Statement(Stmt),
+    /// A function definition (e.g., `fx add(a, b) { a + b }`)
+    Function(Function),
+    /// Multiple statements (e.g., `let x = 5; let y = 6`)
+    Statements(Vec<Stmt>),
 }
 
 /// The Stratum parser
@@ -54,6 +68,8 @@ pub struct Parser {
     loop_depth: u32,
     /// Nesting depth for functions (for return validation)
     function_depth: u32,
+    /// Pending leading comments for the next AST node
+    pending_comments: Vec<Comment>,
 }
 
 impl Parser {
@@ -68,6 +84,7 @@ impl Parser {
             lex_errors,
             loop_depth: 0,
             function_depth: 0,
+            pending_comments: Vec::new(),
         }
     }
 
@@ -97,6 +114,113 @@ impl Parser {
                 parser.errors.push(e);
                 Err(parser.errors)
             }
+        }
+    }
+
+    /// Parse REPL input which can be a function, statement(s), or expression
+    ///
+    /// The parser tries in this order:
+    /// 1. Function definition (`fx ...`)
+    /// 2. Statement(s) (`let`, `for`, `while`, etc.)
+    /// 3. Expression (fallback)
+    pub fn parse_repl_input(source: &str) -> Result<ReplInput, Vec<ParseError>> {
+        let trimmed = source.trim();
+
+        // Try parsing as a function definition first
+        if trimmed.starts_with("fx ") || trimmed.starts_with("async fx ") {
+            let mut parser = Parser::new(source);
+            // Skip leading trivia
+            parser.collect_trivia();
+            // Parse function with empty attributes
+            match parser.function(Vec::new()) {
+                Ok(func) => {
+                    if parser.errors.is_empty() {
+                        return Ok(ReplInput::Function(func));
+                    }
+                }
+                Err(e) => {
+                    parser.errors.push(e);
+                }
+            }
+            // Fall through to try other parsing strategies
+        }
+
+        // Try parsing as statements
+        let mut parser = Parser::new(source);
+        let result = parser.repl_statements();
+
+        match result {
+            Ok(input) => {
+                if parser.errors.is_empty() {
+                    Ok(input)
+                } else {
+                    Err(parser.errors)
+                }
+            }
+            Err(e) => {
+                parser.errors.push(e);
+                Err(parser.errors)
+            }
+        }
+    }
+
+    /// Parse one or more REPL statements/expressions
+    fn repl_statements(&mut self) -> ParseResult<ReplInput> {
+        // Skip leading trivia (whitespace, comments)
+        self.collect_trivia();
+
+        let mut stmts = Vec::new();
+        let mut last_expr: Option<Expr> = None;
+
+        while !self.is_eof() {
+            match self.statement_or_expr() {
+                Ok(StmtOrExpr::Stmt(stmt)) => {
+                    stmts.push(stmt);
+                    last_expr = None;
+                    // Optional semicolon between statements
+                    self.eat(TokenKind::Semicolon);
+                }
+                Ok(StmtOrExpr::Expr(expr)) => {
+                    // If there's a semicolon, treat as statement
+                    if self.eat(TokenKind::Semicolon).is_some() {
+                        stmts.push(Stmt::new(StmtKind::Expr(expr), self.current().span));
+                        last_expr = None;
+                    } else {
+                        // If there's more input, treat as statement too
+                        if !self.is_eof() {
+                            stmts.push(Stmt::new(StmtKind::Expr(expr), self.current().span));
+                            last_expr = None;
+                        } else {
+                            last_expr = Some(expr);
+                        }
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        // Determine result based on what we parsed
+        if stmts.is_empty() {
+            if let Some(expr) = last_expr {
+                return Ok(ReplInput::Expression(expr));
+            }
+            // Empty input - return null expression
+            return Ok(ReplInput::Expression(Expr::new(
+                ExprKind::Literal(Literal::Null),
+                Span::new(0, 0),
+            )));
+        }
+
+        if let Some(expr) = last_expr {
+            // Multiple statements followed by expression - return as statements with trailing expr
+            // For now, add the expression as a statement too
+            stmts.push(Stmt::new(StmtKind::Expr(expr), self.current().span));
+        }
+
+        if stmts.len() == 1 {
+            Ok(ReplInput::Statement(stmts.remove(0)))
+        } else {
+            Ok(ReplInput::Statements(stmts))
         }
     }
 
@@ -137,19 +261,53 @@ impl Parser {
         self.current_kind() == TokenKind::Eof
     }
 
-    /// Advance to the next token, skipping trivia
+    /// Advance to the next token, collecting trivia
     fn advance(&mut self) -> Token {
         let token = self.current().clone();
         self.position += 1;
-        self.skip_trivia();
+        self.collect_trivia();
         token
     }
 
-    /// Skip trivia tokens (comments, newlines)
-    fn skip_trivia(&mut self) {
+    /// Collect trivia tokens (comments, newlines) into pending_comments
+    fn collect_trivia(&mut self) {
         while self.position < self.tokens.len() && self.current().kind.is_trivia() {
+            let token = &self.tokens[self.position];
+            match &token.kind {
+                TokenKind::LineComment => {
+                    self.pending_comments.push(Comment::line(
+                        token.lexeme.clone(),
+                        token.span,
+                    ));
+                }
+                TokenKind::BlockComment => {
+                    self.pending_comments.push(Comment::block(
+                        token.lexeme.clone(),
+                        token.span,
+                    ));
+                }
+                TokenKind::Newline => {
+                    // Just skip newlines - they're handled implicitly
+                }
+                _ => {}
+            }
             self.position += 1;
         }
+    }
+
+    /// Take the pending comments as a Trivia struct, clearing the pending list
+    fn take_trivia(&mut self) -> Trivia {
+        if self.pending_comments.is_empty() {
+            Trivia::empty()
+        } else {
+            Trivia::with_leading(std::mem::take(&mut self.pending_comments))
+        }
+    }
+
+    /// Clear pending comments without using them
+    #[allow(dead_code)]
+    fn clear_pending_comments(&mut self) {
+        self.pending_comments.clear();
     }
 
     /// Check if the current token matches a kind
@@ -222,13 +380,18 @@ impl Parser {
 
     /// Parse a complete module
     fn module(&mut self) -> Module {
-        self.skip_trivia();
+        // Don't collect initial trivia here - let top_level_item() handle it
+        // so doc comments go to the first item, not the module
+        let module_trivia = Trivia::empty();
         let start = self.current().span.start;
 
-        let mut items = Vec::new();
+        // Parse inner attributes (file-level directives like #![interpret])
+        let inner_attributes = self.inner_attributes();
+
+        let mut top_level = Vec::new();
         while !self.is_eof() {
-            match self.item() {
-                Ok(item) => items.push(item),
+            match self.top_level_item() {
+                Ok(tl_item) => top_level.push(tl_item),
                 Err(e) => {
                     self.error(e);
                     self.synchronize();
@@ -237,7 +400,165 @@ impl Parser {
         }
 
         let end = self.current().span.end;
-        Module::new(items, Span::new(start, end))
+        Module::with_trivia(inner_attributes, top_level, Span::new(start, end), module_trivia)
+    }
+
+    /// Parse inner attributes: #![attr] #![attr(args)]
+    ///
+    /// Inner attributes apply to the enclosing module, not to the following item.
+    fn inner_attributes(&mut self) -> Vec<Attribute> {
+        let mut attrs = Vec::new();
+        while self.is_inner_attribute_start() {
+            match self.inner_attribute() {
+                Ok(attr) => attrs.push(attr),
+                Err(e) => {
+                    self.error(e);
+                    // Skip to next line or item to recover
+                    while !self.is_eof() && !self.check(TokenKind::Hash) && !self.is_item_start() {
+                        self.advance();
+                    }
+                }
+            }
+        }
+        attrs
+    }
+
+    /// Check if we're at the start of an inner attribute: #!
+    fn is_inner_attribute_start(&self) -> bool {
+        if !self.check(TokenKind::Hash) {
+            return false;
+        }
+        // Peek to see if next token is !
+        if let Some(next) = self.peek() {
+            return next.kind == TokenKind::Not;
+        }
+        false
+    }
+
+    /// Parse a single inner attribute: #![name] or #![name(args)]
+    fn inner_attribute(&mut self) -> ParseResult<Attribute> {
+        let start = self.current().span.start;
+
+        self.expect(TokenKind::Hash)?;
+        self.expect(TokenKind::Not)?;
+        self.expect(TokenKind::LBracket)?;
+
+        let name = self.expect_ident()?;
+
+        // Optional arguments
+        let args = if self.eat(TokenKind::LParen).is_some() {
+            let args = self.attribute_args()?;
+            self.expect(TokenKind::RParen)?;
+            args
+        } else {
+            Vec::new()
+        };
+
+        let end_token = self.expect(TokenKind::RBracket)?;
+        let end = end_token.span.end;
+
+        Ok(Attribute::new(name, args, Span::new(start, end)))
+    }
+
+    /// Parse a top-level item (item, let, or statement)
+    fn top_level_item(&mut self) -> ParseResult<TopLevelItem> {
+        // Collect any leading comments before this item
+        self.collect_trivia();
+        let trivia = self.take_trivia();
+
+        // Check for `let` at top level
+        if self.check(TokenKind::Let) {
+            return self.top_level_let_with_trivia(trivia);
+        }
+
+        // Check for item keywords or attributes (which precede items)
+        if self.is_item_start() {
+            let item = self.item_with_trivia(trivia)?;
+            return Ok(TopLevelItem::Item(item));
+        }
+
+        // Otherwise, try to parse a statement (expression statement, etc.)
+        // This allows things like `println("Hello")` at the top level
+        self.top_level_statement_with_trivia(trivia)
+    }
+
+    /// Check if the current position starts an item
+    fn is_item_start(&self) -> bool {
+        matches!(
+            self.current_kind(),
+            TokenKind::Fx
+                | TokenKind::Async
+                | TokenKind::Struct
+                | TokenKind::Enum
+                | TokenKind::Interface
+                | TokenKind::Impl
+                | TokenKind::Import
+                | TokenKind::Hash  // Attribute
+        )
+    }
+
+    /// Parse a top-level let declaration with trivia
+    fn top_level_let_with_trivia(&mut self, trivia: Trivia) -> ParseResult<TopLevelItem> {
+        let start = self.current().span.start;
+        self.expect(TokenKind::Let)?;
+
+        let pattern = self.pattern()?;
+
+        // Optional type annotation
+        let ty = if self.eat(TokenKind::Colon).is_some() {
+            Some(self.type_annotation()?)
+        } else {
+            None
+        };
+
+        self.expect(TokenKind::Eq)?;
+        let value = self.expression()?;
+
+        let end = value.span.end;
+        self.eat(TokenKind::Semicolon);
+
+        Ok(TopLevelItem::Let(TopLevelLet::with_trivia(
+            pattern,
+            ty,
+            value,
+            Span::new(start, end),
+            trivia,
+        )))
+    }
+
+    /// Parse a top-level statement (expression statements, etc.) with trivia
+    fn top_level_statement_with_trivia(&mut self, trivia: Trivia) -> ParseResult<TopLevelItem> {
+        // Parse an expression
+        let expr = self.expression()?;
+        let span = expr.span;
+
+        // Check for assignment
+        if self.check(TokenKind::Eq) {
+            let mut stmt = self.assignment(expr)?;
+            stmt.trivia = trivia;
+            return Ok(TopLevelItem::Statement(stmt));
+        }
+
+        // Check for compound assignment
+        if self.check_any(&[
+            TokenKind::Plus,
+            TokenKind::Minus,
+            TokenKind::Star,
+            TokenKind::Slash,
+            TokenKind::Percent,
+        ]) {
+            if let Some(next) = self.peek() {
+                if next.kind == TokenKind::Eq {
+                    let mut stmt = self.compound_assignment(expr)?;
+                    stmt.trivia = trivia;
+                    return Ok(TopLevelItem::Statement(stmt));
+                }
+            }
+        }
+
+        // Just an expression statement
+        self.eat(TokenKind::Semicolon);
+        Ok(TopLevelItem::Statement(Stmt::with_trivia(StmtKind::Expr(expr), span, trivia)))
     }
 
     // ==================== Item Parsing ====================
@@ -339,6 +660,23 @@ impl Parser {
             .unwrap_or(start);
 
         Ok(Item::new(kind, Span::new(start, end)))
+    }
+
+    /// Parse a top-level item with trivia attached
+    fn item_with_trivia(&mut self, trivia: Trivia) -> ParseResult<Item> {
+        let mut item = self.item()?;
+        // Attach trivia to the inner item kind
+        match &mut item.kind {
+            ItemKind::Function(f) => f.trivia = trivia,
+            ItemKind::Struct(s) => s.trivia = trivia,
+            ItemKind::Enum(e) => e.trivia = trivia,
+            ItemKind::Interface(i) => i.trivia = trivia,
+            ItemKind::Impl(i) => i.trivia = trivia,
+            ItemKind::Import(_) => {
+                // Imports don't have trivia field yet - just ignore for now
+            }
+        }
+        Ok(item)
     }
 
     /// Parse a list of attributes: #[attr1] #[attr2(args)]
@@ -1117,6 +1455,10 @@ impl Parser {
                 let stmt = self.try_stmt()?;
                 Ok(StmtOrExpr::Stmt(stmt))
             }
+            TokenKind::Throw => {
+                let stmt = self.throw_stmt()?;
+                Ok(StmtOrExpr::Stmt(stmt))
+            }
             _ => {
                 let expr = self.expression()?;
                 // Check for assignment
@@ -1314,14 +1656,11 @@ impl Parser {
             ));
         }
 
-        // Optional finally
-        let finally = if self.eat(TokenKind::Ident).is_some()
-            && self
-                .tokens
-                .get(self.position.saturating_sub(1))
-                .map(|t| t.lexeme.as_str())
-                == Some("finally")
+        // Optional finally - check BEFORE consuming to avoid losing the next token
+        let finally = if self.check(TokenKind::Ident)
+            && self.current().lexeme.as_str() == "finally"
         {
+            self.advance(); // Now consume 'finally'
             Some(self.block()?)
         } else {
             None
@@ -1341,6 +1680,18 @@ impl Parser {
             },
             Span::new(start, end),
         ))
+    }
+
+    /// Parse a throw statement
+    fn throw_stmt(&mut self) -> ParseResult<Stmt> {
+        let start = self.current().span.start;
+        self.expect(TokenKind::Throw)?;
+
+        let value = self.expression()?;
+        let end = value.span.end;
+        self.eat(TokenKind::Semicolon);
+
+        Ok(Stmt::new(StmtKind::Throw(value), Span::new(start, end)))
     }
 
     /// Parse an assignment statement
@@ -1707,6 +2058,13 @@ impl Parser {
                 let span = Span::new(op_token.span.start, expr.span.end);
                 Ok(Expr::new(ExprKind::Await(Box::new(expr)), span))
             }
+            TokenKind::Ampersand => {
+                // State binding: &state.field
+                let op_token = self.advance();
+                let expr = self.prefix_expr()?;
+                let span = Span::new(op_token.span.start, expr.span.end);
+                Ok(Expr::new(ExprKind::StateBinding(Box::new(expr)), span))
+            }
             _ => self.postfix_expr(),
         }
     }
@@ -1723,6 +2081,16 @@ impl Parser {
                     self.expect(TokenKind::LParen)?;
                     let args = self.arg_list()?;
                     self.expect(TokenKind::RParen)?;
+
+                    // Check for trailing closure: func(args) { ... }
+                    let trailing_closure = if self.check(TokenKind::LBrace) {
+                        // Parse a block as a trailing closure
+                        let block = self.block_or_map()?;
+                        Some(Box::new(block))
+                    } else {
+                        None
+                    };
+
                     let end = self
                         .tokens
                         .get(self.position.saturating_sub(1))
@@ -1732,6 +2100,7 @@ impl Parser {
                         ExprKind::Call {
                             callee: Box::new(expr),
                             args,
+                            trailing_closure,
                         },
                         Span::new(start, end),
                     );
@@ -1808,13 +2177,42 @@ impl Parser {
         Ok(expr)
     }
 
-    /// Parse argument list
-    fn arg_list(&mut self) -> ParseResult<Vec<Expr>> {
+    /// Parse argument list (supports both positional and named arguments)
+    fn arg_list(&mut self) -> ParseResult<Vec<CallArg>> {
         let mut args = Vec::new();
+        let mut seen_named = false;
 
         while !self.check(TokenKind::RParen) && !self.is_eof() {
-            args.push(self.expression()?);
-            if !self.eat(TokenKind::Comma).is_some() {
+            let arg_start = self.current().span.start;
+
+            // Check if this is a named argument: `name: value`
+            // We need to look ahead: identifier followed by colon (but not ::)
+            let is_named = matches!(
+                self.current_kind(),
+                TokenKind::Ident | TokenKind::UnicodeIdent
+            ) && self.peek().map_or(false, |t| t.kind == TokenKind::Colon);
+
+            if is_named {
+                // Named argument
+                let name = self.expect_ident()?;
+                self.expect(TokenKind::Colon)?;
+                let value = self.expression()?;
+                let span = Span::new(arg_start, value.span.end);
+                args.push(CallArg::Named { name, value, span });
+                seen_named = true;
+            } else {
+                // Positional argument
+                if seen_named {
+                    return Err(ParseError::new(
+                        ParseErrorKind::PositionalAfterNamed,
+                        self.current().span,
+                    ));
+                }
+                let expr = self.expression()?;
+                args.push(CallArg::Positional(expr));
+            }
+
+            if self.eat(TokenKind::Comma).is_none() {
                 break;
             }
         }
@@ -1854,6 +2252,9 @@ impl Parser {
 
             // Lambda with pipe syntax
             TokenKind::Pipe => self.lambda_expr(),
+
+            // Column shorthand (.column_name)
+            TokenKind::Dot => self.column_shorthand(),
 
             _ => Err(ParseError::new(
                 ParseErrorKind::ExpectedExpression,
@@ -1987,8 +2388,30 @@ impl Parser {
         }
     }
 
-    /// Parse identifier, struct init, or enum variant
+    /// Parse column shorthand (.column_name)
+    /// This is syntactic sugar for accessing columns in DataFrame operations
+    fn column_shorthand(&mut self) -> ParseResult<Expr> {
+        let dot = self.expect(TokenKind::Dot)?;
+        let start = dot.span.start;
+
+        // Expect an identifier after the dot
+        let ident = self.expect_ident()?;
+        let end = ident.span.end;
+
+        Ok(Expr::new(
+            ExprKind::ColumnShorthand(ident),
+            Span::new(start, end),
+        ))
+    }
+
+    /// Parse identifier, struct init, enum variant, or pipeline placeholder
     fn ident_or_struct_init(&mut self) -> ParseResult<Expr> {
+        // Check for pipeline placeholder (_)
+        if self.current().lexeme == "_" {
+            let token = self.advance();
+            return Ok(Expr::new(ExprKind::Placeholder, token.span));
+        }
+
         let ident = self.expect_ident()?;
 
         // Check for enum variant (Enum::Variant)
@@ -2585,7 +3008,8 @@ impl Parser {
                 | TokenKind::While
                 | TokenKind::If
                 | TokenKind::Return
-                | TokenKind::Try => return,
+                | TokenKind::Try
+                | TokenKind::Throw => return,
                 _ => {}
             }
 
@@ -2609,7 +3033,8 @@ impl Parser {
                 | TokenKind::Return
                 | TokenKind::Break
                 | TokenKind::Continue
-                | TokenKind::Try => return,
+                | TokenKind::Try
+                | TokenKind::Throw => return,
                 _ => {}
             }
 
@@ -2761,23 +3186,49 @@ mod tests {
     #[test]
     fn parse_function_definition() {
         let module = parse_module("fx add(a: Int, b: Int) -> Int { a + b }").unwrap();
-        assert_eq!(module.items.len(), 1);
-        assert!(matches!(module.items[0].kind, ItemKind::Function(_)));
+        let items = module.items();
+        assert_eq!(items.len(), 1);
+        assert!(matches!(items[0].kind, ItemKind::Function(_)));
     }
 
     #[test]
     fn parse_struct_definition() {
         let module = parse_module("struct Point { x: Int, y: Int }").unwrap();
-        assert_eq!(module.items.len(), 1);
-        assert!(matches!(module.items[0].kind, ItemKind::Struct(_)));
+        let items = module.items();
+        assert_eq!(items.len(), 1);
+        assert!(matches!(items[0].kind, ItemKind::Struct(_)));
     }
 
     #[test]
     fn parse_let_statement() {
         let module = parse_module("fx main() { let x = 42 }").unwrap();
-        if let ItemKind::Function(f) = &module.items[0].kind {
+        let items = module.items();
+        if let ItemKind::Function(f) = &items[0].kind {
             assert!(!f.body.stmts.is_empty() || f.body.expr.is_some());
         }
+    }
+
+    #[test]
+    fn parse_top_level_let() {
+        let module = parse_module("let x = 42").unwrap();
+        assert_eq!(module.top_level.len(), 1);
+        assert!(matches!(module.top_level[0], TopLevelItem::Let(_)));
+    }
+
+    #[test]
+    fn parse_top_level_statement() {
+        let module = parse_module("println(\"Hello\")").unwrap();
+        assert_eq!(module.top_level.len(), 1);
+        assert!(matches!(module.top_level[0], TopLevelItem::Statement(_)));
+    }
+
+    #[test]
+    fn parse_mixed_top_level() {
+        let module = parse_module("let x = 1\nfx foo() { x }\nprintln(foo())").unwrap();
+        assert_eq!(module.top_level.len(), 3);
+        assert!(matches!(module.top_level[0], TopLevelItem::Let(_)));
+        assert!(matches!(module.top_level[1], TopLevelItem::Item(_)));
+        assert!(matches!(module.top_level[2], TopLevelItem::Statement(_)));
     }
 
     #[test]
@@ -2820,6 +3271,42 @@ mod tests {
     }
 
     #[test]
+    fn parse_pipeline_with_call() {
+        // a |> f(b) should parse as Binary { left: a, op: Pipe, right: Call { callee: f, args: [b] } }
+        let expr = parse_expr("x |> foo(1)").unwrap();
+        if let ExprKind::Binary { op, right, .. } = &expr.kind {
+            assert_eq!(*op, BinOp::Pipe);
+            assert!(matches!(right.kind, ExprKind::Call { .. }));
+        } else {
+            panic!("expected Binary expression");
+        }
+    }
+
+    #[test]
+    fn parse_placeholder() {
+        // _ should parse as Placeholder
+        let expr = parse_expr("_").unwrap();
+        assert!(matches!(expr.kind, ExprKind::Placeholder));
+    }
+
+    #[test]
+    fn parse_pipeline_with_placeholder() {
+        // a |> f(_, b) should parse correctly
+        let expr = parse_expr("x |> foo(_, 1)").unwrap();
+        if let ExprKind::Binary { op, right, .. } = &expr.kind {
+            assert_eq!(*op, BinOp::Pipe);
+            if let ExprKind::Call { args, .. } = &right.kind {
+                assert_eq!(args.len(), 2);
+                assert!(matches!(args[0].value().kind, ExprKind::Placeholder));
+            } else {
+                panic!("expected Call expression");
+            }
+        } else {
+            panic!("expected Binary expression");
+        }
+    }
+
+    #[test]
     fn parse_null_coalescing() {
         let expr = parse_expr("x ?? default").unwrap();
         assert!(matches!(
@@ -2829,5 +3316,395 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parse_column_shorthand() {
+        // .column should parse as ColumnShorthand
+        let expr = parse_expr(".amount").unwrap();
+        if let ExprKind::ColumnShorthand(ident) = &expr.kind {
+            assert_eq!(ident.name, "amount");
+        } else {
+            panic!("expected ColumnShorthand expression, got {:?}", expr.kind);
+        }
+    }
+
+    #[test]
+    fn parse_column_shorthand_in_expression() {
+        // .amount > 100 should parse with ColumnShorthand on left side
+        let expr = parse_expr(".amount > 100").unwrap();
+        if let ExprKind::Binary { left, op, right } = &expr.kind {
+            assert_eq!(*op, BinOp::Gt);
+            assert!(matches!(left.kind, ExprKind::ColumnShorthand(_)));
+            assert!(matches!(right.kind, ExprKind::Literal(Literal::Int(100))));
+        } else {
+            panic!("expected Binary expression");
+        }
+    }
+
+    #[test]
+    fn parse_column_shorthand_in_call() {
+        // filter(.amount > 100) should parse with ColumnShorthand
+        let expr = parse_expr("filter(.amount > 100)").unwrap();
+        if let ExprKind::Call { args, .. } = &expr.kind {
+            assert_eq!(args.len(), 1);
+            if let ExprKind::Binary { left, .. } = &args[0].value().kind {
+                assert!(matches!(left.kind, ExprKind::ColumnShorthand(_)));
+            } else {
+                panic!("expected Binary expression in arg");
+            }
+        } else {
+            panic!("expected Call expression");
+        }
+    }
+
+    #[test]
+    fn parse_multiple_column_shorthands() {
+        // .a + .b should have two ColumnShorthands
+        let expr = parse_expr(".a + .b").unwrap();
+        if let ExprKind::Binary { left, op, right } = &expr.kind {
+            assert_eq!(*op, BinOp::Add);
+            assert!(matches!(left.kind, ExprKind::ColumnShorthand(_)));
+            assert!(matches!(right.kind, ExprKind::ColumnShorthand(_)));
+        } else {
+            panic!("expected Binary expression");
+        }
+    }
+
+    // ==================== Directive Parsing Tests ====================
+
+    #[test]
+    fn parse_inner_attribute_interpret() {
+        let module = parse_module("#![interpret]\nfx main() {}").unwrap();
+        assert_eq!(module.inner_attributes.len(), 1);
+        assert!(module.inner_attributes[0].is_interpret());
+    }
+
+    #[test]
+    fn parse_inner_attribute_compile() {
+        let module = parse_module("#![compile]\nfx main() {}").unwrap();
+        assert_eq!(module.inner_attributes.len(), 1);
+        assert!(module.inner_attributes[0].is_compile());
+    }
+
+    #[test]
+    fn parse_multiple_inner_attributes() {
+        let module = parse_module("#![interpret]\n#![some_other]\nfx main() {}").unwrap();
+        assert_eq!(module.inner_attributes.len(), 2);
+        assert!(module.inner_attributes[0].is_interpret());
+        assert_eq!(module.inner_attributes[1].name.name, "some_other");
+    }
+
+    #[test]
+    fn parse_outer_attribute_interpret() {
+        let module = parse_module("#[interpret]\nfx main() {}").unwrap();
+        // Outer attributes go on the function, not the module
+        assert!(module.inner_attributes.is_empty());
+        let items = module.items();
+        if let ItemKind::Function(f) = &items[0].kind {
+            assert_eq!(f.attributes.len(), 1);
+            assert!(f.attributes[0].is_interpret());
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn parse_outer_attribute_compile() {
+        let module = parse_module("#[compile]\nfx foo() {}").unwrap();
+        assert!(module.inner_attributes.is_empty());
+        let items = module.items();
+        if let ItemKind::Function(f) = &items[0].kind {
+            assert!(f.attributes[0].is_compile());
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn parse_outer_attribute_compile_hot() {
+        let module = parse_module("#[compile(hot)]\nfx foo() {}").unwrap();
+        let items = module.items();
+        if let ItemKind::Function(f) = &items[0].kind {
+            assert!(f.attributes[0].is_compile_hot());
+            assert_eq!(
+                f.attributes[0].execution_mode(),
+                Some(crate::ast::ExecutionMode::CompileHot)
+            );
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn parse_mixed_inner_and_outer_attributes() {
+        let source = "#![interpret]\n#[compile]\nfx main() {}";
+        let module = parse_module(source).unwrap();
+
+        // Inner attribute on module
+        assert_eq!(module.inner_attributes.len(), 1);
+        assert!(module.inner_attributes[0].is_interpret());
+
+        // Outer attribute on function
+        let items = module.items();
+        if let ItemKind::Function(f) = &items[0].kind {
+            assert!(f.attributes[0].is_compile());
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn parse_execution_mode_resolution() {
+        let module = parse_module("#![interpret]\n#[compile]\nfx main() {}").unwrap();
+
+        let items = module.items();
+        if let ItemKind::Function(f) = &items[0].kind {
+            // Module has interpret, function has compile
+            // Function directive should take precedence
+            let resolved = f.resolve_execution_mode(
+                module.execution_mode(),
+                crate::ast::ExecutionMode::Interpret,
+            );
+            assert_eq!(resolved, crate::ast::ExecutionMode::Compile);
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn parse_execution_mode_inherits_from_module() {
+        let module = parse_module("#![compile]\nfx main() {}").unwrap();
+
+        let items = module.items();
+        if let ItemKind::Function(f) = &items[0].kind {
+            // Module has compile, function has no directive
+            // Should inherit from module
+            let resolved = f.resolve_execution_mode(
+                module.execution_mode(),
+                crate::ast::ExecutionMode::Interpret,
+            );
+            assert_eq!(resolved, crate::ast::ExecutionMode::Compile);
+        } else {
+            panic!("expected function");
+        }
+    }
+
+    #[test]
+    fn parse_no_inner_attributes() {
+        let module = parse_module("fx main() {}").unwrap();
+        assert!(module.inner_attributes.is_empty());
+        assert!(module.execution_mode().is_none());
+    }
+
+    // ==================== State Binding Syntax Tests ====================
+
+    #[test]
+    fn parse_state_binding_simple() {
+        let expr = parse_expr("&counter").unwrap();
+        if let ExprKind::StateBinding(inner) = &expr.kind {
+            assert!(matches!(inner.kind, ExprKind::Ident(_)));
+        } else {
+            panic!("expected StateBinding");
+        }
+    }
+
+    #[test]
+    fn parse_state_binding_field_access() {
+        let expr = parse_expr("&state.count").unwrap();
+        if let ExprKind::StateBinding(inner) = &expr.kind {
+            if let ExprKind::Field { .. } = &inner.kind {
+                // Good - field access inside binding
+            } else {
+                panic!("expected Field inside StateBinding");
+            }
+        } else {
+            panic!("expected StateBinding");
+        }
+    }
+
+    #[test]
+    fn parse_state_binding_nested_field() {
+        let expr = parse_expr("&app.state.user.name").unwrap();
+        if let ExprKind::StateBinding(inner) = &expr.kind {
+            // Should be a chain of field accesses
+            assert!(matches!(inner.kind, ExprKind::Field { .. }));
+        } else {
+            panic!("expected StateBinding");
+        }
+    }
+
+    // ==================== Named Arguments Tests ====================
+
+    #[test]
+    fn parse_named_argument_single() {
+        let expr = parse_expr("foo(name: \"test\")").unwrap();
+        if let ExprKind::Call { args, .. } = &expr.kind {
+            assert_eq!(args.len(), 1);
+            match &args[0] {
+                CallArg::Named { name, .. } => {
+                    assert_eq!(name.name, "name");
+                }
+                _ => panic!("expected Named argument"),
+            }
+        } else {
+            panic!("expected Call");
+        }
+    }
+
+    #[test]
+    fn parse_named_arguments_multiple() {
+        let expr = parse_expr("create_user(name: \"alice\", age: 30)").unwrap();
+        if let ExprKind::Call { args, .. } = &expr.kind {
+            assert_eq!(args.len(), 2);
+            match &args[0] {
+                CallArg::Named { name, .. } => assert_eq!(name.name, "name"),
+                _ => panic!("expected Named argument"),
+            }
+            match &args[1] {
+                CallArg::Named { name, .. } => assert_eq!(name.name, "age"),
+                _ => panic!("expected Named argument"),
+            }
+        } else {
+            panic!("expected Call");
+        }
+    }
+
+    #[test]
+    fn parse_mixed_positional_and_named() {
+        let expr = parse_expr("foo(1, 2, label: \"test\")").unwrap();
+        if let ExprKind::Call { args, .. } = &expr.kind {
+            assert_eq!(args.len(), 3);
+            assert!(matches!(args[0], CallArg::Positional(_)));
+            assert!(matches!(args[1], CallArg::Positional(_)));
+            match &args[2] {
+                CallArg::Named { name, .. } => assert_eq!(name.name, "label"),
+                _ => panic!("expected Named argument"),
+            }
+        } else {
+            panic!("expected Call");
+        }
+    }
+
+    #[test]
+    fn parse_positional_after_named_error() {
+        // Positional arguments after named should be an error
+        let result = parse_expr("foo(name: \"test\", 42)");
+        assert!(result.is_err());
+    }
+
+    // ==================== Trailing Closure Tests ====================
+
+    #[test]
+    fn parse_trailing_closure_empty_parens() {
+        // Trailing block without closure params becomes a Block, not Lambda
+        let expr = parse_expr("button() { print(\"click\") }").unwrap();
+        if let ExprKind::Call {
+            trailing_closure, ..
+        } = &expr.kind
+        {
+            assert!(trailing_closure.is_some());
+            let closure = trailing_closure.as_ref().unwrap();
+            // Block without |params| is parsed as Block, not Lambda
+            assert!(matches!(closure.kind, ExprKind::Block(_)));
+        } else {
+            panic!("expected Call with trailing closure");
+        }
+    }
+
+    #[test]
+    fn parse_trailing_closure_with_args() {
+        let expr = parse_expr("button(\"Click me\") { print(\"clicked\") }").unwrap();
+        if let ExprKind::Call {
+            args,
+            trailing_closure,
+            ..
+        } = &expr.kind
+        {
+            assert_eq!(args.len(), 1);
+            assert!(trailing_closure.is_some());
+        } else {
+            panic!("expected Call");
+        }
+    }
+
+    #[test]
+    fn parse_trailing_closure_with_params() {
+        // Method call requires () before trailing closure with params
+        // The { |x| ... } is parsed as a Block containing a Lambda expression
+        let expr = parse_expr("list.map() { |x| x * 2 }").unwrap();
+        if let ExprKind::Call {
+            trailing_closure, ..
+        } = &expr.kind
+        {
+            assert!(trailing_closure.is_some());
+            // The trailing closure is a Block containing the lambda
+            if let ExprKind::Block(block) = &trailing_closure.as_ref().unwrap().kind {
+                // Block should have a trailing expression that's a Lambda
+                assert!(block.expr.is_some());
+                if let ExprKind::Lambda { params, .. } = &block.expr.as_ref().unwrap().kind {
+                    assert_eq!(params.len(), 1);
+                    assert_eq!(params[0].name.name, "x");
+                } else {
+                    panic!("expected Lambda inside Block");
+                }
+            } else {
+                panic!("expected Block");
+            }
+        } else {
+            panic!("expected Call");
+        }
+    }
+
+    #[test]
+    fn parse_trailing_closure_no_parens() {
+        // Method call with closure params requires () for trailing closure
+        let expr = parse_expr("items.forEach() { |item| print(item) }").unwrap();
+        if let ExprKind::Call {
+            trailing_closure, ..
+        } = &expr.kind
+        {
+            assert!(trailing_closure.is_some());
+        } else {
+            panic!("expected Call with trailing closure");
+        }
+    }
+
+    #[test]
+    fn parse_combined_gui_syntax() {
+        // Test the combination typical for GUI: named args + trailing closure
+        let expr = parse_expr("Button(label: \"Submit\") { form.submit() }").unwrap();
+        if let ExprKind::Call {
+            args,
+            trailing_closure,
+            ..
+        } = &expr.kind
+        {
+            assert_eq!(args.len(), 1);
+            match &args[0] {
+                CallArg::Named { name, .. } => assert_eq!(name.name, "label"),
+                _ => panic!("expected named arg"),
+            }
+            assert!(trailing_closure.is_some());
+        } else {
+            panic!("expected Call");
+        }
+    }
+
+    #[test]
+    fn parse_state_binding_in_call() {
+        // Test using state binding as function argument
+        let expr = parse_expr("TextField(value: &state.text)").unwrap();
+        if let ExprKind::Call { args, .. } = &expr.kind {
+            assert_eq!(args.len(), 1);
+            match &args[0] {
+                CallArg::Named { value, .. } => {
+                    assert!(matches!(value.kind, ExprKind::StateBinding(_)));
+                }
+                _ => panic!("expected named arg"),
+            }
+        } else {
+            panic!("expected Call");
+        }
     }
 }

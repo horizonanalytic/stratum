@@ -2,7 +2,7 @@
 
 use crate::lexer::Span;
 
-use super::{Block, Expr, Ident, Pattern, Spanned, TypeAnnotation};
+use super::{Block, Expr, Ident, Pattern, Spanned, Trivia, TypeAnnotation};
 
 /// A statement with source location
 #[derive(Debug, Clone, PartialEq)]
@@ -11,13 +11,21 @@ pub struct Stmt {
     pub kind: StmtKind,
     /// Source location
     pub span: Span,
+    /// Comments associated with this statement
+    pub trivia: Trivia,
 }
 
 impl Stmt {
     /// Create a new statement
     #[must_use]
     pub fn new(kind: StmtKind, span: Span) -> Self {
-        Self { kind, span }
+        Self { kind, span, trivia: Trivia::empty() }
+    }
+
+    /// Create a new statement with trivia
+    #[must_use]
+    pub fn with_trivia(kind: StmtKind, span: Span, trivia: Trivia) -> Self {
+        Self { kind, span, trivia }
     }
 
     /// Create an expression statement

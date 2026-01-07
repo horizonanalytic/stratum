@@ -1,0 +1,118 @@
+// Sample Stratum file for testing VS Code extension
+/// This is a documentation comment
+
+import std::io
+
+// Struct definition
+struct Point {
+    x: Int,
+    y: Int
+}
+
+// Enum definition
+enum Option<T> {
+    Some(T),
+    None
+}
+
+// Interface definition
+interface Printable {
+    fx print()
+}
+
+// Implementation
+impl Point {
+    fx new(x: Int, y: Int) -> Point {
+        Point { x: x, y: y }
+    }
+
+    fx distance(other: Point) -> Float {
+        let dx = other.x - self.x
+        let dy = other.y - self.y
+        sqrt(dx * dx + dy * dy)
+    }
+}
+
+// Function with various features
+fx main() {
+    // Variables
+    let name = "Stratum"
+    let count: Int = 42
+    let nullable: String? = null
+
+    // Numbers
+    let decimal = 1_000_000
+    let hex = 0xFF
+    let binary = 0b1010
+    let octal = 0o777
+    let float = 3.14159
+    let scientific = 1.5e-10
+
+    // String interpolation
+    let greeting = "Hello, {name}! Count is {count}."
+
+    // Operators
+    let result = 10 + 20 * 3 / 2 - 1
+    let comparison = result > 50 && result < 100
+    let nullish = nullable ?? "default"
+
+    // Control flow
+    if comparison {
+        println("In range")
+    } else {
+        println("Out of range")
+    }
+
+    // Pattern matching
+    let value = match count {
+        0 => "zero",
+        1..=10 => "small",
+        _ => "large"
+    }
+
+    // Loops
+    for i in 0..10 {
+        println("{i}")
+    }
+
+    while count > 0 {
+        count = count - 1
+    }
+
+    // Closures
+    let double = |x: Int| -> Int { x * 2 }
+    let nums = [1, 2, 3, 4, 5]
+    let doubled = nums.map(|x| { x * 2 })
+
+    // Pipeline operator
+    let data = [1, 2, 3, 4, 5]
+        |> filter(|x| { x > 2 })
+        |> map(|x| { x * 10 })
+
+    // Error handling
+    try {
+        risky_operation()
+    } catch {
+        println("Error occurred")
+    }
+
+    // Optional chaining
+    let field = obj?.nested?.field
+}
+
+// Async function
+async fx fetch_data(url: String) -> String {
+    let response = await http::get(url)
+    response.body
+}
+
+// Test attribute
+#[test]
+fx test_addition() {
+    assert_eq(2 + 2, 4)
+}
+
+#[test(should_panic)]
+fx test_panic() {
+    throw "This should panic"
+}

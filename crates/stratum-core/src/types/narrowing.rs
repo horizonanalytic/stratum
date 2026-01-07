@@ -181,7 +181,8 @@ mod tests {
         // Wrap in a function to make it valid syntax
         let full = format!("fx test() {{ {source} }}");
         let module = Parser::parse_module(&full).expect("parse failed");
-        if let crate::ast::ItemKind::Function(f) = &module.items[0].kind {
+        let items = module.items();
+        if let crate::ast::ItemKind::Function(f) = &items[0].kind {
             if let Some(expr) = &f.body.expr {
                 return (**expr).clone();
             }

@@ -95,6 +95,9 @@ pub enum ParseErrorKind {
 
     #[error("return outside of function")]
     ReturnOutsideFunction,
+
+    #[error("positional argument after named argument")]
+    PositionalAfterNamed,
 }
 
 /// What token was expected

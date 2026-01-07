@@ -1,12 +1,22 @@
 //! REPL (Read-Eval-Print Loop) for Stratum
 //!
-//! Provides an interactive environment for evaluating Stratum expressions.
+//! Provides an interactive environment for evaluating Stratum code.
+//!
+//! Supports:
+//! - Expressions: `1 + 2`, `foo.bar()`
+//! - Let statements: `let x = 5`
+//! - Function definitions: `fx add(a, b) { a + b }`
+//! - Multiple statements: `let x = 5; let y = 6`
+//! - Control flow: `for`, `while`, `if`
 
 use anyhow::Result;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
 use rustyline::{DefaultEditor, Editor};
+use std::collections::HashSet;
+use std::path::Path;
 use stratum_core::bytecode::Value;
+use stratum_core::parser::ReplInput;
 use stratum_core::{Compiler, Parser, VM};
 
 /// REPL prompt shown at the start of each line
@@ -28,8 +38,14 @@ enum CommandResult {
 
 /// The Stratum REPL
 pub struct Repl {
+    /// The VM instance that persists across inputs
     vm: VM,
+    /// Line editor with history support
     editor: Editor<(), DefaultHistory>,
+    /// Track user-defined function names for :funcs command
+    user_functions: HashSet<String>,
+    /// Track user-defined variable names for :vars command
+    user_variables: HashSet<String>,
 }
 
 impl Repl {
@@ -44,7 +60,20 @@ impl Repl {
             let _ = editor.load_history(&history_path);
         }
 
-        Ok(Self { vm, editor })
+        Ok(Self {
+            vm,
+            editor,
+            user_functions: HashSet::new(),
+            user_variables: HashSet::new(),
+        })
+    }
+
+    /// Reset the REPL state (creates new VM, clears defined functions/variables)
+    fn reset(&mut self) {
+        self.vm = VM::new();
+        self.user_functions.clear();
+        self.user_variables.clear();
+        println!("REPL state has been reset.");
     }
 
     /// Run the REPL loop
@@ -123,7 +152,7 @@ impl Repl {
     }
 
     /// Handle REPL commands (starting with :)
-    fn handle_command(&self, input: &str) -> CommandResult {
+    fn handle_command(&mut self, input: &str) -> CommandResult {
         let trimmed = input.trim();
 
         if !trimmed.starts_with(':') {
@@ -156,8 +185,27 @@ impl Repl {
                 CommandResult::Handled
             }
 
-            "reset" => {
-                println!("Note: :reset creates a new VM instance. Use :quit and restart for now.");
+            "vars" | "v" => {
+                self.show_vars();
+                CommandResult::Handled
+            }
+
+            "funcs" | "f" => {
+                self.show_funcs();
+                CommandResult::Handled
+            }
+
+            "reset" | "r" => {
+                self.reset();
+                CommandResult::Handled
+            }
+
+            "load" | "l" => {
+                if args.is_empty() {
+                    println!("Usage: :load <file>");
+                } else {
+                    self.load_file(args);
+                }
                 CommandResult::Handled
             }
 
@@ -166,6 +214,93 @@ impl Repl {
                 println!("Type :help for available commands");
                 CommandResult::Handled
             }
+        }
+    }
+
+    /// Show all user-defined variables and their values
+    fn show_vars(&self) {
+        if self.user_variables.is_empty() {
+            println!("No user-defined variables.");
+            return;
+        }
+
+        println!("User-defined variables:");
+        for name in &self.user_variables {
+            if let Some(value) = self.vm.globals().get(name) {
+                println!("  {name} = {}", pretty_print(value));
+            }
+        }
+    }
+
+    /// Show all user-defined functions
+    fn show_funcs(&self) {
+        if self.user_functions.is_empty() {
+            println!("No user-defined functions.");
+            return;
+        }
+
+        println!("User-defined functions:");
+        for name in &self.user_functions {
+            if let Some(value) = self.vm.globals().get(name) {
+                if let Value::Function(func) = value {
+                    let params = if func.arity == 0 {
+                        String::new()
+                    } else {
+                        (0..func.arity).map(|i| format!("arg{i}")).collect::<Vec<_>>().join(", ")
+                    };
+                    println!("  fx {name}({params})");
+                } else {
+                    println!("  {name}");
+                }
+            }
+        }
+    }
+
+    /// Load and execute a Stratum file
+    fn load_file(&mut self, path: &str) {
+        let path = Path::new(path.trim());
+
+        if !path.exists() {
+            eprintln!("File not found: {}", path.display());
+            return;
+        }
+
+        match std::fs::read_to_string(path) {
+            Ok(source) => {
+                println!("Loading {}...", path.display());
+                // Parse as a module to handle functions and top-level items
+                match Parser::parse_module(&source) {
+                    Ok(module) => {
+                        match Compiler::new().compile_module(&module) {
+                            Ok(function) => {
+                                match self.vm.run(function) {
+                                    Ok(_) => {
+                                        // Track any functions defined in the file
+                                        for item in module.items() {
+                                            if let stratum_core::ast::ItemKind::Function(func) = &item.kind {
+                                                self.user_functions.insert(func.name.name.clone());
+                                            }
+                                        }
+                                        println!("File loaded successfully.");
+                                    }
+                                    Err(e) => eprintln!("Runtime error: {e}"),
+                                }
+                            }
+                            Err(errors) => {
+                                for e in errors {
+                                    eprintln!("Compile error: {e}");
+                                }
+                            }
+                        }
+                    }
+                    Err(errors) => {
+                        for e in errors {
+                            eprintln!("Parse error: {e}");
+                        }
+                    }
+                }
+            }
+            Err(e) => eprintln!("Error reading file: {e}"),
         }
     }
 
@@ -189,8 +324,8 @@ impl Repl {
 
     /// Evaluate a string of Stratum code
     fn eval(&mut self, input: &str) -> Result<Value, String> {
-        // First, try parsing as an expression
-        let expr = Parser::parse_expression(input).map_err(|errors| {
+        // Parse the input - supports expressions, statements, and function definitions
+        let repl_input = Parser::parse_repl_input(input).map_err(|errors| {
             errors
                 .iter()
                 .map(|e| format!("Parse error: {e}"))
@@ -198,9 +333,12 @@ impl Repl {
                 .join("\n")
         })?;
 
-        // Compile the expression
+        // Track defined functions and variables
+        self.track_definitions(&repl_input);
+
+        // Compile the REPL input
         let function = Compiler::new()
-            .compile_expression(&expr)
+            .compile_repl_input(&repl_input)
             .map_err(|errors| {
                 errors
                     .iter()
@@ -211,6 +349,38 @@ impl Repl {
 
         // Run in the VM
         self.vm.run(function).map_err(|e| format!("Runtime error: {e}"))
+    }
+
+    /// Track user-defined functions and variables from REPL input
+    fn track_definitions(&mut self, input: &ReplInput) {
+        match input {
+            ReplInput::Function(func) => {
+                self.user_functions.insert(func.name.name.clone());
+            }
+            ReplInput::Statement(stmt) => {
+                self.track_statement_definitions(stmt);
+            }
+            ReplInput::Statements(stmts) => {
+                for stmt in stmts {
+                    self.track_statement_definitions(stmt);
+                }
+            }
+            ReplInput::Expression(_) => {
+                // Expressions don't define new variables at the top level
+            }
+        }
+    }
+
+    /// Track variable definitions from a statement
+    fn track_statement_definitions(&mut self, stmt: &stratum_core::ast::Stmt) {
+        use stratum_core::ast::{PatternKind, StmtKind};
+
+        if let StmtKind::Let { pattern, .. } = &stmt.kind {
+            // Extract variable name from pattern
+            if let PatternKind::Ident(ident) = &pattern.kind {
+                self.user_variables.insert(ident.name.clone());
+            }
+        }
     }
 
     /// Show the type of an expression without evaluating it
@@ -383,14 +553,24 @@ fn print_help() {
     println!(
         r#"
 Stratum REPL Commands:
-  :help, :h, :?    Show this help message
-  :quit, :q        Exit the REPL
-  :clear, :cls     Clear the screen
-  :type <expr>     Check if an expression is valid
+  :help, :h, :?     Show this help message
+  :quit, :q         Exit the REPL
+  :clear, :cls      Clear the screen
+  :type <expr>      Check if an expression is valid
+  :vars, :v         Show all user-defined variables
+  :funcs, :f        Show all user-defined functions
+  :reset, :r        Reset REPL state (clear variables and functions)
+  :load <file>, :l  Load and execute a Stratum file
+
+Supported Input:
+  - Expressions:    1 + 2, foo.bar(), [1,2,3].map(|x| x*2)
+  - Let statements: let x = 5
+  - Functions:      fx add(a, b) {{ a + b }}
+  - Control flow:   for i in range(10) {{ println(i) }}
+  - Multiple:       let x = 5; let y = 6; x + y
 
 Tips:
-  - Variables persist across inputs
-  - Use blocks for multiple statements: {{ let x = 5; x + 1 }}
+  - Variables and functions persist across inputs
   - Press Ctrl+C to cancel current input
   - Press Ctrl+D to exit
   - Use up/down arrows for history
@@ -398,8 +578,12 @@ Tips:
 Examples:
   >>> 1 + 2 * 3
   7
-  >>> {{ let x = 5; x * 2 }}
+  >>> let x = 5
+  >>> x * 2
   10
+  >>> fx double(n) {{ n * 2 }}
+  >>> double(21)
+  42
   >>> [1, 2, 3].map(|n| n * 2)
   [2, 4, 6]
 "#
@@ -462,5 +646,137 @@ mod tests {
 
         let s = Value::String(std::rc::Rc::new("hello".to_string()));
         assert_eq!(pretty_print(&s), "\"hello\"");
+    }
+
+    // Tests for REPL input parsing
+    #[test]
+    fn test_parse_repl_expression() {
+        let input = Parser::parse_repl_input("1 + 2 * 3");
+        assert!(input.is_ok());
+        assert!(matches!(input.unwrap(), ReplInput::Expression(_)));
+    }
+
+    #[test]
+    fn test_parse_repl_let_statement() {
+        let input = Parser::parse_repl_input("let x = 5");
+        assert!(input.is_ok());
+        assert!(matches!(input.unwrap(), ReplInput::Statement(_)));
+    }
+
+    #[test]
+    fn test_parse_repl_function() {
+        let input = Parser::parse_repl_input("fx add(a, b) { a + b }");
+        assert!(input.is_ok());
+        assert!(matches!(input.unwrap(), ReplInput::Function(_)));
+    }
+
+    #[test]
+    fn test_parse_repl_async_function() {
+        let input = Parser::parse_repl_input("async fx fetch() { 42 }");
+        assert!(input.is_ok());
+        assert!(matches!(input.unwrap(), ReplInput::Function(_)));
+    }
+
+    #[test]
+    fn test_parse_repl_multiple_statements() {
+        let input = Parser::parse_repl_input("let x = 5; let y = 6");
+        assert!(input.is_ok());
+        assert!(matches!(input.unwrap(), ReplInput::Statements(_)));
+    }
+
+    #[test]
+    fn test_parse_repl_for_loop() {
+        // Use a simpler for loop syntax that doesn't require calling a function
+        let input = Parser::parse_repl_input("for i in [1, 2, 3] { i }");
+        assert!(input.is_ok(), "Failed to parse for loop: {:?}", input.err());
+        assert!(matches!(input.unwrap(), ReplInput::Statement(_)));
+    }
+
+    #[test]
+    fn test_parse_repl_while_loop() {
+        let input = Parser::parse_repl_input("while true { break }");
+        assert!(input.is_ok());
+        assert!(matches!(input.unwrap(), ReplInput::Statement(_)));
+    }
+
+    // Tests for REPL evaluation
+    #[test]
+    fn test_repl_eval_expression() {
+        let mut repl = Repl::new().unwrap();
+        let result = repl.eval("1 + 2 * 3");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Int(7));
+    }
+
+    #[test]
+    fn test_repl_eval_let_and_use() {
+        let mut repl = Repl::new().unwrap();
+
+        // Define a variable
+        let result = repl.eval("let x = 42");
+        assert!(result.is_ok());
+
+        // Use the variable
+        let result = repl.eval("x * 2");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Int(84));
+    }
+
+    #[test]
+    fn test_repl_eval_function_def_and_call() {
+        let mut repl = Repl::new().unwrap();
+
+        // Define a function
+        let result = repl.eval("fx double(n) { n * 2 }");
+        assert!(result.is_ok());
+
+        // Call the function
+        let result = repl.eval("double(21)");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Int(42));
+    }
+
+    #[test]
+    fn test_repl_tracking_variables() {
+        let mut repl = Repl::new().unwrap();
+
+        assert!(repl.user_variables.is_empty());
+
+        repl.eval("let x = 5").unwrap();
+        assert!(repl.user_variables.contains("x"));
+
+        repl.eval("let y = 10").unwrap();
+        assert!(repl.user_variables.contains("y"));
+    }
+
+    #[test]
+    fn test_repl_tracking_functions() {
+        let mut repl = Repl::new().unwrap();
+
+        assert!(repl.user_functions.is_empty());
+
+        repl.eval("fx add(a, b) { a + b }").unwrap();
+        assert!(repl.user_functions.contains("add"));
+
+        repl.eval("fx mul(a, b) { a * b }").unwrap();
+        assert!(repl.user_functions.contains("mul"));
+    }
+
+    #[test]
+    fn test_repl_reset() {
+        let mut repl = Repl::new().unwrap();
+
+        // Add some state
+        repl.eval("let x = 5").unwrap();
+        repl.eval("fx foo() { 1 }").unwrap();
+        assert!(!repl.user_variables.is_empty());
+        assert!(!repl.user_functions.is_empty());
+
+        // Reset
+        repl.reset();
+
+        // State should be cleared
+        assert!(repl.user_variables.is_empty());
+        assert!(repl.user_functions.is_empty());
     }
 }

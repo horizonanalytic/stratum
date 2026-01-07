@@ -105,7 +105,7 @@ pub struct TestCase {
 pub fn discover_tests(module: &Module) -> Vec<TestCase> {
     let mut tests = Vec::new();
 
-    for item in &module.items {
+    for item in module.items() {
         if let crate::ast::ItemKind::Function(func) = &item.kind {
             if func.is_test() {
                 tests.push(TestCase {

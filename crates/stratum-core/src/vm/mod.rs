@@ -3,19 +3,33 @@
 //! This module provides a stack-based bytecode interpreter that executes
 //! compiled Stratum code.
 
+mod debug;
 mod error;
+mod executor;
 mod natives;
+mod output;
 
+pub use debug::{
+    Breakpoint, DebugAction, DebugContext, DebugLocation, DebugStackFrame, DebugState,
+    DebugStepResult, DebugVariable, PauseReason,
+};
 pub use error::{RuntimeError, RuntimeErrorKind, RuntimeResult, StackFrame};
+pub use executor::{AsyncExecutor, CoroutineResult};
+pub use output::{with_output_capture, OutputCapture};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::ast::ExecutionMode;
+use crate::gc::CycleCollector;
 use crate::bytecode::{
-    Chunk, Closure, EnumVariantInstance, Function, HashableValue, NativeFunction, OpCode, Range,
+    Chunk, Closure, CoroutineState, EnumVariantInstance, Function, FutureStatus,
+    HashableValue, NativeFunction, OpCode, Range, SavedCallFrame, SavedExceptionHandler,
     StructInstance, Upvalue, Value,
 };
+use crate::data::{AggSpec, DataFrame, GroupedDataFrame, Series};
+use crate::jit::{call_jit_function, CompiledFunction, JitCompiler, JitContext};
 
 /// Maximum call stack depth
 const MAX_FRAMES: usize = 256;
@@ -68,6 +82,9 @@ struct ExceptionHandler {
     finally_ip: usize,
 }
 
+/// Default threshold for hot path detection (number of calls before JIT compilation)
+const DEFAULT_HOT_THRESHOLD: usize = 1000;
+
 /// The Stratum Virtual Machine
 pub struct VM {
     /// Value stack
@@ -87,6 +104,33 @@ pub struct VM {
 
     /// Current exception being propagated (if any)
     current_exception: Option<Value>,
+
+    /// Suspended coroutine (set when awaiting a pending future)
+    suspended_coroutine: Option<Value>,
+
+    /// JIT compiler (lazily initialized when first needed)
+    jit_compiler: Option<JitCompiler>,
+
+    /// JIT context for caching compiled functions
+    jit_context: JitContext,
+
+    /// Whether JIT compilation is enabled
+    jit_enabled: bool,
+
+    /// Call counts per function for hot path detection (keyed by function pointer)
+    call_counts: HashMap<*const Function, usize>,
+
+    /// Threshold for triggering JIT compilation of hot functions
+    hot_threshold: usize,
+
+    /// Debug context for breakpoints and stepping
+    debug_context: DebugContext,
+
+    /// Current source file being executed (for debug location tracking)
+    current_source: Option<std::path::PathBuf>,
+
+    /// Cycle collector for detecting and breaking reference cycles
+    gc: CycleCollector,
 }
 
 impl Default for VM {
@@ -106,6 +150,15 @@ impl VM {
             open_upvalues: Vec::new(),
             handlers: Vec::new(),
             current_exception: None,
+            suspended_coroutine: None,
+            jit_compiler: None,
+            jit_context: JitContext::new(),
+            jit_enabled: true, // JIT enabled by default
+            call_counts: HashMap::new(),
+            hot_threshold: DEFAULT_HOT_THRESHOLD,
+            debug_context: DebugContext::new(),
+            current_source: None,
+            gc: CycleCollector::new(),
         };
 
         // Register built-in functions
@@ -114,28 +167,104 @@ impl VM {
         vm
     }
 
+    /// Create a new VM instance with JIT disabled
+    #[must_use]
+    pub fn new_without_jit() -> Self {
+        let mut vm = Self::new();
+        vm.jit_enabled = false;
+        vm
+    }
+
+    /// Enable or disable JIT compilation
+    pub fn set_jit_enabled(&mut self, enabled: bool) {
+        self.jit_enabled = enabled;
+    }
+
+    /// Check if JIT compilation is enabled
+    #[must_use]
+    pub fn is_jit_enabled(&self) -> bool {
+        self.jit_enabled
+    }
+
+    /// Set the hot path detection threshold
+    ///
+    /// Functions marked with `#[compile(hot)]` will be JIT-compiled after
+    /// being called this many times.
+    pub fn set_hot_threshold(&mut self, threshold: usize) {
+        self.hot_threshold = threshold;
+    }
+
+    /// Get the current hot path detection threshold
+    #[must_use]
+    pub fn get_hot_threshold(&self) -> usize {
+        self.hot_threshold
+    }
+
+    /// Get or create the JIT compiler (lazy initialization)
+    fn get_jit_compiler(&mut self) -> &mut JitCompiler {
+        if self.jit_compiler.is_none() {
+            self.jit_compiler = Some(JitCompiler::new());
+        }
+        self.jit_compiler.as_mut().unwrap()
+    }
+
+    /// Compile a function with JIT and cache it
+    fn jit_compile_function(&mut self, function: &Function) -> Result<CompiledFunction, String> {
+        let name = function.name.clone();
+        let arity = function.arity;
+
+        // Check if already compiled
+        if let Some(compiled) = self.jit_context.get(&name) {
+            return Ok(compiled.clone());
+        }
+
+        // Compile the function
+        let compiler = self.get_jit_compiler();
+        match compiler.compile_function(function) {
+            Ok(ptr) => {
+                let compiled = CompiledFunction {
+                    ptr,
+                    arity,
+                    name: name.clone(),
+                };
+                self.jit_context.register(name, ptr, arity);
+                Ok(compiled)
+            }
+            Err(e) => Err(format!("JIT compilation failed: {}", e)),
+        }
+    }
+
     /// Register native/built-in functions
     fn register_natives(&mut self) {
-        // Print function
+        // Print function (without newline)
         self.define_native("print", -1, |args| {
+            let mut output = String::new();
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
-                    print!(" ");
+                    output.push(' ');
                 }
-                print!("{arg}");
+                output.push_str(&format!("{arg}"));
+            }
+            // Try to capture output, fall back to stdout
+            if !output::capture_print(&output) {
+                print!("{output}");
             }
             Ok(Value::Null)
         });
 
-        // Println function
+        // Println function (with newline)
         self.define_native("println", -1, |args| {
+            let mut output = String::new();
             for (i, arg) in args.iter().enumerate() {
                 if i > 0 {
-                    print!(" ");
+                    output.push(' ');
                 }
-                print!("{arg}");
+                output.push_str(&format!("{arg}"));
             }
-            println!();
+            // Try to capture output, fall back to stdout
+            if !output::capture_output(&output) {
+                println!("{output}");
+            }
             Ok(Value::Null)
         });
 
@@ -213,6 +342,1328 @@ impl VM {
             Ok(Value::Range(Rc::new(Range::exclusive(start, end))))
         });
 
+        // DataFrame operations for pipeline usage
+        self.define_native("select", -1, |args| {
+            if args.is_empty() {
+                return Err("select requires a DataFrame as the first argument".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "select expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Collect column names from remaining arguments
+            let col_names: Result<Vec<&str>, String> = args[1..]
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => Ok(s.as_str()),
+                    other => Err(format!(
+                        "select column names must be strings, got {}",
+                        other.type_name()
+                    )),
+                })
+                .collect();
+
+            let col_names = col_names?;
+            let result = df.select(&col_names).map_err(|e| e.to_string())?;
+            Ok(Value::DataFrame(std::sync::Arc::new(result)))
+        });
+
+        // group_by function for pipeline usage: df |> group_by(.col1, .col2)
+        self.define_native("group_by", -1, |args| {
+            if args.is_empty() {
+                return Err("group_by requires a DataFrame as the first argument".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df.clone(),
+                other => {
+                    return Err(format!(
+                        "group_by expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Collect column names from remaining arguments
+            let col_names: Result<Vec<String>, String> = args[1..]
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => Ok((**s).clone()),
+                    other => Err(format!(
+                        "group_by column names must be strings, got {}",
+                        other.type_name()
+                    )),
+                })
+                .collect();
+
+            let col_names = col_names?;
+            if col_names.is_empty() {
+                return Err("group_by requires at least one column name".to_string());
+            }
+
+            let grouped = GroupedDataFrame::new(df, col_names).map_err(|e| e.to_string())?;
+            Ok(Value::GroupedDataFrame(std::sync::Arc::new(grouped)))
+        });
+
+        // Aggregation functions for pipeline usage: grouped |> sum("col", "output")
+        self.define_native("sum", -1, |args| {
+            native_grouped_agg(args, "sum", |gdf, col, out| gdf.sum(col, out))
+        });
+
+        self.define_native("mean", -1, |args| {
+            native_grouped_agg(args, "mean", |gdf, col, out| gdf.mean(col, out))
+        });
+
+        self.define_native("avg", -1, |args| {
+            native_grouped_agg(args, "avg", |gdf, col, out| gdf.mean(col, out))
+        });
+
+        self.define_native("min", -1, |args| {
+            native_grouped_agg(args, "min", |gdf, col, out| gdf.min(col, out))
+        });
+
+        self.define_native("max", -1, |args| {
+            native_grouped_agg(args, "max", |gdf, col, out| gdf.max(col, out))
+        });
+
+        self.define_native("count", -1, |args| {
+            if args.is_empty() {
+                return Err("count requires a GroupedDataFrame as the first argument".to_string());
+            }
+            let gdf = match &args[0] {
+                Value::GroupedDataFrame(gdf) => gdf,
+                other => return Err(format!("count expects GroupedDataFrame, got {}", other.type_name())),
+            };
+            let output = if args.len() > 1 {
+                match &args[1] {
+                    Value::String(s) => Some(s.as_str()),
+                    other => return Err(format!("count output name must be string, got {}", other.type_name())),
+                }
+            } else {
+                None
+            };
+            let result = gdf.count(output).map_err(|e| e.to_string())?;
+            Ok(Value::DataFrame(std::sync::Arc::new(result)))
+        });
+
+        self.define_native("first", -1, |args| {
+            native_grouped_agg(args, "first", |gdf, col, out| gdf.first(col, out))
+        });
+
+        self.define_native("last", -1, |args| {
+            native_grouped_agg(args, "last", |gdf, col, out| gdf.last(col, out))
+        });
+
+        // agg function for multiple aggregations: grouped |> agg(Agg.sum(...), Agg.count(...))
+        self.define_native("agg", -1, |args| {
+            if args.is_empty() {
+                return Err("agg requires a GroupedDataFrame as the first argument".to_string());
+            }
+            let gdf = match &args[0] {
+                Value::GroupedDataFrame(gdf) => gdf,
+                other => return Err(format!("agg expects GroupedDataFrame, got {}", other.type_name())),
+            };
+            let specs: Result<Vec<AggSpec>, String> = args[1..]
+                .iter()
+                .map(|v| match v {
+                    Value::AggSpec(spec) => Ok((**spec).clone()),
+                    other => Err(format!("agg arguments must be AggSpec, got {}", other.type_name())),
+                })
+                .collect();
+            let specs = specs?;
+            if specs.is_empty() {
+                return Err("agg requires at least one aggregation spec".to_string());
+            }
+            let result = gdf.aggregate(&specs).map_err(|e| e.to_string())?;
+            Ok(Value::DataFrame(std::sync::Arc::new(result)))
+        });
+
+        // join(dataframe, other_dataframe, join_spec) -> DataFrame
+        // Used in pipelines: df1 |> join(df2, Join.on("id"))
+        self.define_native("join", 3, |args| {
+            if args.len() != 3 {
+                return Err("join requires 3 arguments: DataFrame, DataFrame, JoinSpec".to_string());
+            }
+
+            let left_df = match &args[0] {
+                Value::DataFrame(df) => df.clone(),
+                other => {
+                    return Err(format!(
+                        "join expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let right_df = match &args[1] {
+                Value::DataFrame(df) => df.clone(),
+                other => {
+                    return Err(format!(
+                        "join expects DataFrame as second argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let spec = match &args[2] {
+                Value::JoinSpec(spec) => spec.clone(),
+                other => {
+                    return Err(format!(
+                        "join expects JoinSpec as third argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let result = left_df.join(&right_df, &spec).map_err(|e| e.to_string())?;
+            Ok(Value::DataFrame(std::sync::Arc::new(result)))
+        });
+
+        // sort_by(dataframe, col1, col2, ...) -> DataFrame
+        // Used in pipelines: df |> sort_by("age", "-score") where - prefix means descending
+        self.define_native("sort_by", -1, |args| {
+            if args.is_empty() {
+                return Err("sort_by requires a DataFrame as the first argument".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "sort_by expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Collect (column_name, descending) pairs from remaining arguments
+            let mut sort_cols: Vec<(&str, bool)> = Vec::new();
+
+            for arg in &args[1..] {
+                match arg {
+                    Value::String(s) => {
+                        if let Some(col) = s.strip_prefix('-') {
+                            sort_cols.push((col, true)); // descending
+                        } else {
+                            sort_cols.push((s.as_str(), false)); // ascending
+                        }
+                    }
+                    other => {
+                        return Err(format!(
+                            "sort_by column names must be strings, got {}",
+                            other.type_name()
+                        ));
+                    }
+                }
+            }
+
+            if sort_cols.is_empty() {
+                return Err("sort_by requires at least one column name".to_string());
+            }
+
+            let result = df.sort_by(&sort_cols).map_err(|e| e.to_string())?;
+            Ok(Value::DataFrame(std::sync::Arc::new(result)))
+        });
+
+        // take(dataframe, n) -> DataFrame - alias for limit
+        // Used in pipelines: df |> take(10)
+        self.define_native("take", 2, |args| {
+            if args.len() != 2 {
+                return Err("take requires 2 arguments: DataFrame, n".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "take expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let n = match &args[1] {
+                Value::Int(n) => *n as usize,
+                other => {
+                    return Err(format!(
+                        "take expects Int as second argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let result = df.take_rows(n).map_err(|e| e.to_string())?;
+            Ok(Value::DataFrame(std::sync::Arc::new(result)))
+        });
+
+        // limit(dataframe, n) -> DataFrame - alias for take
+        self.define_native("limit", 2, |args| {
+            if args.len() != 2 {
+                return Err("limit requires 2 arguments: DataFrame, n".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "limit expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let n = match &args[1] {
+                Value::Int(n) => *n as usize,
+                other => {
+                    return Err(format!(
+                        "limit expects Int as second argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let result = df.take_rows(n).map_err(|e| e.to_string())?;
+            Ok(Value::DataFrame(std::sync::Arc::new(result)))
+        });
+
+        // distinct(dataframe, col1?, col2?, ...) -> DataFrame
+        // Used in pipelines: df |> distinct() or df |> distinct("name", "age")
+        self.define_native("distinct", -1, |args| {
+            if args.is_empty() {
+                return Err("distinct requires a DataFrame as the first argument".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "distinct expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            if args.len() == 1 {
+                // Distinct on all columns
+                let result = df.distinct().map_err(|e| e.to_string())?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            } else {
+                // Distinct on specified columns
+                let col_names: Result<Vec<&str>, String> = args[1..]
+                    .iter()
+                    .map(|v| match v {
+                        Value::String(s) => Ok(s.as_str()),
+                        other => Err(format!(
+                            "distinct column names must be strings, got {}",
+                            other.type_name()
+                        )),
+                    })
+                    .collect();
+
+                let col_names = col_names?;
+                let result = df.distinct_by(&col_names).map_err(|e| e.to_string())?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+        });
+
+        // unique is an alias for distinct
+        self.define_native("unique", -1, |args| {
+            if args.is_empty() {
+                return Err("unique requires a DataFrame as the first argument".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "unique expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            if args.len() == 1 {
+                let result = df.distinct().map_err(|e| e.to_string())?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            } else {
+                let col_names: Result<Vec<&str>, String> = args[1..]
+                    .iter()
+                    .map(|v| match v {
+                        Value::String(s) => Ok(s.as_str()),
+                        other => Err(format!(
+                            "unique column names must be strings, got {}",
+                            other.type_name()
+                        )),
+                    })
+                    .collect();
+
+                let col_names = col_names?;
+                let result = df.distinct_by(&col_names).map_err(|e| e.to_string())?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+        });
+
+        // drop_columns(dataframe, col1, col2, ...) -> DataFrame - remove columns
+        // Used in pipelines: df |> drop_columns("col1", "col2")
+        self.define_native("drop_columns", -1, |args| {
+            if args.is_empty() {
+                return Err("drop_columns requires a DataFrame as the first argument".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "drop_columns expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let col_names: Result<Vec<&str>, String> = args[1..]
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => Ok(s.as_str()),
+                    other => Err(format!(
+                        "drop_columns column names must be strings, got {}",
+                        other.type_name()
+                    )),
+                })
+                .collect();
+
+            let col_names = col_names?;
+            if col_names.is_empty() {
+                return Err("drop_columns requires at least one column name".to_string());
+            }
+
+            let result = DataFrame::drop(df, &col_names).map_err(|e| e.to_string())?;
+            Ok(Value::DataFrame(std::sync::Arc::new(result)))
+        });
+
+        // rename(dataframe, old_name, new_name) -> DataFrame
+        // Used in pipelines: df |> rename("old", "new")
+        self.define_native("rename", 3, |args| {
+            if args.len() != 3 {
+                return Err("rename requires 3 arguments: DataFrame, old_name, new_name".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df,
+                other => {
+                    return Err(format!(
+                        "rename expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let old_name = match &args[1] {
+                Value::String(s) => s.as_str(),
+                other => {
+                    return Err(format!(
+                        "rename expects String as second argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let new_name = match &args[2] {
+                Value::String(s) => s.as_str(),
+                other => {
+                    return Err(format!(
+                        "rename expects String as third argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let result = df.rename_column(old_name, new_name).map_err(|e| e.to_string())?;
+            Ok(Value::DataFrame(std::sync::Arc::new(result)))
+        });
+
+        // Cube pipeline functions
+        // dimension(cube_builder, name) -> CubeBuilder
+        // Used in pipelines: Cube.from(df) |> dimension("region")
+        self.define_native("dimension", -1, |args| {
+            use std::sync::{Arc, Mutex};
+
+            if args.is_empty() {
+                return Err("dimension requires a CubeBuilder as the first argument".to_string());
+            }
+
+            let builder_arc = match &args[0] {
+                Value::CubeBuilder(b) => b.clone(),
+                other => {
+                    return Err(format!(
+                        "dimension expects CubeBuilder as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Take the builder out, apply the operation, and put it back
+            let mut guard = builder_arc
+                .lock()
+                .map_err(|_| "CubeBuilder lock poisoned")?;
+            let builder = guard
+                .take()
+                .ok_or("CubeBuilder has already been consumed (built)")?;
+
+            // Add all dimension names
+            let mut result_builder = builder;
+            for arg in &args[1..] {
+                let name = match arg {
+                    Value::String(s) => s.as_str(),
+                    other => {
+                        return Err(format!(
+                            "dimension names must be strings, got {}",
+                            other.type_name()
+                        ))
+                    }
+                };
+                result_builder = result_builder.dimension(name).map_err(|e| e.to_string())?;
+            }
+
+            // Return a new CubeBuilder with the result
+            Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+        });
+
+        // measure(cube_builder, name, agg_func) -> CubeBuilder
+        // Used in pipelines: Cube.from(df) |> measure("revenue", sum)
+        self.define_native("measure", -1, |args| {
+            use crate::data::CubeAggFunc;
+            use std::sync::{Arc, Mutex};
+
+            if args.len() < 3 {
+                return Err(
+                    "measure requires at least 3 arguments: CubeBuilder, column_name, agg_function"
+                        .to_string(),
+                );
+            }
+
+            let builder_arc = match &args[0] {
+                Value::CubeBuilder(b) => b.clone(),
+                other => {
+                    return Err(format!(
+                        "measure expects CubeBuilder as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let name = match &args[1] {
+                Value::String(s) => s.as_str(),
+                other => {
+                    return Err(format!(
+                        "measure column name must be a string, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Parse aggregation function - can be a native function like sum, count, etc.
+            let agg_func = match &args[2] {
+                Value::NativeFunction(f) => match f.name {
+                    "sum" => CubeAggFunc::Sum,
+                    "avg" | "mean" => CubeAggFunc::Avg,
+                    "min" => CubeAggFunc::Min,
+                    "max" => CubeAggFunc::Max,
+                    "count" => CubeAggFunc::Count,
+                    "first" => CubeAggFunc::First,
+                    "last" => CubeAggFunc::Last,
+                    other => {
+                        return Err(format!(
+                            "unsupported aggregation function for measure: {}",
+                            other
+                        ))
+                    }
+                },
+                Value::String(s) => match s.to_lowercase().as_str() {
+                    "sum" => CubeAggFunc::Sum,
+                    "avg" | "mean" | "average" => CubeAggFunc::Avg,
+                    "min" => CubeAggFunc::Min,
+                    "max" => CubeAggFunc::Max,
+                    "count" => CubeAggFunc::Count,
+                    "count_distinct" => CubeAggFunc::CountDistinct,
+                    "median" => CubeAggFunc::Median,
+                    "stddev" | "std" => CubeAggFunc::StdDev,
+                    "variance" | "var" => CubeAggFunc::Variance,
+                    "first" => CubeAggFunc::First,
+                    "last" => CubeAggFunc::Last,
+                    other => {
+                        return Err(format!(
+                            "unsupported aggregation function for measure: {}",
+                            other
+                        ))
+                    }
+                },
+                other => {
+                    return Err(format!(
+                        "measure aggregation must be a function or string, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let mut guard = builder_arc
+                .lock()
+                .map_err(|_| "CubeBuilder lock poisoned")?;
+            let builder = guard
+                .take()
+                .ok_or("CubeBuilder has already been consumed (built)")?;
+
+            let result_builder = builder.measure(name, agg_func).map_err(|e| e.to_string())?;
+
+            Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+        });
+
+        // hierarchy(cube_builder, name, levels) -> CubeBuilder
+        // Used in pipelines: Cube.from(df) |> hierarchy("time", ["year", "quarter", "month"])
+        self.define_native("hierarchy", 3, |args| {
+            use std::sync::{Arc, Mutex};
+
+            let builder_arc = match &args[0] {
+                Value::CubeBuilder(b) => b.clone(),
+                other => {
+                    return Err(format!(
+                        "hierarchy expects CubeBuilder as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let name = match &args[1] {
+                Value::String(s) => s.as_str(),
+                other => {
+                    return Err(format!(
+                        "hierarchy name must be a string, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let levels: Vec<&str> = match &args[2] {
+                Value::List(list) => {
+                    let borrowed = list.borrow();
+                    let mut result = Vec::new();
+                    for item in borrowed.iter() {
+                        match item {
+                            Value::String(s) => result.push(s.as_str()),
+                            other => {
+                                return Err(format!(
+                                    "hierarchy level must be a string, got {}",
+                                    other.type_name()
+                                ))
+                            }
+                        }
+                    }
+                    // We need to convert to owned strings since we're borrowing
+                    drop(borrowed);
+                    let levels_owned: Vec<String> = match &args[2] {
+                        Value::List(list) => list
+                            .borrow()
+                            .iter()
+                            .filter_map(|v| match v {
+                                Value::String(s) => Some((**s).clone()),
+                                _ => None,
+                            })
+                            .collect(),
+                        _ => unreachable!(),
+                    };
+
+                    let mut guard = builder_arc
+                        .lock()
+                        .map_err(|_| "CubeBuilder lock poisoned")?;
+                    let builder = guard
+                        .take()
+                        .ok_or("CubeBuilder has already been consumed (built)")?;
+
+                    let levels_refs: Vec<&str> = levels_owned.iter().map(|s| s.as_str()).collect();
+                    let result_builder = builder
+                        .hierarchy(name, &levels_refs)
+                        .map_err(|e| e.to_string())?;
+
+                    return Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))));
+                }
+                other => {
+                    return Err(format!(
+                        "hierarchy levels must be a list of strings, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // This branch won't be reached due to the early return above
+            #[allow(unreachable_code)]
+            Ok(Value::Null)
+        });
+
+        // build(cube_builder) -> Cube
+        // Used in pipelines: Cube.from(df) |> dimension("region") |> build()
+        self.define_native("build", 1, |args| {
+            let builder_arc = match &args[0] {
+                Value::CubeBuilder(b) => b.clone(),
+                other => {
+                    return Err(format!(
+                        "build expects CubeBuilder as argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let mut guard = builder_arc
+                .lock()
+                .map_err(|_| "CubeBuilder lock poisoned")?;
+            let builder = guard
+                .take()
+                .ok_or("CubeBuilder has already been consumed (built)")?;
+
+            let cube = builder.build().map_err(|e| e.to_string())?;
+            Ok(Value::Cube(std::sync::Arc::new(cube)))
+        });
+
+        // OLAP Operations
+        // slice(cube_or_query, dimension, value) -> CubeQuery
+        // Used in pipelines: cube |> slice("region", "West")
+        self.define_native("slice", 3, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            // Get dimension and value first
+            let dimension = match &args[1] {
+                Value::String(s) => (**s).clone(),
+                other => {
+                    return Err(format!(
+                        "slice dimension must be a string, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let value = match &args[2] {
+                Value::String(s) => (**s).clone(),
+                Value::Int(i) => i.to_string(),
+                Value::Float(f) => f.to_string(),
+                other => {
+                    return Err(format!(
+                        "slice value must be a string or number, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Handle both Cube and CubeQuery as input
+            match &args[0] {
+                Value::Cube(cube) => {
+                    let query = CubeQuery::new(cube).slice(dimension, value);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                Value::CubeQuery(query_arc) => {
+                    let mut guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .take()
+                        .ok_or("CubeQuery has already been consumed")?;
+                    let new_query = query.slice(dimension, value);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+                }
+                other => Err(format!(
+                    "slice expects Cube or CubeQuery as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // dice(cube_or_query, filters_map) -> CubeQuery
+        // Used in pipelines: cube |> dice({ region: "West", year: 2024 })
+        self.define_native("dice", 2, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            // Parse filters from map
+            let filters: Vec<(String, String)> = match &args[1] {
+                Value::Map(map) => {
+                    let borrowed = map.borrow();
+                    let mut result = Vec::new();
+                    for (key, val) in borrowed.iter() {
+                        let dim = match key {
+                            crate::bytecode::HashableValue::String(s) => (**s).clone(),
+                            _ => return Err("dice filter keys must be strings".to_string()),
+                        };
+                        let value = match val {
+                            Value::String(s) => (**s).clone(),
+                            Value::Int(i) => i.to_string(),
+                            Value::Float(f) => f.to_string(),
+                            other => {
+                                return Err(format!(
+                                    "dice filter value must be string or number, got {}",
+                                    other.type_name()
+                                ))
+                            }
+                        };
+                        result.push((dim, value));
+                    }
+                    result
+                }
+                other => {
+                    return Err(format!(
+                        "dice expects a map of filters, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Handle both Cube and CubeQuery as input
+            match &args[0] {
+                Value::Cube(cube) => {
+                    let mut query = CubeQuery::new(cube);
+                    for (dim, val) in filters {
+                        query = query.slice(dim, val);
+                    }
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                Value::CubeQuery(query_arc) => {
+                    let mut guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let mut query = guard
+                        .take()
+                        .ok_or("CubeQuery has already been consumed")?;
+                    for (dim, val) in filters {
+                        query = query.slice(dim, val);
+                    }
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                other => Err(format!(
+                    "dice expects Cube or CubeQuery as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // drill_down(cube_or_query, hierarchy_name) -> CubeQuery
+        // drill_down(cube_or_query, hierarchy_name, levels) -> CubeQuery
+        // Used in pipelines: cube |> drill_down("time") or cube |> drill_down("time", 2)
+        self.define_native("drill_down", -1, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            if args.len() < 2 {
+                return Err("drill_down requires at least 2 arguments: cube/query and hierarchy name".to_string());
+            }
+
+            let hierarchy = match &args[1] {
+                Value::String(s) => (**s).clone(),
+                other => {
+                    return Err(format!(
+                        "drill_down hierarchy name must be a string, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Optional: number of levels to drill down
+            let levels_to_drill: usize = if args.len() > 2 {
+                match &args[2] {
+                    Value::Int(i) => {
+                        if *i < 1 {
+                            return Err("drill_down levels must be positive".to_string());
+                        }
+                        *i as usize
+                    }
+                    other => {
+                        return Err(format!(
+                            "drill_down levels must be an integer, got {}",
+                            other.type_name()
+                        ))
+                    }
+                }
+            } else {
+                1 // Default: drill down one level
+            };
+
+            // Handle both Cube and CubeQuery as input
+            match &args[0] {
+                Value::Cube(cube) => {
+                    // Get hierarchy levels from the cube
+                    let hierarchies = cube.hierarchies_with_levels();
+                    let levels = hierarchies
+                        .iter()
+                        .find(|(name, _)| name == &hierarchy)
+                        .map(|(_, levels)| levels.clone())
+                        .ok_or_else(|| format!("hierarchy '{}' not found in cube", hierarchy))?;
+
+                    // Take the appropriate number of levels for drill-down
+                    let target_levels: Vec<String> = levels
+                        .into_iter()
+                        .take(levels_to_drill + 1)
+                        .collect();
+
+                    let query = CubeQuery::new(cube).drill_down(hierarchy, target_levels);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                Value::CubeQuery(query_arc) => {
+                    let mut guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .take()
+                        .ok_or("CubeQuery has already been consumed")?;
+
+                    // For CubeQuery, we pass the hierarchy name and empty levels
+                    // The actual level resolution happens during query execution
+                    let new_query = query.drill_down(hierarchy, vec![]);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+                }
+                other => Err(format!(
+                    "drill_down expects Cube or CubeQuery as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // roll_up(cube_or_query, hierarchy_name) -> CubeQuery
+        // roll_up(cube_or_query, hierarchy_name, levels) -> CubeQuery
+        // Used in pipelines: cube |> roll_up("time") or cube |> roll_up("time", 2)
+        self.define_native("roll_up", -1, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            if args.len() < 2 {
+                return Err("roll_up requires at least 2 arguments: cube/query and hierarchy/dimension name".to_string());
+            }
+
+            let dimension = match &args[1] {
+                Value::String(s) => (**s).clone(),
+                other => {
+                    return Err(format!(
+                        "roll_up dimension name must be a string, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            // Optional: number of levels to roll up
+            let levels_to_roll: usize = if args.len() > 2 {
+                match &args[2] {
+                    Value::Int(i) => {
+                        if *i < 1 {
+                            return Err("roll_up levels must be positive".to_string());
+                        }
+                        *i as usize
+                    }
+                    other => {
+                        return Err(format!(
+                            "roll_up levels must be an integer, got {}",
+                            other.type_name()
+                        ))
+                    }
+                }
+            } else {
+                1 // Default: roll up one level
+            };
+
+            // Handle both Cube and CubeQuery as input
+            match &args[0] {
+                Value::Cube(cube) => {
+                    // For roll_up, we remove dimensions from grouping
+                    // If it's a hierarchy, we might remove multiple levels
+                    let dims_to_remove: Vec<String> = (0..levels_to_roll)
+                        .map(|_| dimension.clone())
+                        .collect();
+
+                    let query = CubeQuery::new(cube).roll_up(dims_to_remove);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                Value::CubeQuery(query_arc) => {
+                    let mut guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .take()
+                        .ok_or("CubeQuery has already been consumed")?;
+
+                    let dims_to_remove: Vec<String> = (0..levels_to_roll)
+                        .map(|_| dimension.clone())
+                        .collect();
+
+                    let new_query = query.roll_up(dims_to_remove);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+                }
+                other => Err(format!(
+                    "roll_up expects Cube or CubeQuery as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // to_dataframe(cube_query) -> DataFrame
+        // Used in pipelines: cube |> slice("region", "West") |> to_dataframe()
+        self.define_native("to_dataframe", 1, |args| {
+            use std::sync::Arc;
+
+            match &args[0] {
+                Value::CubeQuery(query_arc) => {
+                    let guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .as_ref()
+                        .ok_or("CubeQuery has already been consumed")?;
+
+                    let df = query.to_dataframe().map_err(|e| e.to_string())?;
+                    Ok(Value::DataFrame(Arc::new(df)))
+                }
+                Value::Cube(cube) => {
+                    // If given a Cube directly, create a simple query and execute it
+                    use crate::data::CubeQuery;
+                    let query = CubeQuery::new(cube);
+                    let df = query.to_dataframe().map_err(|e| e.to_string())?;
+                    Ok(Value::DataFrame(Arc::new(df)))
+                }
+                other => Err(format!(
+                    "to_dataframe expects CubeQuery or Cube, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // ========== Query Interface for CubeQuery ==========
+
+        // query(cube) -> CubeQuery
+        // Creates a new CubeQuery builder from a Cube for SQL-style queries
+        // Used in pipelines: cube |> query() |> select("region", "SUM(revenue)") |> execute()
+        self.define_native("query", 1, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            match &args[0] {
+                Value::Cube(cube) => {
+                    let query = CubeQuery::new(cube);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                other => Err(format!(
+                    "query expects Cube as argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // cube_select(query, ...columns) -> CubeQuery
+        // Sets the SELECT expressions for a cube query
+        // Used in pipelines: query |> cube_select("region", "SUM(revenue) as total")
+        self.define_native("cube_select", -1, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            if args.is_empty() {
+                return Err("cube_select requires at least 1 argument: query".to_string());
+            }
+
+            // Extract select expressions from remaining args
+            let exprs: Vec<String> = args[1..]
+                .iter()
+                .map(|arg| match arg {
+                    Value::String(s) => Ok((**s).clone()),
+                    other => Err(format!(
+                        "cube_select columns must be strings, got {}",
+                        other.type_name()
+                    )),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            match &args[0] {
+                Value::CubeQuery(query_arc) => {
+                    let mut guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .take()
+                        .ok_or("CubeQuery has already been consumed")?;
+                    let new_query = query.select(exprs);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+                }
+                Value::Cube(cube) => {
+                    // Start a new query with select
+                    let query = CubeQuery::new(cube).select(exprs);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                other => Err(format!(
+                    "cube_select expects CubeQuery or Cube as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // where_(query, condition) -> CubeQuery
+        // Sets the WHERE filter condition for a cube query (SQL-style expression)
+        // Used in pipelines: query |> where_("year >= 2020 AND region = 'West'")
+        self.define_native("where_", 2, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            let condition = match &args[1] {
+                Value::String(s) => (**s).clone(),
+                other => {
+                    return Err(format!(
+                        "where_ condition must be a string, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            match &args[0] {
+                Value::CubeQuery(query_arc) => {
+                    let mut guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .take()
+                        .ok_or("CubeQuery has already been consumed")?;
+                    let new_query = query.where_clause(condition);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+                }
+                Value::Cube(cube) => {
+                    // Start a new query with where
+                    let query = CubeQuery::new(cube).where_clause(condition);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                other => Err(format!(
+                    "where_ expects CubeQuery or Cube as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // cube_group_by(query, ...columns) -> CubeQuery
+        // Sets the GROUP BY columns for a cube query
+        // Used in pipelines: query |> cube_group_by("region", "product")
+        self.define_native("cube_group_by", -1, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            if args.is_empty() {
+                return Err("cube_group_by requires at least 1 argument: query".to_string());
+            }
+
+            // Extract group by columns from remaining args
+            let cols: Vec<String> = args[1..]
+                .iter()
+                .map(|arg| match arg {
+                    Value::String(s) => Ok((**s).clone()),
+                    other => Err(format!(
+                        "cube_group_by columns must be strings, got {}",
+                        other.type_name()
+                    )),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            match &args[0] {
+                Value::CubeQuery(query_arc) => {
+                    let mut guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .take()
+                        .ok_or("CubeQuery has already been consumed")?;
+                    let new_query = query.group_by(cols);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+                }
+                Value::Cube(cube) => {
+                    // Start a new query with group_by
+                    let query = CubeQuery::new(cube).group_by(cols);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                other => Err(format!(
+                    "cube_group_by expects CubeQuery or Cube as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // cube_order_by(query, ...columns) -> CubeQuery
+        // Sets the ORDER BY columns for a cube query
+        // Used in pipelines: query |> cube_order_by("-SUM(revenue)", "region")
+        self.define_native("cube_order_by", -1, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            if args.is_empty() {
+                return Err("cube_order_by requires at least 1 argument: query".to_string());
+            }
+
+            // Extract order by columns from remaining args
+            // Support "-column" for DESC ordering
+            let cols: Vec<String> = args[1..]
+                .iter()
+                .map(|arg| match arg {
+                    Value::String(s) => {
+                        let col = (**s).clone();
+                        // Convert "-column" to "column DESC"
+                        if col.starts_with('-') {
+                            Ok(format!("{} DESC", &col[1..]))
+                        } else {
+                            Ok(col)
+                        }
+                    }
+                    other => Err(format!(
+                        "cube_order_by columns must be strings, got {}",
+                        other.type_name()
+                    )),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            match &args[0] {
+                Value::CubeQuery(query_arc) => {
+                    let mut guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .take()
+                        .ok_or("CubeQuery has already been consumed")?;
+                    let new_query = query.order_by(cols);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+                }
+                Value::Cube(cube) => {
+                    // Start a new query with order_by
+                    let query = CubeQuery::new(cube).order_by(cols);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                other => Err(format!(
+                    "cube_order_by expects CubeQuery or Cube as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // cube_limit(query, count) -> CubeQuery
+        // Sets the LIMIT for a cube query
+        // Used in pipelines: query |> cube_limit(10)
+        self.define_native("cube_limit", 2, |args| {
+            use crate::data::CubeQuery;
+            use std::sync::{Arc, Mutex};
+
+            let count = match &args[1] {
+                Value::Int(n) => {
+                    if *n < 0 {
+                        return Err("cube_limit count must be non-negative".to_string());
+                    }
+                    *n as usize
+                }
+                other => {
+                    return Err(format!(
+                        "cube_limit count must be an integer, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            match &args[0] {
+                Value::CubeQuery(query_arc) => {
+                    let mut guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .take()
+                        .ok_or("CubeQuery has already been consumed")?;
+                    let new_query = query.limit(count);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+                }
+                Value::Cube(cube) => {
+                    // Start a new query with limit
+                    let query = CubeQuery::new(cube).limit(count);
+                    Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+                }
+                other => Err(format!(
+                    "cube_limit expects CubeQuery or Cube as first argument, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // execute(query) -> DataFrame
+        // Executes a CubeQuery and returns a DataFrame (alias for to_dataframe)
+        // Used in pipelines: query |> select("region") |> execute()
+        self.define_native("execute", 1, |args| {
+            use std::sync::Arc;
+
+            match &args[0] {
+                Value::CubeQuery(query_arc) => {
+                    let guard = query_arc
+                        .lock()
+                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard
+                        .as_ref()
+                        .ok_or("CubeQuery has already been consumed")?;
+
+                    let df = query.to_dataframe().map_err(|e| e.to_string())?;
+                    Ok(Value::DataFrame(Arc::new(df)))
+                }
+                Value::Cube(cube) => {
+                    // If given a Cube directly, create a simple query and execute it
+                    use crate::data::CubeQuery;
+                    let query = CubeQuery::new(cube);
+                    let df = query.to_dataframe().map_err(|e| e.to_string())?;
+                    Ok(Value::DataFrame(Arc::new(df)))
+                }
+                other => Err(format!(
+                    "execute expects CubeQuery or Cube, got {}",
+                    other.type_name()
+                )),
+            }
+        });
+
+        // to_cube(df) or to_cube(df, name) -> CubeBuilder
+        // Creates a CubeBuilder from a DataFrame for pipeline usage
+        // Used in pipelines: df |> to_cube("sales") |> dimension("region") |> build()
+        self.define_native("to_cube", -1, |args| {
+            use crate::data::CubeBuilder;
+            use std::sync::{Arc, Mutex};
+
+            if args.is_empty() {
+                return Err("to_cube requires at least 1 argument: dataframe".to_string());
+            }
+
+            let df = match &args[0] {
+                Value::DataFrame(df) => df.clone(),
+                other => {
+                    return Err(format!(
+                        "to_cube expects DataFrame as first argument, got {}",
+                        other.type_name()
+                    ))
+                }
+            };
+
+            let builder = if args.len() == 1 {
+                // to_cube(df) - no name
+                CubeBuilder::from_dataframe(&df).map_err(|e| e.to_string())?
+            } else {
+                // to_cube(df, "name") - with name
+                match &args[1] {
+                    Value::String(name) => {
+                        CubeBuilder::from_dataframe_with_name(name.as_str(), &df)
+                            .map_err(|e| e.to_string())?
+                    }
+                    other => {
+                        return Err(format!(
+                            "to_cube name must be a string, got {}",
+                            other.type_name()
+                        ))
+                    }
+                }
+            };
+
+            Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(builder)))))
+        });
+
         // Register native namespace modules
         self.globals.insert("File".to_string(), Value::NativeNamespace("File"));
         self.globals.insert("Dir".to_string(), Value::NativeNamespace("Dir"));
@@ -229,6 +1680,10 @@ impl VM {
         self.globals.insert("Base64".to_string(), Value::NativeNamespace("Base64"));
         self.globals.insert("Url".to_string(), Value::NativeNamespace("Url"));
 
+        // Compression modules
+        self.globals.insert("Gzip".to_string(), Value::NativeNamespace("Gzip"));
+        self.globals.insert("Zip".to_string(), Value::NativeNamespace("Zip"));
+
         // DateTime and Time modules
         self.globals.insert("DateTime".to_string(), Value::NativeNamespace("DateTime"));
         self.globals.insert("Duration".to_string(), Value::NativeNamespace("Duration"));
@@ -242,6 +1697,9 @@ impl VM {
         self.globals.insert("Uuid".to_string(), Value::NativeNamespace("Uuid"));
         self.globals.insert("Random".to_string(), Value::NativeNamespace("Random"));
 
+        // Math module (constants and functions)
+        self.globals.insert("Math".to_string(), Value::NativeNamespace("Math"));
+
         // User Input module
         self.globals.insert("Input".to_string(), Value::NativeNamespace("Input"));
 
@@ -253,6 +1711,23 @@ impl VM {
 
         // Database module
         self.globals.insert("Db".to_string(), Value::NativeNamespace("Db"));
+
+        // Network modules (TCP/UDP/WebSocket)
+        self.globals.insert("Tcp".to_string(), Value::NativeNamespace("Tcp"));
+        self.globals.insert("Udp".to_string(), Value::NativeNamespace("Udp"));
+        self.globals.insert("WebSocket".to_string(), Value::NativeNamespace("WebSocket"));
+
+        // Data operations module (DataFrame, Series)
+        self.globals.insert("Data".to_string(), Value::NativeNamespace("Data"));
+
+        // Aggregation builder module (for group_by + aggregate)
+        self.globals.insert("Agg".to_string(), Value::NativeNamespace("Agg"));
+
+        // Join builder module (for DataFrame joins)
+        self.globals.insert("Join".to_string(), Value::NativeNamespace("Join"));
+
+        // Cube module (OLAP cube for multi-dimensional analysis)
+        self.globals.insert("Cube".to_string(), Value::NativeNamespace("Cube"));
     }
 
     /// Define a native function
@@ -276,6 +1751,7 @@ impl VM {
         self.open_upvalues.clear();
         self.handlers.clear();
         self.current_exception = None;
+        self.suspended_coroutine = None;
 
         // Wrap the function in a closure
         let closure = Rc::new(Closure::new(function));
@@ -347,6 +1823,11 @@ impl VM {
 
             // Execute all other opcodes
             self.execute_opcode(opcode)?;
+
+            // Check if execution was suspended (e.g., by await)
+            if let Some(coroutine) = self.suspended_coroutine.take() {
+                return Ok(coroutine);
+            }
         }
     }
 
@@ -522,6 +2003,99 @@ impl VM {
         }
     }
 
+    /// Close ALL open upvalues (for coroutine suspension)
+    fn close_all_upvalues(&mut self) {
+        self.close_upvalues(0);
+    }
+
+    // ===== Coroutine suspension/resumption =====
+
+    /// Suspend the current execution, creating a coroutine that can be resumed later.
+    /// This is called when awaiting a pending future.
+    fn suspend(&mut self, awaited_future: Value) -> Value {
+        // Close all upvalues so the coroutine has self-contained state
+        self.close_all_upvalues();
+
+        // Convert frames to saved frames
+        let saved_frames: Vec<SavedCallFrame> = self
+            .frames
+            .iter()
+            .map(|f| SavedCallFrame {
+                closure: f.closure.clone(),
+                ip: f.ip,
+                stack_base: f.stack_base,
+            })
+            .collect();
+
+        // Convert handlers to saved handlers
+        let saved_handlers: Vec<SavedExceptionHandler> = self
+            .handlers
+            .iter()
+            .map(|h| SavedExceptionHandler {
+                frame_index: h.frame_index,
+                stack_depth: h.stack_depth,
+                catch_ip: h.catch_ip,
+                finally_ip: h.finally_ip,
+            })
+            .collect();
+
+        // Create the coroutine state
+        let coro = CoroutineState::suspended(
+            saved_frames,
+            self.stack.clone(),
+            saved_handlers,
+            awaited_future,
+        );
+
+        // Clear VM state
+        self.frames.clear();
+        self.stack.clear();
+        self.handlers.clear();
+
+        Value::Coroutine(Rc::new(RefCell::new(coro)))
+    }
+
+    /// Resume a suspended coroutine with a value (the result of the awaited future).
+    /// Returns Ok(()) if resumption was successful and execution should continue.
+    pub fn resume_coroutine(&mut self, coro: &CoroutineState, resume_value: Value) -> RuntimeResult<()> {
+        // Restore frames
+        self.frames = coro
+            .frames
+            .iter()
+            .map(|f| CallFrame {
+                closure: f.closure.clone(),
+                ip: f.ip,
+                stack_base: f.stack_base,
+            })
+            .collect();
+
+        // Restore stack
+        self.stack = coro.stack.clone();
+
+        // Restore handlers
+        self.handlers = coro
+            .handlers
+            .iter()
+            .map(|h| ExceptionHandler {
+                frame_index: h.frame_index,
+                stack_depth: h.stack_depth,
+                catch_ip: h.catch_ip,
+                finally_ip: h.finally_ip,
+            })
+            .collect();
+
+        // Push the resume value (result of the await)
+        self.push(resume_value)?;
+
+        Ok(())
+    }
+
+    /// Continue execution after resuming a coroutine.
+    /// Returns the result of execution (either a final value or a new coroutine if suspended again).
+    pub fn continue_execution(&mut self) -> RuntimeResult<Value> {
+        self.execute()
+    }
+
     // ===== Binary operations =====
 
     fn binary_op<F>(&mut self, f: F) -> RuntimeResult<()>
@@ -603,6 +2177,77 @@ impl VM {
         self.push(Value::Bool(result))
     }
 
+    /// Comparison operation with Series support
+    fn series_comparison_op<SeriesOp, ScalarOp, FlippedOp, I, F>(
+        &mut self,
+        op_name: &'static str,
+        series_op: SeriesOp,
+        scalar_op: ScalarOp,
+        flipped_scalar_op: FlippedOp,
+        int_op: I,
+        float_op: F,
+    ) -> RuntimeResult<()>
+    where
+        SeriesOp: FnOnce(&Series, &Series) -> crate::data::DataResult<Series>,
+        ScalarOp: FnOnce(&Series, &Value) -> crate::data::DataResult<Series>,
+        FlippedOp: FnOnce(&Series, &Value) -> crate::data::DataResult<Series>,
+        I: FnOnce(i64, i64) -> bool,
+        F: FnOnce(f64, f64) -> bool,
+    {
+        let right = self.pop()?;
+        let left = self.pop()?;
+        match (&left, &right) {
+            // Series-Series comparison
+            (Value::Series(s1), Value::Series(s2)) => {
+                let result = series_op(s1, s2)
+                    .map(|s| Value::Series(std::sync::Arc::new(s)))
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                self.push(result)
+            }
+            // Series-Scalar comparison
+            (Value::Series(s), scalar) => {
+                let result = scalar_op(s, scalar)
+                    .map(|s| Value::Series(std::sync::Arc::new(s)))
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                self.push(result)
+            }
+            // Scalar-Series comparison (flip the operation)
+            (scalar, Value::Series(s)) => {
+                // For scalar < series, we need series > scalar (flip comparison)
+                let result = flipped_scalar_op(s, scalar)
+                    .map(|s| Value::Series(std::sync::Arc::new(s)))
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                self.push(result)
+            }
+            // Scalar operations
+            (Value::Int(x), Value::Int(y)) => self.push(Value::Bool(int_op(*x, *y))),
+            (Value::Float(x), Value::Float(y)) => self.push(Value::Bool(float_op(*x, *y))),
+            (Value::Int(x), Value::Float(y)) => self.push(Value::Bool(float_op(*x as f64, *y))),
+            (Value::Float(x), Value::Int(y)) => self.push(Value::Bool(float_op(*x, *y as f64))),
+            (Value::String(x), Value::String(y)) => {
+                let result = match op_name {
+                    "<" => x < y,
+                    "<=" => x <= y,
+                    ">" => x > y,
+                    ">=" => x >= y,
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "comparable",
+                            got: left.type_name(),
+                            operation: op_name,
+                        }));
+                    }
+                };
+                self.push(Value::Bool(result))
+            }
+            _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                expected: "comparable",
+                got: left.type_name(),
+                operation: op_name,
+            })),
+        }
+    }
+
     // ===== Function calls =====
 
     fn call_value(&mut self, arg_count: u8) -> RuntimeResult<()> {
@@ -633,12 +2278,69 @@ impl VM {
             return Err(self.runtime_error(RuntimeErrorKind::StackOverflow));
         }
 
+        // Check if we can use JIT (requires JIT enabled and no upvalues)
+        let can_jit = self.jit_enabled && closure.upvalues.is_empty();
+
+        if can_jit {
+            // Determine if we should use JIT based on execution mode
+            let should_jit = match closure.function.execution_mode {
+                ExecutionMode::Compile => true,
+                ExecutionMode::CompileHot => {
+                    // Check if already JIT-compiled
+                    if self.jit_context.is_compiled(&closure.function.name) {
+                        true
+                    } else {
+                        // Increment call count and check if threshold reached
+                        let fn_ptr = Rc::as_ptr(&closure.function);
+                        let count = self.call_counts.entry(fn_ptr).or_insert(0);
+                        *count += 1;
+                        *count >= self.hot_threshold
+                    }
+                }
+                ExecutionMode::Interpret => false,
+            };
+
+            if should_jit {
+                // Try to JIT compile and execute
+                match self.call_closure_jit(&closure, arg_count) {
+                    Ok(result) => {
+                        // Pop the closure and arguments from stack
+                        let pop_count = arg_count as usize + 1;
+                        for _ in 0..pop_count {
+                            self.pop()?;
+                        }
+                        // Push the result
+                        return self.push(result);
+                    }
+                    Err(_) => {
+                        // JIT compilation failed, fall back to interpreter
+                        // This is expected for unsupported opcodes
+                    }
+                }
+            }
+        }
+
         // Stack layout: [..., closure, arg0, arg1, ...]
         // stack_base points to closure (slot 0 of the frame)
         let stack_base = self.stack.len() - arg_count as usize - 1;
         self.frames.push(CallFrame::new(closure, stack_base));
 
         Ok(())
+    }
+
+    /// Call a closure using JIT compilation
+    fn call_closure_jit(&mut self, closure: &Rc<Closure>, arg_count: u8) -> Result<Value, String> {
+        // Compile the function
+        let compiled = self.jit_compile_function(&closure.function)?;
+
+        // Collect arguments from the stack (they're after the closure)
+        let stack_len = self.stack.len();
+        let args: Vec<Value> = self.stack[stack_len - arg_count as usize..].to_vec();
+
+        // Call the JIT-compiled function
+        let result = call_jit_function(&compiled, &args);
+
+        Ok(result)
     }
 
     fn call_native(&mut self, native: NativeFunction, arg_count: u8) -> RuntimeResult<()> {
@@ -862,6 +2564,23 @@ impl VM {
 
             // Arithmetic operations
             OpCode::Add => self.binary_op(|a, b| match (a, b) {
+                // Series operations
+                (Value::Series(s1), Value::Series(s2)) => {
+                    s1.add(&s2)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| RuntimeErrorKind::DataError(e.to_string()))
+                }
+                (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => {
+                    s.add_scalar(&scalar)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| RuntimeErrorKind::DataError(e.to_string()))
+                }
+                (scalar @ (Value::Int(_) | Value::Float(_)), Value::Series(s)) => {
+                    s.add_scalar(&scalar)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| RuntimeErrorKind::DataError(e.to_string()))
+                }
+                // Scalar operations
                 (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
                 (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x + y)),
                 (Value::Int(x), Value::Float(y)) => Ok(Value::Float(x as f64 + y)),
@@ -878,13 +2597,98 @@ impl VM {
                 }),
             })?,
 
-            OpCode::Sub => self.numeric_binary_op("-", |x, y| x - y, |x, y| x - y)?,
-            OpCode::Mul => self.numeric_binary_op("*", |x, y| x * y, |x, y| x * y)?,
+            OpCode::Sub => {
+                let right = self.pop()?;
+                let left = self.pop()?;
+                let result = match (&left, &right) {
+                    // Series operations
+                    (Value::Series(s1), Value::Series(s2)) => {
+                        s1.sub(s2)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                    }
+                    (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => {
+                        s.sub_scalar(scalar)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                    }
+                    // Scalar - Series: need to negate and add
+                    (scalar @ (Value::Int(_) | Value::Float(_)), Value::Series(s)) => {
+                        let neg = s.neg()
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                        neg.add_scalar(scalar)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                    }
+                    // Scalar operations
+                    (Value::Int(x), Value::Int(y)) => Value::Int(x - y),
+                    (Value::Float(x), Value::Float(y)) => Value::Float(x - y),
+                    (Value::Int(x), Value::Float(y)) => Value::Float(*x as f64 - y),
+                    (Value::Float(x), Value::Int(y)) => Value::Float(x - *y as f64),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "numeric",
+                            got: left.type_name(),
+                            operation: "-",
+                        }));
+                    }
+                };
+                self.push(result)?;
+            }
+
+            OpCode::Mul => {
+                let right = self.pop()?;
+                let left = self.pop()?;
+                let result = match (&left, &right) {
+                    // Series operations
+                    (Value::Series(s1), Value::Series(s2)) => {
+                        s1.mul(s2)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                    }
+                    (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => {
+                        s.mul_scalar(scalar)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                    }
+                    (scalar @ (Value::Int(_) | Value::Float(_)), Value::Series(s)) => {
+                        s.mul_scalar(scalar)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                    }
+                    // Scalar operations
+                    (Value::Int(x), Value::Int(y)) => Value::Int(x * y),
+                    (Value::Float(x), Value::Float(y)) => Value::Float(x * y),
+                    (Value::Int(x), Value::Float(y)) => Value::Float(*x as f64 * y),
+                    (Value::Float(x), Value::Int(y)) => Value::Float(x * *y as f64),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "numeric",
+                            got: left.type_name(),
+                            operation: "*",
+                        }));
+                    }
+                };
+                self.push(result)?;
+            }
 
             OpCode::Div => {
                 let right = self.pop()?;
                 let left = self.pop()?;
                 let result = match (&left, &right) {
+                    // Series operations
+                    (Value::Series(s1), Value::Series(s2)) => {
+                        s1.div(s2)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                    }
+                    (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => {
+                        s.div_scalar(scalar)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                    }
+                    // Note: scalar / Series is not supported (would need element-wise reciprocal)
+                    // Scalar operations with zero checks
                     (Value::Int(_), Value::Int(0)) | (Value::Float(_), Value::Int(0)) => {
                         return Err(self.runtime_error(RuntimeErrorKind::DivisionByZero));
                     }
@@ -934,6 +2738,11 @@ impl VM {
             OpCode::Neg => {
                 let value = self.pop()?;
                 let result = match value {
+                    Value::Series(s) => {
+                        s.neg()
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                    }
                     Value::Int(x) => Value::Int(-x),
                     Value::Float(x) => Value::Float(-x),
                     _ => {
@@ -951,23 +2760,73 @@ impl VM {
             OpCode::Eq => {
                 let right = self.pop()?;
                 let left = self.pop()?;
-                self.push(Value::Bool(left == right))?;
+                match (&left, &right) {
+                    // Series operations
+                    (Value::Series(s1), Value::Series(s2)) => {
+                        let result = s1.eq(s2)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                        self.push(result)?;
+                    }
+                    (Value::Series(s), scalar) => {
+                        let result = s.eq_scalar(scalar)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                        self.push(result)?;
+                    }
+                    (scalar, Value::Series(s)) => {
+                        let result = s.eq_scalar(scalar)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                        self.push(result)?;
+                    }
+                    _ => self.push(Value::Bool(left == right))?,
+                }
             }
 
             OpCode::Ne => {
                 let right = self.pop()?;
                 let left = self.pop()?;
-                self.push(Value::Bool(left != right))?;
+                match (&left, &right) {
+                    // Series operations
+                    (Value::Series(s1), Value::Series(s2)) => {
+                        let result = s1.neq(s2)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                        self.push(result)?;
+                    }
+                    (Value::Series(s), scalar) => {
+                        let result = s.neq_scalar(scalar)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                        self.push(result)?;
+                    }
+                    (scalar, Value::Series(s)) => {
+                        let result = s.neq_scalar(scalar)
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                        self.push(result)?;
+                    }
+                    _ => self.push(Value::Bool(left != right))?,
+                }
             }
 
-            OpCode::Lt => self.comparison_op("<", |x, y| x < y, |x, y| x < y)?,
-            OpCode::Le => self.comparison_op("<=", |x, y| x <= y, |x, y| x <= y)?,
-            OpCode::Gt => self.comparison_op(">", |x, y| x > y, |x, y| x > y)?,
-            OpCode::Ge => self.comparison_op(">=", |x, y| x >= y, |x, y| x >= y)?,
+            OpCode::Lt => self.series_comparison_op("<", Series::lt, Series::lt_scalar, Series::gt_scalar, |x, y| x < y, |x, y| x < y)?,
+            OpCode::Le => self.series_comparison_op("<=", Series::le, Series::le_scalar, Series::ge_scalar, |x, y| x <= y, |x, y| x <= y)?,
+            OpCode::Gt => self.series_comparison_op(">", Series::gt, Series::gt_scalar, Series::lt_scalar, |x, y| x > y, |x, y| x > y)?,
+            OpCode::Ge => self.series_comparison_op(">=", Series::ge, Series::ge_scalar, Series::le_scalar, |x, y| x >= y, |x, y| x >= y)?,
 
             OpCode::Not => {
                 let value = self.pop()?;
-                self.push(Value::Bool(!value.is_truthy()))?;
+                match value {
+                    Value::Series(s) => {
+                        let result = s.not()
+                            .map(|s| Value::Series(std::sync::Arc::new(s)))
+                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                        self.push(result)?;
+                    }
+                    _ => self.push(Value::Bool(!value.is_truthy()))?,
+                }
             }
 
             // Control flow
@@ -1128,8 +2987,28 @@ impl VM {
 
             OpCode::NewStruct => {
                 let type_index = self.read_u16() as usize;
+                let field_count = self.read_u16() as usize;
                 let type_name = self.get_constant_string(type_index)?;
-                let instance = StructInstance::new(type_name);
+
+                // Create struct and populate fields
+                // Stack has (name, value) pairs, we pop in reverse order
+                let mut instance = StructInstance::new(type_name);
+                for _ in 0..field_count {
+                    let value = self.pop()?;
+                    let name = self.pop()?;
+                    let field_name = match name {
+                        Value::String(s) => (*s).clone(),
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::InvalidOperation(
+                                format!(
+                                    "expected string for field name, got {}",
+                                    name.type_name()
+                                ),
+                            )));
+                        }
+                    };
+                    instance.fields.insert(field_name, value);
+                }
                 self.push(Value::Struct(Rc::new(RefCell::new(instance))))?;
             }
 
@@ -1163,6 +3042,7 @@ impl VM {
             OpCode::Throw => {
                 let exception = self.pop()?;
                 self.current_exception = Some(exception);
+                // Exception will be handled at the top of the main execution loop
             }
 
             OpCode::PushHandler => {
@@ -1305,12 +3185,53 @@ impl VM {
             }
 
             OpCode::Await => {
-                // For now, just return an error - async is not yet implemented
-                return Err(self.runtime_error(RuntimeErrorKind::AwaitOutsideAsync));
+                let future = self.pop()?;
+                match &future {
+                    Value::Future(fut) => {
+                        let fut_ref = fut.borrow();
+                        match &fut_ref.status {
+                            FutureStatus::Ready => {
+                                // Future is ready, push its result and continue
+                                let result = fut_ref.result.clone().unwrap_or(Value::Null);
+                                drop(fut_ref); // Release borrow
+                                self.push(result)?;
+                            }
+                            FutureStatus::Pending => {
+                                // Future is pending - suspend execution
+                                drop(fut_ref); // Release borrow before suspend
+                                let coroutine = self.suspend(future);
+                                self.suspended_coroutine = Some(coroutine);
+                                // The execute loop will check this and return
+                            }
+                            FutureStatus::Failed(err) => {
+                                // Future failed - throw an exception
+                                let err_msg = err.clone();
+                                drop(fut_ref);
+                                return Err(self.runtime_error(RuntimeErrorKind::AsyncError(err_msg)));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Future",
+                            got: future.type_name(),
+                            operation: "await",
+                        }));
+                    }
+                }
             }
 
             OpCode::Breakpoint => {
                 // No-op for now
+            }
+
+            OpCode::StateBinding => {
+                // Create a StateBinding value that represents a reactive binding to a field path
+                let path_index = self.read_u16() as usize;
+                let path = self.get_constant_string(path_index)?;
+                // Push a StateBinding value - for now represented as a tagged String
+                // The GUI runtime will interpret this as a binding path
+                self.push(Value::StateBinding(path))?;
             }
         }
         Ok(())
@@ -1331,7 +3252,7 @@ impl VM {
                 // Try built-in struct methods
                 self.invoke_builtin_method(&receiver, &method_name, arg_count)
             }
-            Value::String(_) | Value::List(_) | Value::Map(_) | Value::NativeNamespace(_) | Value::DbConnection(_) => {
+            Value::String(_) | Value::List(_) | Value::Map(_) | Value::NativeNamespace(_) | Value::DbConnection(_) | Value::DataFrame(_) | Value::Series(_) | Value::GroupedDataFrame(_) | Value::SqlContext(_) | Value::Cube(_) | Value::CubeBuilder(_) | Value::CubeQuery(_) => {
                 self.invoke_builtin_method(&receiver, &method_name, arg_count)
             }
             _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -1371,6 +3292,40 @@ impl VM {
                 natives::db_connection_method(conn, method_name, &args)
                     .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
             }
+            Value::TcpStream(stream) => {
+                natives::tcp_stream_method(stream, method_name, &args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::TcpListener(listener) => {
+                natives::tcp_listener_method(listener, method_name, &args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::UdpSocket(socket) => {
+                natives::udp_socket_method(socket, method_name, &args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::WebSocket(ws) => {
+                natives::websocket_method(ws, method_name, &args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::WebSocketServer(server) => {
+                natives::websocket_server_method(server, method_name, &args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::WebSocketServerConn(conn) => {
+                natives::websocket_server_conn_method(conn, method_name, &args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::DataFrame(df) => self.dataframe_method(df, method_name, &args)?,
+            Value::Series(s) => self.series_method(s, method_name, &args)?,
+            Value::GroupedDataFrame(gdf) => self.grouped_dataframe_method(gdf, method_name, &args)?,
+            Value::SqlContext(ctx) => {
+                natives::sql_context_method(ctx, method_name, &args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::Cube(cube) => self.cube_method(cube, method_name, &args)?,
+            Value::CubeBuilder(builder) => self.cubebuilder_method(builder, method_name, &args)?,
+            Value::CubeQuery(query) => self.cubequery_method(query, method_name, &args)?,
             _ => {
                 return Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
                     type_name: receiver.type_name().to_string(),
@@ -1851,6 +3806,1288 @@ impl VM {
         }
     }
 
+    fn dataframe_method(
+        &mut self,
+        df: &std::sync::Arc<DataFrame>,
+        method: &str,
+        args: &[Value],
+    ) -> RuntimeResult<Value> {
+        match method {
+            // Basic info
+            "columns" => {
+                let cols: Vec<Value> = df.columns().into_iter().map(Value::string).collect();
+                Ok(Value::list(cols))
+            }
+            "rows" | "num_rows" | "len" => Ok(Value::Int(df.num_rows() as i64)),
+            "num_columns" => Ok(Value::Int(df.num_columns() as i64)),
+            "is_empty" => Ok(Value::Bool(df.is_empty())),
+            "schema" => {
+                // Return schema as a map of column name -> type string
+                let mut schema_map = HashMap::new();
+                for field in df.schema().fields() {
+                    let key = HashableValue::String(Rc::new(field.name().clone()));
+                    let type_str = Value::string(format!("{:?}", field.data_type()));
+                    schema_map.insert(key, type_str);
+                }
+                Ok(Value::Map(Rc::new(RefCell::new(schema_map))))
+            }
+
+            // Row operations
+            "head" => {
+                let n = if args.is_empty() {
+                    5
+                } else {
+                    match &args[0] {
+                        Value::Int(n) => *n as usize,
+                        _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Int",
+                            got: args[0].type_name(),
+                            operation: "head",
+                        })),
+                    }
+                };
+                let result = df.head(n).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "tail" => {
+                let n = if args.is_empty() {
+                    5
+                } else {
+                    match &args[0] {
+                        Value::Int(n) => *n as usize,
+                        _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Int",
+                            got: args[0].type_name(),
+                            operation: "tail",
+                        })),
+                    }
+                };
+                let result = df.tail(n).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "sample" => {
+                let n = match &args[0] {
+                    Value::Int(n) => *n as usize,
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "sample",
+                    })),
+                };
+                let result = df.sample(n).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // Column operations
+            "column" | "col" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(name) => {
+                        let series = df.column(name).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(series)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "column",
+                    })),
+                }
+            }
+            "select" => {
+                let col_names: Result<Vec<&str>, _> = args
+                    .iter()
+                    .map(|v| match v {
+                        Value::String(s) => Ok(s.as_str()),
+                        _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: v.type_name(),
+                            operation: "select",
+                        })),
+                    })
+                    .collect();
+                let col_names = col_names?;
+                let result = df.select(&col_names).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "drop" | "drop_columns" => {
+                let col_names: Result<Vec<&str>, _> = args
+                    .iter()
+                    .map(|v| match v {
+                        Value::String(s) => Ok(s.as_str()),
+                        _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: v.type_name(),
+                            operation: "drop",
+                        })),
+                    })
+                    .collect();
+                let col_names = col_names?;
+                let result = DataFrame::drop(df, &col_names).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "rename" => {
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+                match (&args[0], &args[1]) {
+                    (Value::String(old_name), Value::String(new_name)) => {
+                        let result = df.rename_column(old_name, new_name).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "rename",
+                    })),
+                }
+            }
+
+            // Display
+            "to_string" | "print" => {
+                let max_rows = if args.is_empty() {
+                    20
+                } else {
+                    match &args[0] {
+                        Value::Int(n) => *n as usize,
+                        _ => 20,
+                    }
+                };
+                Ok(Value::string(df.to_pretty_string(max_rows)))
+            }
+
+            // Filtering
+            "filter" => self.dataframe_filter(df, args),
+
+            // Grouping
+            "group_by" => {
+                // Collect column names from string arguments
+                let col_names: Result<Vec<String>, _> = args
+                    .iter()
+                    .map(|v| match v {
+                        Value::String(s) => Ok((**s).clone()),
+                        _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: v.type_name(),
+                            operation: "group_by",
+                        })),
+                    })
+                    .collect();
+                let col_names = col_names?;
+
+                if col_names.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "group_by requires at least one column name".to_string()
+                    )));
+                }
+
+                let grouped = GroupedDataFrame::new(df.clone(), col_names).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::GroupedDataFrame(std::sync::Arc::new(grouped)))
+            }
+
+            // Join operations
+            "join" => {
+                // df.join(other_df, join_spec)
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+
+                let right_df = match &args[0] {
+                    Value::DataFrame(df) => df.clone(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "DataFrame",
+                            got: args[0].type_name(),
+                            operation: "join",
+                        }));
+                    }
+                };
+
+                let spec = match &args[1] {
+                    Value::JoinSpec(s) => s.clone(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "JoinSpec",
+                            got: args[1].type_name(),
+                            operation: "join",
+                        }));
+                    }
+                };
+
+                let result = df.join(&right_df, &spec).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // Sorting
+            "sort_by" => {
+                // Collect (column_name, descending) pairs
+                // Args can be: strings (ascending) or tuples of (string, bool)
+                // For now, we support simple form: sort_by("col1", "col2") - all ascending
+                // And with descending flag via string prefixed with "-": sort_by("-col1", "col2")
+                let mut sort_cols: Vec<(&str, bool)> = Vec::new();
+
+                for arg in args {
+                    match arg {
+                        Value::String(s) => {
+                            if let Some(col) = s.strip_prefix('-') {
+                                sort_cols.push((col, true)); // descending
+                            } else {
+                                sort_cols.push((s.as_str(), false)); // ascending
+                            }
+                        }
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: arg.type_name(),
+                                operation: "sort_by",
+                            }));
+                        }
+                    }
+                }
+
+                if sort_cols.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "sort_by requires at least one column name".to_string(),
+                    )));
+                }
+
+                let result = df.sort_by(&sort_cols).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // Take/Limit (alias for head)
+            "take" | "limit" => {
+                let n = if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: 0,
+                    }));
+                } else {
+                    match &args[0] {
+                        Value::Int(n) => *n as usize,
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "Int",
+                                got: args[0].type_name(),
+                                operation: "take",
+                            }));
+                        }
+                    }
+                };
+                let result = df.take_rows(n).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // Distinct/Unique
+            "distinct" | "unique" => {
+                if args.is_empty() {
+                    // Distinct on all columns
+                    let result = df.distinct().map_err(|e| {
+                        self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                    })?;
+                    Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                } else {
+                    // Distinct on specified columns
+                    let col_names: Result<Vec<&str>, _> = args
+                        .iter()
+                        .map(|v| match v {
+                            Value::String(s) => Ok(s.as_str()),
+                            _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: v.type_name(),
+                                operation: "distinct",
+                            })),
+                        })
+                        .collect();
+                    let col_names = col_names?;
+                    let result = df.distinct_by(&col_names).map_err(|e| {
+                        self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                    })?;
+                    Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                }
+            }
+
+            // File I/O - write methods
+            "to_parquet" | "write_parquet" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(path) => {
+                        crate::data::write_parquet(df, path.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Null)
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "to_parquet",
+                    })),
+                }
+            }
+
+            "to_csv" | "write_csv" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(path) => {
+                        crate::data::write_csv(df, path.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Null)
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "to_csv",
+                    })),
+                }
+            }
+
+            "to_json" | "write_json" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(path) => {
+                        crate::data::write_json(df, path.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Null)
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "to_json",
+                    })),
+                }
+            }
+
+            // Cube conversion - create a CubeBuilder from this DataFrame
+            // Usage: df.to_cube() or df.to_cube("name")
+            "to_cube" => {
+                use crate::data::CubeBuilder;
+                use std::sync::{Arc, Mutex};
+
+                let builder = if args.is_empty() {
+                    // df.to_cube() - no name
+                    CubeBuilder::from_dataframe(df).map_err(|e| {
+                        self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                    })?
+                } else {
+                    // df.to_cube("name") - with name
+                    match &args[0] {
+                        Value::String(name) => {
+                            CubeBuilder::from_dataframe_with_name(name.as_str(), df).map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                            })?
+                        }
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: args[0].type_name(),
+                                operation: "to_cube",
+                            }))
+                        }
+                    }
+                };
+
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(builder)))))
+            }
+
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "DataFrame".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
+    fn dataframe_filter(
+        &mut self,
+        df: &std::sync::Arc<DataFrame>,
+        args: &[Value],
+    ) -> RuntimeResult<Value> {
+        if args.len() != 1 {
+            return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                expected: 1,
+                got: args.len() as u8,
+            }));
+        }
+
+        let closure = match &args[0] {
+            Value::Closure(c) => c.clone(),
+            _ => {
+                return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                    expected: "Function",
+                    got: args[0].type_name(),
+                    operation: "filter",
+                }));
+            }
+        };
+
+        // Iterate over rows and collect indices where predicate returns true
+        let mut matching_indices = Vec::new();
+        for (idx, row_result) in df.iter_rows().enumerate() {
+            let row = row_result.map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            })?;
+            let result = self.call_closure_sync(closure.clone(), vec![row])?;
+            if result.is_truthy() {
+                matching_indices.push(idx);
+            }
+        }
+
+        // Create filtered DataFrame
+        let filtered_df = df.filter_by_indices(&matching_indices).map_err(|e| {
+            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+        })?;
+
+        Ok(Value::DataFrame(std::sync::Arc::new(filtered_df)))
+    }
+
+    fn series_method(
+        &self,
+        series: &std::sync::Arc<Series>,
+        method: &str,
+        args: &[Value],
+    ) -> RuntimeResult<Value> {
+        match method {
+            // Basic info
+            "name" => Ok(Value::string(series.name())),
+            "len" | "length" => Ok(Value::Int(series.len() as i64)),
+            "is_empty" => Ok(Value::Bool(series.is_empty())),
+            "dtype" | "data_type" => Ok(Value::string(format!("{:?}", series.data_type()))),
+            "null_count" => Ok(Value::Int(series.null_count() as i64)),
+            "count" => Ok(Value::Int(series.count() as i64)),
+
+            // Element access
+            "get" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Int(idx) => {
+                        series.get(*idx as usize).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "get",
+                    })),
+                }
+            }
+            "is_null" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Int(idx) => Ok(Value::Bool(series.is_null(*idx as usize))),
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "is_null",
+                    })),
+                }
+            }
+
+            // Aggregations
+            "sum" => series.sum().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+            "mean" | "avg" => series.mean().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+            "min" => series.min().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+            "max" => series.max().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+
+            // Conversion
+            "to_list" | "to_values" => {
+                let values = series.to_values().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::list(values))
+            }
+
+            // Rename
+            "rename" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(name) => {
+                        let new_series = Series::new(name.as_str(), series.array().clone());
+                        Ok(Value::Series(std::sync::Arc::new(new_series)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "rename",
+                    })),
+                }
+            }
+
+            // String operations
+            "is_string" => Ok(Value::Bool(series.is_string())),
+
+            "str_len" => {
+                let result = series.str_len().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "str_contains" | "contains" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(pattern) => {
+                        let result = series.str_contains(pattern.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "str_contains",
+                    })),
+                }
+            }
+
+            "str_starts_with" | "starts_with" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(prefix) => {
+                        let result = series.str_starts_with(prefix.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "str_starts_with",
+                    })),
+                }
+            }
+
+            "str_ends_with" | "ends_with" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(suffix) => {
+                        let result = series.str_ends_with(suffix.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "str_ends_with",
+                    })),
+                }
+            }
+
+            "str_to_lowercase" | "to_lowercase" | "lower" => {
+                let result = series.str_to_lowercase().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "str_to_uppercase" | "to_uppercase" | "upper" => {
+                let result = series.str_to_uppercase().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "str_trim" | "trim" => {
+                let result = series.str_trim().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "str_trim_start" | "trim_start" | "ltrim" => {
+                let result = series.str_trim_start().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "str_trim_end" | "trim_end" | "rtrim" => {
+                let result = series.str_trim_end().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "str_substring" | "substring" => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Int(start) => {
+                        let len = if args.len() == 2 {
+                            match &args[1] {
+                                Value::Int(l) => Some(*l as u64),
+                                _ => {
+                                    return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                        expected: "Int",
+                                        got: args[1].type_name(),
+                                        operation: "str_substring",
+                                    }))
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        let result = series.str_substring(*start, len).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "str_substring",
+                    })),
+                }
+            }
+
+            "str_replace" | "replace" => {
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+                match (&args[0], &args[1]) {
+                    (Value::String(pattern), Value::String(replacement)) => {
+                        let result = series
+                            .str_replace(pattern.as_str(), replacement.as_str())
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                            })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "str_replace",
+                    })),
+                }
+            }
+
+            "str_split_get" | "split_get" => {
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+                match (&args[0], &args[1]) {
+                    (Value::String(delimiter), Value::Int(index)) => {
+                        let result = series
+                            .str_split_get(delimiter.as_str(), *index as usize)
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                            })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String, Int",
+                        got: args[0].type_name(),
+                        operation: "str_split_get",
+                    })),
+                }
+            }
+
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "Series".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
+    fn grouped_dataframe_method(
+        &self,
+        gdf: &std::sync::Arc<GroupedDataFrame>,
+        method: &str,
+        args: &[Value],
+    ) -> RuntimeResult<Value> {
+        match method {
+            // Info methods
+            "num_groups" => Ok(Value::Int(gdf.num_groups() as i64)),
+            "group_columns" => {
+                let cols: Vec<Value> = gdf
+                    .group_columns()
+                    .iter()
+                    .map(|s| Value::string(s.clone()))
+                    .collect();
+                Ok(Value::list(cols))
+            }
+
+            // Simple aggregation methods (return DataFrame)
+            "sum" => {
+                let (column, output) = self.parse_simple_agg_args(args, "sum")?;
+                let result = gdf.sum(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "mean" | "avg" => {
+                let (column, output) = self.parse_simple_agg_args(args, "mean")?;
+                let result = gdf.mean(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "min" => {
+                let (column, output) = self.parse_simple_agg_args(args, "min")?;
+                let result = gdf.min(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "max" => {
+                let (column, output) = self.parse_simple_agg_args(args, "max")?;
+                let result = gdf.max(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "count" => {
+                let output = if args.is_empty() {
+                    None
+                } else {
+                    match &args[0] {
+                        Value::String(s) => Some((**s).clone()),
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: args[0].type_name(),
+                                operation: "count",
+                            }))
+                        }
+                    }
+                };
+                let result = gdf.count(output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "first" => {
+                let (column, output) = self.parse_simple_agg_args(args, "first")?;
+                let result = gdf.first(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "last" => {
+                let (column, output) = self.parse_simple_agg_args(args, "last")?;
+                let result = gdf.last(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // Builder pattern aggregation: agg(Agg.sum(...), Agg.count(...), ...)
+            "agg" | "aggregate" => {
+                if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "agg requires at least one aggregation spec".to_string()
+                    )));
+                }
+
+                // Collect AggSpec values from arguments
+                let specs: Result<Vec<AggSpec>, _> = args
+                    .iter()
+                    .map(|v| match v {
+                        Value::AggSpec(spec) => Ok((**spec).clone()),
+                        _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "AggSpec",
+                            got: v.type_name(),
+                            operation: "agg",
+                        })),
+                    })
+                    .collect();
+                let specs = specs?;
+
+                let result = gdf.aggregate(&specs).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "GroupedDataFrame".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
+    /// Parse arguments for simple aggregation methods like sum, mean, etc.
+    fn parse_simple_agg_args(&self, args: &[Value], method: &'static str) -> RuntimeResult<(String, Option<String>)> {
+        if args.is_empty() || args.len() > 2 {
+            return Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                "{method} expects 1 or 2 arguments (column, optional output_name)"
+            ))));
+        }
+
+        let column = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => {
+                return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                    expected: "String",
+                    got: args[0].type_name(),
+                    operation: method,
+                }))
+            }
+        };
+
+        let output = if args.len() == 2 {
+            match &args[1] {
+                Value::String(s) => Some((**s).clone()),
+                _ => {
+                    return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[1].type_name(),
+                        operation: method,
+                    }))
+                }
+            }
+        } else {
+            None
+        };
+
+        Ok((column, output))
+    }
+
+    // ===== Cube methods =====
+
+    fn cube_method(
+        &self,
+        cube: &std::sync::Arc<crate::data::Cube>,
+        method: &str,
+        _args: &[Value],
+    ) -> RuntimeResult<Value> {
+        match method {
+            // Metadata methods
+            "name" => Ok(cube.name().map(Value::string).unwrap_or(Value::Null)),
+            "row_count" | "rows" => Ok(Value::Int(cube.row_count() as i64)),
+            "batch_count" => Ok(Value::Int(cube.batch_count() as i64)),
+            "dimensions" => {
+                let dims: Vec<Value> = cube.dimension_names().into_iter().map(Value::string).collect();
+                Ok(Value::list(dims))
+            }
+            "measures" => {
+                let measures: Vec<Value> = cube.measure_names().into_iter().map(Value::string).collect();
+                Ok(Value::list(measures))
+            }
+            "hierarchies" => {
+                // Return a Map of hierarchy_name -> [level1, level2, ...]
+                use crate::bytecode::HashableValue;
+                use std::cell::RefCell;
+                use std::collections::HashMap;
+                use std::rc::Rc;
+
+                let hierarchies = cube.hierarchies_with_levels();
+                let mut map = HashMap::new();
+                for (name, levels) in hierarchies {
+                    let key = HashableValue::String(Rc::new(name));
+                    let levels_list: Vec<Value> = levels.into_iter().map(Value::string).collect();
+                    map.insert(key, Value::list(levels_list));
+                }
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
+            "dimension_values" => {
+                // dimension_values(dim_name) -> List of unique values
+                if _args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "dimension_values requires a dimension name argument".to_string()
+                    )));
+                }
+                let dim_name = match &_args[0] {
+                    Value::String(s) => (**s).clone(),
+                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: other.type_name(),
+                        operation: "dimension_values",
+                    })),
+                };
+
+                // Check if dimension exists
+                if !cube.has_dimension(&dim_name) {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        format!("dimension '{}' not found in cube", dim_name)
+                    )));
+                }
+
+                // Get unique values using a query
+                let values = cube.dimension_values(&dim_name).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+
+                Ok(Value::list(values))
+            }
+            "current_level" => {
+                // current_level(hierarchy_name) -> String (the current level in the hierarchy)
+                if _args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "current_level requires a hierarchy name argument".to_string()
+                    )));
+                }
+                let hierarchy_name = match &_args[0] {
+                    Value::String(s) => (**s).clone(),
+                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: other.type_name(),
+                        operation: "current_level",
+                    })),
+                };
+
+                // Get the current level (for Cube, this is the first level of the hierarchy)
+                match cube.current_level(&hierarchy_name) {
+                    Some(level) => Ok(Value::string(level)),
+                    None => Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        format!("hierarchy '{}' not found in cube", hierarchy_name)
+                    ))),
+                }
+            }
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "Cube".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
+    fn cubebuilder_method(
+        &self,
+        builder: &std::sync::Arc<std::sync::Mutex<Option<crate::data::CubeBuilder>>>,
+        method: &str,
+        args: &[Value],
+    ) -> RuntimeResult<Value> {
+        use crate::data::CubeAggFunc;
+        use std::sync::{Arc, Mutex};
+
+        match method {
+            // dimension(name, ...) - add one or more dimensions
+            "dimension" => {
+                let mut guard = builder
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
+                let inner_builder = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
+
+                let mut result_builder = inner_builder;
+                for arg in args {
+                    let name = match arg {
+                        Value::String(s) => s.as_str(),
+                        other => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: other.type_name(),
+                                operation: "dimension",
+                            }))
+                        }
+                    };
+                    result_builder = result_builder.dimension(name).map_err(|e| {
+                        self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                    })?;
+                }
+
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+            }
+
+            // measure(name, agg_func) - add a measure with aggregation
+            "measure" => {
+                if args.len() < 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "measure requires 2 arguments: column_name and aggregation_function".to_string()
+                    )));
+                }
+
+                let name = match &args[0] {
+                    Value::String(s) => s.as_str(),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "measure",
+                        }))
+                    }
+                };
+
+                let agg_func = match &args[1] {
+                    Value::NativeFunction(f) => match f.name {
+                        "sum" => CubeAggFunc::Sum,
+                        "avg" | "mean" => CubeAggFunc::Avg,
+                        "min" => CubeAggFunc::Min,
+                        "max" => CubeAggFunc::Max,
+                        "count" => CubeAggFunc::Count,
+                        "first" => CubeAggFunc::First,
+                        "last" => CubeAggFunc::Last,
+                        other => {
+                            return Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                                "unsupported aggregation function for measure: {other}"
+                            ))))
+                        }
+                    },
+                    Value::String(s) => match s.to_lowercase().as_str() {
+                        "sum" => CubeAggFunc::Sum,
+                        "avg" | "mean" | "average" => CubeAggFunc::Avg,
+                        "min" => CubeAggFunc::Min,
+                        "max" => CubeAggFunc::Max,
+                        "count" => CubeAggFunc::Count,
+                        "count_distinct" => CubeAggFunc::CountDistinct,
+                        "median" => CubeAggFunc::Median,
+                        "stddev" | "std" => CubeAggFunc::StdDev,
+                        "variance" | "var" => CubeAggFunc::Variance,
+                        "first" => CubeAggFunc::First,
+                        "last" => CubeAggFunc::Last,
+                        other => {
+                            return Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                                "unsupported aggregation function for measure: {other}"
+                            ))))
+                        }
+                    },
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "function or String",
+                            got: other.type_name(),
+                            operation: "measure",
+                        }))
+                    }
+                };
+
+                let mut guard = builder
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
+                let inner_builder = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
+
+                let result_builder = inner_builder.measure(name, agg_func).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+            }
+
+            // hierarchy(name, levels) - add a hierarchy
+            "hierarchy" => {
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "hierarchy requires 2 arguments: name and list of levels".to_string()
+                    )));
+                }
+
+                let name = match &args[0] {
+                    Value::String(s) => (**s).clone(),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "hierarchy",
+                        }))
+                    }
+                };
+
+                let levels: Vec<String> = match &args[1] {
+                    Value::List(list) => {
+                        list.borrow()
+                            .iter()
+                            .map(|v| match v {
+                                Value::String(s) => Ok((**s).clone()),
+                                other => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                    expected: "String",
+                                    got: other.type_name(),
+                                    operation: "hierarchy level",
+                                })),
+                            })
+                            .collect::<RuntimeResult<Vec<_>>>()?
+                    }
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "List",
+                            got: other.type_name(),
+                            operation: "hierarchy",
+                        }))
+                    }
+                };
+
+                let mut guard = builder
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
+                let inner_builder = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
+
+                let levels_refs: Vec<&str> = levels.iter().map(|s| s.as_str()).collect();
+                let result_builder = inner_builder.hierarchy(&name, &levels_refs).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+            }
+
+            // build() - finalize the cube
+            "build" => {
+                let mut guard = builder
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
+                let inner_builder = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
+
+                let cube = inner_builder.build().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+
+                Ok(Value::Cube(std::sync::Arc::new(cube)))
+            }
+
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "CubeBuilder".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
+    fn cubequery_method(
+        &self,
+        query: &std::sync::Arc<std::sync::Mutex<Option<crate::data::CubeQuery>>>,
+        method: &str,
+        args: &[Value],
+    ) -> RuntimeResult<Value> {
+        match method {
+            "current_level" => {
+                // current_level(hierarchy_name) -> String (the current level in the hierarchy)
+                if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "current_level requires a hierarchy name argument".to_string()
+                    )));
+                }
+                let hierarchy_name = match &args[0] {
+                    Value::String(s) => (**s).clone(),
+                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: other.type_name(),
+                        operation: "current_level",
+                    })),
+                };
+
+                // Get the query without consuming it
+                let guard = query
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
+                let q = guard
+                    .as_ref()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+
+                // Get the current level from the query
+                match q.current_level(&hierarchy_name) {
+                    Some(level) => Ok(Value::string(level)),
+                    None => Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        format!("hierarchy '{}' not found in cube", hierarchy_name)
+                    ))),
+                }
+            }
+            "cube_name" => {
+                let guard = query
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
+                let q = guard
+                    .as_ref()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+
+                Ok(q.cube_name().map(Value::string).unwrap_or(Value::Null))
+            }
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "CubeQuery".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
     // ===== Field access =====
 
     fn get_field(&self, object: &Value, field: &str) -> RuntimeResult<Value> {
@@ -2170,6 +5407,38 @@ impl VM {
         error
     }
 
+    /// Invoke a Stratum closure with the given arguments and return the result.
+    ///
+    /// This is the public API for GUI callback execution. It allows external code
+    /// (like the GUI framework) to invoke Stratum closures in response to events.
+    ///
+    /// # Arguments
+    /// * `closure` - The closure to invoke (must be `Value::Closure`)
+    /// * `args` - Arguments to pass to the closure
+    ///
+    /// # Returns
+    /// The return value of the closure, or an error if invocation fails.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - The value is not a closure
+    /// - Argument count doesn't match arity
+    /// - The closure throws an exception
+    pub fn invoke_callback(&mut self, closure: &Value, args: Vec<Value>) -> RuntimeResult<Value> {
+        match closure {
+            Value::Closure(c) => self.call_closure_sync(c.clone(), args),
+            Value::NativeFunction(nf) => {
+                let result = (nf.function)(&args).map_err(|msg| {
+                    self.runtime_error(RuntimeErrorKind::Internal(msg))
+                })?;
+                Ok(result)
+            }
+            other => Err(self.runtime_error(RuntimeErrorKind::NotCallable(
+                other.type_name(),
+            ))),
+        }
+    }
+
     /// Get a reference to the global variables
     pub fn globals(&self) -> &HashMap<String, Value> {
         &self.globals
@@ -2179,6 +5448,373 @@ impl VM {
     pub fn globals_mut(&mut self) -> &mut HashMap<String, Value> {
         &mut self.globals
     }
+
+    // ===== Debug API =====
+
+    /// Enable or disable debug mode
+    pub fn set_debug_mode(&mut self, enabled: bool) {
+        self.debug_context.debug_mode = enabled;
+    }
+
+    /// Check if debug mode is enabled
+    pub fn is_debug_mode(&self) -> bool {
+        self.debug_context.debug_mode
+    }
+
+    /// Set the current source file for debug location tracking
+    pub fn set_source_file(&mut self, path: Option<std::path::PathBuf>) {
+        self.current_source = path;
+    }
+
+    /// Add a breakpoint at the given line
+    pub fn add_breakpoint(&mut self, file: Option<std::path::PathBuf>, line: u32) -> u32 {
+        self.debug_context.add_breakpoint(file, line)
+    }
+
+    /// Remove a breakpoint by ID
+    pub fn remove_breakpoint(&mut self, id: u32) -> bool {
+        self.debug_context.remove_breakpoint(id)
+    }
+
+    /// Clear all breakpoints
+    pub fn clear_breakpoints(&mut self) {
+        self.debug_context.clear_breakpoints();
+    }
+
+    /// Get all breakpoint lines for a file
+    pub fn get_breakpoint_lines(&self, file: Option<&std::path::PathBuf>) -> Vec<u32> {
+        self.debug_context.get_breakpoint_lines(file)
+    }
+
+    /// Get the current debug state (call stack, locals, location)
+    pub fn get_debug_state(&self, pause_reason: PauseReason) -> DebugState {
+        let (location, function_name) = if !self.frames.is_empty() {
+            let frame = &self.frames[self.frames.len() - 1];
+            let line = frame.chunk().get_line(frame.ip.saturating_sub(1));
+            let func_name = frame.closure.function.name.clone();
+            let file = self.current_source.clone();
+            (DebugLocation::new(file, line), func_name)
+        } else {
+            (DebugLocation::line(0), "<script>".to_string())
+        };
+
+        let call_stack = self.get_call_stack();
+        let locals = self.get_local_variables();
+
+        DebugState {
+            location,
+            function_name,
+            call_stack,
+            locals,
+            pause_reason,
+        }
+    }
+
+    /// Get the current call stack
+    pub fn get_call_stack(&self) -> Vec<DebugStackFrame> {
+        self.frames
+            .iter()
+            .rev()
+            .enumerate()
+            .map(|(idx, frame)| {
+                let line = frame.chunk().get_line(frame.ip.saturating_sub(1));
+                let source = frame.closure.function.chunk.source_name.clone();
+                DebugStackFrame {
+                    function_name: frame.closure.function.name.clone(),
+                    file: source,
+                    line,
+                    index: idx,
+                }
+            })
+            .collect()
+    }
+
+    /// Get local variables in the current frame
+    pub fn get_local_variables(&self) -> Vec<DebugVariable> {
+        if self.frames.is_empty() {
+            return Vec::new();
+        }
+
+        let frame = &self.frames[self.frames.len() - 1];
+        let func = &frame.closure.function;
+        let mut locals = Vec::new();
+
+        // Calculate the number of locals from the stack layout
+        // Locals are stored from stack_base up to the current stack position
+        let stack_end = if self.frames.len() > 1 {
+            // If we have multiple frames, locals end at the next frame's base
+            self.stack.len()
+        } else {
+            self.stack.len()
+        };
+
+        let local_count = stack_end.saturating_sub(frame.stack_base);
+        for i in 0..local_count {
+            let slot = frame.stack_base + i;
+            if slot < self.stack.len() {
+                let value = &self.stack[slot];
+                let name = if i < func.arity as usize {
+                    format!("arg{}", i)
+                } else {
+                    format!("local{}", i - func.arity as usize)
+                };
+                locals.push(DebugVariable::from_value(name, value));
+            }
+        }
+
+        locals
+    }
+
+    /// Get the current line number
+    pub fn get_current_line(&self) -> u32 {
+        if self.frames.is_empty() {
+            return 0;
+        }
+        let frame = &self.frames[self.frames.len() - 1];
+        frame.chunk().get_line(frame.ip.saturating_sub(1))
+    }
+
+    /// Get the current frame depth
+    fn get_frame_depth(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Prepare for step into
+    pub fn step_into(&mut self) {
+        let depth = self.get_frame_depth();
+        let line = self.get_current_line();
+        self.debug_context.start_step_into(depth, line);
+    }
+
+    /// Prepare for step over
+    pub fn step_over(&mut self) {
+        let depth = self.get_frame_depth();
+        let line = self.get_current_line();
+        self.debug_context.start_step_over(depth, line);
+    }
+
+    /// Prepare for step out
+    pub fn step_out(&mut self) {
+        let depth = self.get_frame_depth();
+        let line = self.get_current_line();
+        self.debug_context.start_step_out(depth, line);
+    }
+
+    /// Run in debug mode, stopping at breakpoints and steps
+    pub fn run_debug(&mut self, function: Rc<Function>) -> DebugStepResult {
+        // Set up for debug execution
+        self.debug_context.debug_mode = true;
+
+        // Clear any leftover state from previous runs
+        self.stack.clear();
+        self.frames.clear();
+        self.open_upvalues.clear();
+        self.handlers.clear();
+        self.current_exception = None;
+        self.suspended_coroutine = None;
+
+        // Wrap the function in a closure
+        let closure = Rc::new(Closure::new(function));
+
+        // Push the closure onto the stack
+        self.stack.push(Value::Closure(closure.clone()));
+
+        // Create the initial frame
+        self.frames.push(CallFrame::new(closure, 0));
+
+        // Run the debug execution loop
+        self.execute_debug()
+    }
+
+    /// Continue debug execution from current position
+    pub fn continue_debug(&mut self) -> DebugStepResult {
+        self.debug_context.clear_step();
+        self.execute_debug()
+    }
+
+    /// Execute with debug support (checking breakpoints and steps)
+    fn execute_debug(&mut self) -> DebugStepResult {
+        loop {
+            // Check for exception propagation
+            if let Some(exception) = self.current_exception.take() {
+                if let Ok(handled) = self.handle_exception(exception.clone()) {
+                    if !handled {
+                        return DebugStepResult::Error(format!("Uncaught exception: {}", exception));
+                    }
+                    continue;
+                } else {
+                    return DebugStepResult::Error(format!("Uncaught exception: {}", exception));
+                }
+            }
+
+            // Get current instruction
+            if self.frames.is_empty() {
+                return DebugStepResult::Completed(Value::Null);
+            }
+
+            let frame = self.current_frame();
+            let chunk = frame.chunk();
+
+            if frame.ip >= chunk.len() {
+                let result = self.stack.pop().unwrap_or(Value::Null);
+                return DebugStepResult::Completed(result);
+            }
+
+            // Check for breakpoints and stepping before executing
+            let current_line = chunk.get_line(frame.ip);
+            let frame_depth = self.frames.len();
+
+            // Check breakpoint
+            if self.debug_context.has_breakpoint(self.current_source.as_ref(), current_line) {
+                // Find breakpoint ID
+                let bp_id = 0; // Simplified - would need to look up actual ID
+                self.debug_context.clear_step();
+                return DebugStepResult::Paused(self.get_debug_state(PauseReason::Breakpoint(bp_id)));
+            }
+
+            // Check stepping
+            if self.debug_context.should_break_for_step(frame_depth, current_line) {
+                self.debug_context.clear_step();
+                return DebugStepResult::Paused(self.get_debug_state(PauseReason::Step));
+            }
+
+            // Execute instruction
+            let instruction = match chunk.read_byte(frame.ip) {
+                Some(b) => b,
+                None => return DebugStepResult::Error("Unexpected end of bytecode".to_string()),
+            };
+
+            let opcode = match OpCode::try_from(instruction) {
+                Ok(op) => op,
+                Err(op) => return DebugStepResult::Error(format!("Invalid opcode: {}", op)),
+            };
+
+            // Advance IP
+            self.current_frame_mut().ip += 1;
+
+            // Handle Return specially
+            if opcode == OpCode::Return {
+                let result = match self.pop() {
+                    Ok(v) => v,
+                    Err(e) => return DebugStepResult::Error(format!("{}", e)),
+                };
+
+                let frame = &self.frames[self.frames.len() - 1];
+                self.close_upvalues(frame.stack_base);
+
+                let frame = self.frames.pop().unwrap();
+
+                if self.frames.is_empty() {
+                    return DebugStepResult::Completed(result);
+                }
+
+                self.stack.truncate(frame.stack_base);
+                if let Err(e) = self.push(result) {
+                    return DebugStepResult::Error(format!("{}", e));
+                }
+                continue;
+            }
+
+            // Execute all other opcodes
+            if let Err(e) = self.execute_opcode(opcode) {
+                return DebugStepResult::Error(format!("{}", e));
+            }
+
+            // Check if execution was suspended
+            if let Some(coroutine) = self.suspended_coroutine.take() {
+                return DebugStepResult::Completed(coroutine);
+            }
+        }
+    }
+
+    // ===== Garbage Collection API =====
+
+    /// Track a value for cycle collection
+    ///
+    /// Call this when creating container values (List, Map, Struct) that might
+    /// participate in reference cycles.
+    pub fn gc_track(&mut self, value: &Value) {
+        self.gc.track(value);
+    }
+
+    /// Run cycle collection if the allocation threshold has been reached
+    ///
+    /// Returns the number of cycles broken, or 0 if collection was not triggered.
+    pub fn gc_collect_if_needed(&mut self) -> usize {
+        if self.gc.should_collect() {
+            self.gc.collect(&self.stack, &self.globals, &self.open_upvalues)
+        } else {
+            0
+        }
+    }
+
+    /// Force a cycle collection regardless of threshold
+    ///
+    /// Returns the number of cycles broken.
+    pub fn gc_collect(&mut self) -> usize {
+        self.gc.force_collect(&self.stack, &self.globals, &self.open_upvalues)
+    }
+
+    /// Get garbage collection statistics
+    #[must_use]
+    pub fn gc_stats(&self) -> crate::gc::GcStats {
+        self.gc.stats()
+    }
+
+    /// Set the garbage collection threshold
+    ///
+    /// Collection will be triggered when this many container allocations occur.
+    pub fn gc_set_threshold(&mut self, threshold: usize) {
+        self.gc.set_threshold(threshold);
+    }
+
+    /// Get the current garbage collection threshold
+    #[must_use]
+    pub fn gc_threshold(&self) -> usize {
+        self.gc.threshold()
+    }
+
+    /// Enable or disable automatic garbage collection
+    pub fn gc_set_auto(&mut self, enabled: bool) {
+        self.gc.set_auto_collect(enabled);
+    }
+
+    /// Check if automatic garbage collection is enabled
+    #[must_use]
+    pub fn gc_is_auto_enabled(&self) -> bool {
+        self.gc.is_auto_collect_enabled()
+    }
+}
+
+/// Helper function for native grouped aggregation functions
+fn native_grouped_agg<F>(args: &[Value], name: &str, agg_fn: F) -> Result<Value, String>
+where
+    F: FnOnce(&GroupedDataFrame, &str, Option<&str>) -> crate::data::DataResult<DataFrame>,
+{
+    if args.is_empty() {
+        return Err(format!("{name} requires a GroupedDataFrame as the first argument"));
+    }
+    let gdf = match &args[0] {
+        Value::GroupedDataFrame(gdf) => gdf,
+        other => return Err(format!("{name} expects GroupedDataFrame, got {}", other.type_name())),
+    };
+    if args.len() < 2 {
+        return Err(format!("{name} requires at least a column name argument"));
+    }
+    let column = match &args[1] {
+        Value::String(s) => s.as_str(),
+        other => return Err(format!("{name} column name must be string, got {}", other.type_name())),
+    };
+    let output = if args.len() > 2 {
+        match &args[2] {
+            Value::String(s) => Some(s.as_str()),
+            other => return Err(format!("{name} output name must be string, got {}", other.type_name())),
+        }
+    } else {
+        None
+    };
+    let result = agg_fn(gdf, column, output).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(std::sync::Arc::new(result)))
 }
 
 #[cfg(test)]
@@ -2192,6 +5828,7 @@ mod tests {
             arity: 0,
             upvalue_count: 0,
             chunk,
+            execution_mode: crate::ast::ExecutionMode::default(),
         })
     }
 
