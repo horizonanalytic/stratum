@@ -174,6 +174,26 @@ impl TypeChecker {
             Type::function(vec![float_type], Type::Float),
             false,
         );
+
+        // Register native namespace modules
+        // These are built-in modules accessed via dot notation (e.g., Random.int(1, 10))
+        let namespaces = [
+            "File", "Dir", "Path", "Env", "Args", "Shell", "Http",
+            "Json", "Toml", "Yaml", "Base64", "Url",
+            "Gzip", "Zip",
+            "DateTime", "Duration", "Time",
+            "Regex",
+            "Hash", "Uuid", "Random", "Crypto",
+            "Math",
+            "Input", "Log", "System",
+            "Db",
+            "Tcp", "Udp", "WebSocket",
+            "Data", "Agg", "Join", "Cube",
+            "Async",
+        ];
+        for ns in namespaces {
+            self.env.define_var(ns, Type::Namespace(ns.to_string()), false);
+        }
     }
 
     /// Type check a complete module
@@ -1366,9 +1386,29 @@ impl TypeChecker {
             }
 
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
-                if (left.is_numeric() && right.is_numeric())
-                    || (matches!(left, Type::String) && matches!(right, Type::String))
-                {
+                // Handle type variables by trying to unify with the other operand
+                let left_comparable = left.is_numeric()
+                    || matches!(left, Type::String)
+                    || left.is_type_var();
+                let right_comparable = right.is_numeric()
+                    || matches!(right, Type::String)
+                    || right.is_type_var();
+
+                if left_comparable && right_comparable {
+                    // Try to unify type variables with the other side
+                    if left.is_type_var() && right.is_numeric() {
+                        self.inference.unify(&left, &right, span);
+                    } else if right.is_type_var() && left.is_numeric() {
+                        self.inference.unify(&right, &left, span);
+                    } else if left.is_type_var() && matches!(right, Type::String) {
+                        self.inference.unify(&left, &Type::String, span);
+                    } else if right.is_type_var() && matches!(left, Type::String) {
+                        self.inference.unify(&right, &Type::String, span);
+                    } else if left.is_type_var() && right.is_type_var() {
+                        // Both are type vars, unify them and assume Int
+                        self.inference.unify(&left, &right, span);
+                        self.inference.unify(&left, &Type::Int, span);
+                    }
                     Type::Bool
                 } else {
                     self.errors.push(TypeError::new(
@@ -1521,6 +1561,19 @@ impl TypeChecker {
                 *ret.clone()
             }
             Type::Error => Type::Error,
+            // Type variables might be functions - unify with expected function type
+            Type::TypeVar(_) => {
+                // Create a function type with the actual argument types and fresh return
+                let ret = self.inference.fresh_var();
+                let expected_fn = Type::function(args.to_vec(), ret.clone());
+                // Try to unify the type variable with a function type
+                if !self.inference.unify(&callee, &expected_fn, span) {
+                    self.errors
+                        .push(TypeError::not_callable(callee.clone(), span));
+                    return Type::Error;
+                }
+                ret
+            }
             _ => {
                 self.errors
                     .push(TypeError::not_callable(callee.clone(), span));
@@ -1624,6 +1677,13 @@ impl TypeChecker {
             Type::Map(key_type, value_type) => {
                 self.check_map_method(field, key_type, value_type, span)
             }
+            // Native namespace modules (Random, Math, File, etc.)
+            // Methods on namespaces are dynamically typed - the VM handles actual dispatch.
+            // Return a fresh type variable that will unify with a function type when called.
+            Type::Namespace(_) => self.inference.fresh_var(),
+            // Type variables can have methods called on them - return fresh type var
+            // This enables chaining from dynamically-typed namespace method results
+            Type::TypeVar(_) => self.inference.fresh_var(),
             Type::Error => Type::Error,
             _ => {
                 self.errors
@@ -2352,7 +2412,7 @@ impl TypeChecker {
                     .map(|a| Self::substitute_type_vars(a, old_ids, new_types))
                     .collect(),
             ),
-            // Primitive types don't need substitution
+            // Primitive types and namespaces don't need substitution
             Type::Int
             | Type::Float
             | Type::Bool
@@ -2361,7 +2421,8 @@ impl TypeChecker {
             | Type::Unit
             | Type::Never
             | Type::Error
-            | Type::Range => ty.clone(),
+            | Type::Range
+            | Type::Namespace(_) => ty.clone(),
         }
     }
 }

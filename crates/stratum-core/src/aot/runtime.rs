@@ -16,6 +16,7 @@ use crate::jit::types::ValueTag;
 /// - Second 8 bytes: data (u64)
 #[repr(C)]
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 pub struct PackedValue {
     /// Tag + padding packed as u64
     pub tag_padded: u64,
@@ -23,6 +24,7 @@ pub struct PackedValue {
     pub data: u64,
 }
 
+#[allow(dead_code)]
 impl PackedValue {
     /// Get the tag from the packed representation
     #[must_use]

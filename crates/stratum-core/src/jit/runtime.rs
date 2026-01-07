@@ -385,8 +385,21 @@ pub unsafe extern "C" fn stratum_call_jit_direct(
 //
 // These types and functions support calling between JIT and interpreted code.
 
+/// FFI-safe return type for JIT functions returning packed values
+///
+/// Tuples are not FFI-safe, so we use this repr(C) struct instead.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ReturnPair {
+    /// Tag + padding
+    pub tag: u64,
+    /// Data
+    pub data: u64,
+}
+
 /// Function pointer type for JIT-compiled functions
 /// Takes (arg_count, args_ptr) and returns a PackedValue
+#[allow(dead_code)]
 pub type JitFunctionPtr = extern "C" fn(u8, *const PackedValue) -> PackedValue;
 
 /// Compiled function entry for the JIT cache
@@ -478,46 +491,46 @@ unsafe fn call_jit_function_unsafe(
 
     match func.arity {
         0 => {
-            type Fn0 = extern "C" fn() -> (u64, u64);
+            type Fn0 = extern "C" fn() -> ReturnPair;
             let f: Fn0 = std::mem::transmute(func.ptr);
-            let (tag, data) = f();
-            packed_to_value(PackedValue { tag_padded: tag, data })
+            let ret = f();
+            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
         }
         1 => {
-            type Fn1 = extern "C" fn(u64, u64) -> (u64, u64);
+            type Fn1 = extern "C" fn(u64, u64) -> ReturnPair;
             let f: Fn1 = std::mem::transmute(func.ptr);
-            let (tag, data) = f(packed_args[0].tag_padded, packed_args[0].data);
-            packed_to_value(PackedValue { tag_padded: tag, data })
+            let ret = f(packed_args[0].tag_padded, packed_args[0].data);
+            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
         }
         2 => {
-            type Fn2 = extern "C" fn(u64, u64, u64, u64) -> (u64, u64);
+            type Fn2 = extern "C" fn(u64, u64, u64, u64) -> ReturnPair;
             let f: Fn2 = std::mem::transmute(func.ptr);
-            let (tag, data) = f(
+            let ret = f(
                 packed_args[0].tag_padded, packed_args[0].data,
                 packed_args[1].tag_padded, packed_args[1].data,
             );
-            packed_to_value(PackedValue { tag_padded: tag, data })
+            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
         }
         3 => {
-            type Fn3 = extern "C" fn(u64, u64, u64, u64, u64, u64) -> (u64, u64);
+            type Fn3 = extern "C" fn(u64, u64, u64, u64, u64, u64) -> ReturnPair;
             let f: Fn3 = std::mem::transmute(func.ptr);
-            let (tag, data) = f(
+            let ret = f(
                 packed_args[0].tag_padded, packed_args[0].data,
                 packed_args[1].tag_padded, packed_args[1].data,
                 packed_args[2].tag_padded, packed_args[2].data,
             );
-            packed_to_value(PackedValue { tag_padded: tag, data })
+            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
         }
         4 => {
-            type Fn4 = extern "C" fn(u64, u64, u64, u64, u64, u64, u64, u64) -> (u64, u64);
+            type Fn4 = extern "C" fn(u64, u64, u64, u64, u64, u64, u64, u64) -> ReturnPair;
             let f: Fn4 = std::mem::transmute(func.ptr);
-            let (tag, data) = f(
+            let ret = f(
                 packed_args[0].tag_padded, packed_args[0].data,
                 packed_args[1].tag_padded, packed_args[1].data,
                 packed_args[2].tag_padded, packed_args[2].data,
                 packed_args[3].tag_padded, packed_args[3].data,
             );
-            packed_to_value(PackedValue { tag_padded: tag, data })
+            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
         }
         _ => {
             // For functions with more arguments, we'd need a more general approach

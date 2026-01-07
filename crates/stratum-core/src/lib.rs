@@ -243,6 +243,54 @@ mod tests {
         assert_eq!(result, bytecode::Value::Int(2));
     }
 
+    // ===== String Method Tests =====
+
+    #[test]
+    fn test_string_trim_start() {
+        let result = run_expr(r#""  hello  ".trim_start()"#).unwrap();
+        assert_eq!(result, bytecode::Value::string("hello  "));
+    }
+
+    #[test]
+    fn test_string_trim_end() {
+        let result = run_expr(r#""  hello  ".trim_end()"#).unwrap();
+        assert_eq!(result, bytecode::Value::string("  hello"));
+    }
+
+    #[test]
+    fn test_string_chars() {
+        let result = run_expr(r#""abc".chars()"#).unwrap();
+        match result {
+            bytecode::Value::List(list) => {
+                let items = list.borrow();
+                assert_eq!(items.len(), 3);
+                assert_eq!(items[0], bytecode::Value::string("a"));
+                assert_eq!(items[1], bytecode::Value::string("b"));
+                assert_eq!(items[2], bytecode::Value::string("c"));
+            }
+            _ => panic!("Expected list, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_string_substring() {
+        // Basic substring
+        let result = run_expr(r#""hello world".substring(0, 5)"#).unwrap();
+        assert_eq!(result, bytecode::Value::string("hello"));
+
+        // Substring from middle
+        let result = run_expr(r#""hello world".substring(6, 11)"#).unwrap();
+        assert_eq!(result, bytecode::Value::string("world"));
+
+        // Substring to end (no second arg)
+        let result = run_expr(r#""hello world".substring(6)"#).unwrap();
+        assert_eq!(result, bytecode::Value::string("world"));
+
+        // Negative indices
+        let result = run_expr(r#""hello world".substring(-5)"#).unwrap();
+        assert_eq!(result, bytecode::Value::string("world"));
+    }
+
     /// Helper to compile and run a Stratum module, calling main()
     fn run_module(source: &str) -> Result<bytecode::Value, String> {
         let module = parser::Parser::parse_module(source).map_err(|e| format!("{:?}", e))?;

@@ -949,7 +949,7 @@ impl VM {
                 }
             };
 
-            let levels: Vec<&str> = match &args[2] {
+            let _levels: Vec<&str> = match &args[2] {
                 Value::List(list) => {
                     let borrowed = list.borrow();
                     let mut result = Vec::new();
@@ -2274,75 +2274,6 @@ impl VM {
         self.push(result)
     }
 
-    fn numeric_binary_op<I, F>(
-        &mut self,
-        op_name: &'static str,
-        int_op: I,
-        float_op: F,
-    ) -> RuntimeResult<()>
-    where
-        I: FnOnce(i64, i64) -> i64,
-        F: FnOnce(f64, f64) -> f64,
-    {
-        let right = self.pop()?;
-        let left = self.pop()?;
-        let result = match (&left, &right) {
-            (Value::Int(x), Value::Int(y)) => Value::Int(int_op(*x, *y)),
-            (Value::Float(x), Value::Float(y)) => Value::Float(float_op(*x, *y)),
-            (Value::Int(x), Value::Float(y)) => Value::Float(float_op(*x as f64, *y)),
-            (Value::Float(x), Value::Int(y)) => Value::Float(float_op(*x, *y as f64)),
-            _ => {
-                return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                    expected: "numeric",
-                    got: left.type_name(),
-                    operation: op_name,
-                }));
-            }
-        };
-        self.push(result)
-    }
-
-    fn comparison_op<I, F>(
-        &mut self,
-        op_name: &'static str,
-        int_op: I,
-        float_op: F,
-    ) -> RuntimeResult<()>
-    where
-        I: FnOnce(i64, i64) -> bool,
-        F: FnOnce(f64, f64) -> bool,
-    {
-        let right = self.pop()?;
-        let left = self.pop()?;
-        let result = match (&left, &right) {
-            (Value::Int(x), Value::Int(y)) => int_op(*x, *y),
-            (Value::Float(x), Value::Float(y)) => float_op(*x, *y),
-            (Value::Int(x), Value::Float(y)) => float_op(*x as f64, *y),
-            (Value::Float(x), Value::Int(y)) => float_op(*x, *y as f64),
-            (Value::String(x), Value::String(y)) => match op_name {
-                "<" => x < y,
-                "<=" => x <= y,
-                ">" => x > y,
-                ">=" => x >= y,
-                _ => {
-                    return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "comparable",
-                        got: left.type_name(),
-                        operation: op_name,
-                    }));
-                }
-            },
-            _ => {
-                return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                    expected: "comparable",
-                    got: left.type_name(),
-                    operation: op_name,
-                }));
-            }
-        };
-        self.push(Value::Bool(result))
-    }
-
     /// Comparison operation with Series support
     fn series_comparison_op<SeriesOp, ScalarOp, FlippedOp, I, F>(
         &mut self,
@@ -3563,6 +3494,60 @@ impl VM {
             "to_upper" | "to_uppercase" => Ok(Value::string(s.to_uppercase())),
             "to_lower" | "to_lowercase" => Ok(Value::string(s.to_lowercase())),
             "trim" => Ok(Value::string(s.trim())),
+            "trim_start" | "ltrim" => Ok(Value::string(s.trim_start())),
+            "trim_end" | "rtrim" => Ok(Value::string(s.trim_end())),
+            "chars" => {
+                let chars: Vec<Value> = s.chars().map(|c| Value::string(c.to_string())).collect();
+                Ok(Value::list(chars))
+            }
+            "substring" => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1, // minimum
+                        got: args.len() as u8,
+                    }));
+                }
+                let start = match &args[0] {
+                    Value::Int(i) => {
+                        let len = s.chars().count() as i64;
+                        if *i < 0 {
+                            (len + i).max(0) as usize
+                        } else {
+                            (*i as usize).min(len as usize)
+                        }
+                    }
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Int",
+                            got: args[0].type_name(),
+                            operation: "substring",
+                        }));
+                    }
+                };
+                let end = if args.len() == 2 {
+                    match &args[1] {
+                        Value::Int(i) => {
+                            let len = s.chars().count() as i64;
+                            if *i < 0 {
+                                (len + i).max(0) as usize
+                            } else {
+                                (*i as usize).min(len as usize)
+                            }
+                        }
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "Int",
+                                got: args[1].type_name(),
+                                operation: "substring",
+                            }));
+                        }
+                    }
+                } else {
+                    s.chars().count()
+                };
+                let result: String = s.chars().skip(start).take(end.saturating_sub(start)).collect();
+                Ok(Value::string(result))
+            }
             "split" => {
                 if args.len() != 1 {
                     return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {

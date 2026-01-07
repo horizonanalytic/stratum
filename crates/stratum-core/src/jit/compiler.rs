@@ -41,6 +41,7 @@ pub struct JitCompiler {
     builder_ctx: FunctionBuilderContext,
 
     /// Cache of runtime helper function IDs
+    #[allow(dead_code)]
     runtime_funcs: HashMap<&'static str, FuncId>,
 
     /// Cache of compiled Stratum function IDs
@@ -115,6 +116,7 @@ impl JitCompiler {
     }
 
     /// Get or declare a runtime function
+    #[allow(dead_code)]
     fn get_runtime_func(&mut self, name: &'static str, sig: Signature) -> JitResult<FuncId> {
         if let Some(&id) = self.runtime_funcs.get(name) {
             return Ok(id);
@@ -130,6 +132,7 @@ impl JitCompiler {
     }
 
     /// Create a signature for functions that take a packed value and return one
+    #[allow(dead_code)]
     fn value_to_value_sig(&self) -> Signature {
         let mut sig = self.module.make_signature();
         // Input: tag+pad (i64) + data (i64)

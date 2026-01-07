@@ -41,7 +41,7 @@ use crate::bytecode::{
 use std::sync::Arc;
 use crate::data::{
     read_csv_with_options, read_json, read_parquet, sql_query, write_csv, write_json,
-    write_parquet, AggOp, AggSpec, Cube, CubeAggFunc, CubeBuilder, DataFrame, JoinSpec, Series,
+    write_parquet, AggOp, AggSpec, CubeBuilder, DataFrame, JoinSpec, Series,
     SqlContext,
 };
 

@@ -42,6 +42,7 @@ pub struct AotCompiler {
     builder_ctx: FunctionBuilderContext,
 
     /// Cache of runtime helper function IDs
+    #[allow(dead_code)]
     runtime_funcs: HashMap<&'static str, FuncId>,
 
     /// Cache of compiled Stratum function IDs
@@ -104,6 +105,7 @@ impl AotCompiler {
     }
 
     /// Get or declare a runtime function
+    #[allow(dead_code)]
     fn get_runtime_func(&mut self, name: &'static str, sig: Signature) -> AotResult<FuncId> {
         if let Some(&id) = self.runtime_funcs.get(name) {
             return Ok(id);
@@ -223,7 +225,7 @@ impl AotCompiler {
             let main_ref = self.module.declare_func_in_func(*main_id, builder.func);
 
             // Call main()
-            let main_sig_ref = builder.import_signature(main_sig);
+            let _main_sig_ref = builder.import_signature(main_sig);
             let call = builder.ins().call(main_ref, &[]);
             let results = builder.inst_results(call).to_vec();
 

@@ -132,6 +132,7 @@ impl Formatter {
         }
     }
 
+    #[allow(dead_code)]
     fn write_trailing_trivia(&mut self, trivia: &Trivia) {
         if let Some(comment) = &trivia.trailing {
             self.write_space();

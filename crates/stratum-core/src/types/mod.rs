@@ -157,6 +157,10 @@ pub enum Type {
     /// Range type for iterating over integer sequences
     /// Range represents start..end (exclusive end)
     Range,
+
+    /// Native namespace module (File, Dir, Random, Math, etc.)
+    /// These are built-in modules with methods accessed via dot notation
+    Namespace(std::string::String),
 }
 
 impl Type {
@@ -405,6 +409,7 @@ impl fmt::Display for Type {
                 Ok(())
             }
             Type::Range => write!(f, "Range"),
+            Type::Namespace(name) => write!(f, "{name}"),
         }
     }
 }

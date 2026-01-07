@@ -47,5 +47,8 @@ tarpaulin-report.html
 *.pem
 *.key
 
+# Generated documentation
+docs/book/
+
 # OS files
 Thumbs.db

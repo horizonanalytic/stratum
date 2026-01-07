@@ -92,7 +92,8 @@ struct CompilerState {
     /// Enclosing compiler state (for nested functions)
     enclosing: Option<Box<CompilerState>>,
 
-    /// Whether this function is async
+    /// Whether this function is async (reserved for future async compilation)
+    #[allow(dead_code)]
     is_async: bool,
 }
 

@@ -278,6 +278,7 @@ int main(int argc, char** argv) {
 /// Build a Stratum module into an executable
 ///
 /// This is a convenience function that combines AOT compilation and linking.
+#[allow(dead_code)]
 pub fn build_executable(
     functions: &[&crate::bytecode::Function],
     output: impl Into<PathBuf>,

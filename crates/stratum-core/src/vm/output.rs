@@ -6,7 +6,7 @@
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
-/// Thread-local output buffer for capturing print output
+// Thread-local output buffer for capturing print output
 thread_local! {
     static OUTPUT_BUFFER: RefCell<Option<Arc<Mutex<Vec<String>>>>> = const { RefCell::new(None) };
 }

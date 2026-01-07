@@ -197,3 +197,83 @@ fx test_print_function() {
     print("test");
     println("test line");
 }
+
+// ============================================
+// Random Namespace Tests
+// ============================================
+
+#[test]
+fx test_random_int_in_range() {
+    // Test Random.int returns value in specified range
+    let r = Random.int(1, 10);
+    assert(r >= 1);
+    assert(r <= 10);
+}
+
+#[test]
+fx test_random_int_single_value() {
+    // When min == max, should return that value
+    let r = Random.int(5, 5);
+    assert(r == 5);
+}
+
+#[test]
+fx test_random_float_in_range() {
+    // Test Random.float returns value in [0.0, 1.0)
+    let f = Random.float();
+    assert(f >= 0.0);
+    assert(f < 1.0);
+}
+
+#[test]
+fx test_random_bool_type() {
+    // Test Random.bool returns a boolean
+    let b = Random.bool();
+    // If it's a bool, one of these must be true
+    let is_bool = (b == true) || (b == false);
+    assert(is_bool);
+}
+
+#[test]
+fx test_random_choice_returns_element() {
+    // Test Random.choice returns an element from the list
+    let items = ["a", "b", "c"];
+    let picked = Random.choice(items);
+    assert(items.contains(picked));
+}
+
+#[test]
+fx test_random_shuffle_preserves_length() {
+    // Test Random.shuffle returns list of same length
+    let original = [1, 2, 3, 4, 5];
+    let shuffled = Random.shuffle(original);
+    assert(shuffled.len() == 5);
+}
+
+#[test]
+fx test_random_shuffle_preserves_elements() {
+    // Test Random.shuffle contains all original elements
+    let original = [1, 2, 3];
+    let shuffled = Random.shuffle(original);
+    assert(shuffled.contains(1));
+    assert(shuffled.contains(2));
+    assert(shuffled.contains(3));
+}
+
+#[test]
+fx test_random_bytes_length() {
+    // Test Random.bytes returns correct number of bytes
+    let bytes = Random.bytes(10);
+    assert(bytes.len() == 10);
+}
+
+#[test]
+fx test_random_bytes_range() {
+    // Test Random.bytes values are in byte range [0, 255]
+    let bytes = Random.bytes(100);
+    // Filter out invalid bytes - if any are outside range, list won't match original length
+    let valid = bytes.filter(|b: Int| -> Bool { b >= 0 });
+    assert(valid.len() == 100);
+    let in_range = bytes.filter(|b: Int| -> Bool { b <= 255 });
+    assert(in_range.len() == 100);
+}
