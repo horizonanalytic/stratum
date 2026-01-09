@@ -56,6 +56,7 @@ pub fn compute_references_cached(
 }
 
 /// Compute all references for a symbol at the given position (non-cached)
+#[allow(dead_code)] // Standalone API used by tests
 pub fn compute_references(
     uri: &Url,
     source: &str,

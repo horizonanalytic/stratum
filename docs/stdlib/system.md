@@ -237,6 +237,56 @@ if System.total_memory() < min_memory {
 
 ---
 
+### `System.hostname()`
+
+Returns the system's hostname.
+
+**Parameters:** None
+
+**Returns:** `String` - The hostname of the machine
+
+**Example:**
+
+```stratum
+let hostname = System.hostname()
+println("Hostname: " + hostname)
+
+// Use in logging
+fx log_with_host(message: String) {
+    let ts = DateTime.now()
+    println("[" + System.hostname() + "] " + str(ts) + ": " + message)
+}
+```
+
+---
+
+### `System.uptime()`
+
+Returns the system uptime in seconds.
+
+**Parameters:** None
+
+**Returns:** `Int` - System uptime in seconds
+
+**Example:**
+
+```stratum
+let uptime = System.uptime()
+println("System uptime: " + str(uptime) + " seconds")
+
+// Format as human-readable
+let hours = uptime / 3600
+let minutes = (uptime % 3600) / 60
+println("Uptime: " + str(hours) + "h " + str(minutes) + "m")
+
+// Check for fresh reboot
+if System.uptime() < 300 {  // Less than 5 minutes
+    println("System was recently restarted")
+}
+```
+
+---
+
 ## Common Patterns
 
 ### System Information Display

@@ -173,7 +173,7 @@ fn disassemble_instruction_to_string(chunk: &Chunk, offset: usize, output: &mut 
         }
 
         // u16 count operand
-        OpCode::NewList | OpCode::NewMap | OpCode::StringConcat => {
+        OpCode::NewList | OpCode::NewMap | OpCode::NewSet | OpCode::StringConcat => {
             let count = chunk.read_u16(offset + 1).unwrap_or(0);
             writeln!(output, "{:16} {}", opcode.name(), count).unwrap();
             offset + 3

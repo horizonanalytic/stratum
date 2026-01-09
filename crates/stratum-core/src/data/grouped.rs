@@ -27,6 +27,16 @@ pub enum AggOp {
     First,
     /// Last value in each group
     Last,
+    /// Standard deviation
+    Std,
+    /// Variance
+    Var,
+    /// Median value
+    Median,
+    /// Mode (most frequent value)
+    Mode,
+    /// Count of distinct values
+    CountDistinct,
 }
 
 impl AggOp {
@@ -41,6 +51,11 @@ impl AggOp {
             AggOp::Count => "count",
             AggOp::First => "first",
             AggOp::Last => "last",
+            AggOp::Std => "std",
+            AggOp::Var => "var",
+            AggOp::Median => "median",
+            AggOp::Mode => "mode",
+            AggOp::CountDistinct => "count_distinct",
         }
     }
 }
@@ -107,6 +122,36 @@ impl AggSpec {
     #[must_use]
     pub fn last(column: &str, output_name: &str) -> Self {
         Self::new(AggOp::Last, Some(column.to_string()), output_name.to_string())
+    }
+
+    /// Create a std (standard deviation) aggregation
+    #[must_use]
+    pub fn std(column: &str, output_name: &str) -> Self {
+        Self::new(AggOp::Std, Some(column.to_string()), output_name.to_string())
+    }
+
+    /// Create a var (variance) aggregation
+    #[must_use]
+    pub fn var(column: &str, output_name: &str) -> Self {
+        Self::new(AggOp::Var, Some(column.to_string()), output_name.to_string())
+    }
+
+    /// Create a median aggregation
+    #[must_use]
+    pub fn median(column: &str, output_name: &str) -> Self {
+        Self::new(AggOp::Median, Some(column.to_string()), output_name.to_string())
+    }
+
+    /// Create a mode aggregation
+    #[must_use]
+    pub fn mode(column: &str, output_name: &str) -> Self {
+        Self::new(AggOp::Mode, Some(column.to_string()), output_name.to_string())
+    }
+
+    /// Create a count_distinct aggregation
+    #[must_use]
+    pub fn count_distinct(column: &str, output_name: &str) -> Self {
+        Self::new(AggOp::CountDistinct, Some(column.to_string()), output_name.to_string())
     }
 }
 
@@ -255,6 +300,9 @@ impl GroupedDataFrame {
         }
 
         // Then, compute each aggregation
+        // Note: Parallel aggregation is not used here because Value is not Send
+        // (it uses Rc internally). Parallelization is applied at the column level
+        // in DataFrame operations instead.
         for spec in specs {
             let values = self.compute_aggregation(spec, &sorted_groups)?;
             let series = Series::from_values(&spec.output_name, &values)?;
@@ -288,6 +336,11 @@ impl GroupedDataFrame {
                 AggOp::Count => Value::Int(indices.len() as i64),
                 AggOp::First => self.compute_first(&source_col, indices)?,
                 AggOp::Last => self.compute_last(&source_col, indices)?,
+                AggOp::Std => self.compute_std(&source_col, indices)?,
+                AggOp::Var => self.compute_var(&source_col, indices)?,
+                AggOp::Median => self.compute_median(&source_col, indices)?,
+                AggOp::Mode => self.compute_mode(&source_col, indices)?,
+                AggOp::CountDistinct => self.compute_count_distinct(&source_col, indices)?,
             };
             results.push(value);
         }
@@ -457,6 +510,146 @@ impl GroupedDataFrame {
         }
     }
 
+    fn compute_std(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
+        // Std = sqrt(variance)
+        let var_result = self.compute_var(source_col, indices)?;
+        match var_result {
+            Value::Float(v) => Ok(Value::Float(v.sqrt())),
+            other => Ok(other),
+        }
+    }
+
+    fn compute_var(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
+        let col = source_col.as_ref().ok_or_else(|| {
+            DataError::InvalidOperation("var requires a column".to_string())
+        })?;
+
+        // First compute the mean
+        let mean_result = self.compute_mean(source_col, indices)?;
+        let mean = match mean_result {
+            Value::Float(m) => m,
+            Value::Null => return Ok(Value::Null),
+            _ => return Ok(Value::Null),
+        };
+
+        let mut sum_sq_diff: f64 = 0.0;
+        let mut count: usize = 0;
+
+        for &idx in indices {
+            let val = col.get(idx)?;
+            let f_val = match val {
+                Value::Int(i) => i as f64,
+                Value::Float(f) => f,
+                Value::Null => continue,
+                _ => {
+                    return Err(DataError::InvalidOperation(format!(
+                        "cannot compute variance of non-numeric value: {}",
+                        val.type_name()
+                    )));
+                }
+            };
+            let diff = f_val - mean;
+            sum_sq_diff += diff * diff;
+            count += 1;
+        }
+
+        if count == 0 {
+            Ok(Value::Null)
+        } else {
+            #[allow(clippy::cast_precision_loss)]
+            Ok(Value::Float(sum_sq_diff / count as f64))
+        }
+    }
+
+    fn compute_median(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
+        let col = source_col.as_ref().ok_or_else(|| {
+            DataError::InvalidOperation("median requires a column".to_string())
+        })?;
+
+        let mut values: Vec<f64> = Vec::new();
+
+        for &idx in indices {
+            let val = col.get(idx)?;
+            match val {
+                Value::Int(i) => values.push(i as f64),
+                Value::Float(f) => values.push(f),
+                Value::Null => continue,
+                _ => {
+                    return Err(DataError::InvalidOperation(format!(
+                        "cannot compute median of non-numeric value: {}",
+                        val.type_name()
+                    )));
+                }
+            }
+        }
+
+        if values.is_empty() {
+            return Ok(Value::Null);
+        }
+
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let mid = values.len() / 2;
+
+        if values.len() % 2 == 0 {
+            Ok(Value::Float((values[mid - 1] + values[mid]) / 2.0))
+        } else {
+            Ok(Value::Float(values[mid]))
+        }
+    }
+
+    fn compute_mode(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
+        let col = source_col.as_ref().ok_or_else(|| {
+            DataError::InvalidOperation("mode requires a column".to_string())
+        })?;
+
+        let mut counts: std::collections::HashMap<String, (usize, Value)> =
+            std::collections::HashMap::new();
+
+        for &idx in indices {
+            let val = col.get(idx)?;
+            if matches!(val, Value::Null) {
+                continue;
+            }
+            let key = format!("{val:?}");
+            counts
+                .entry(key)
+                .and_modify(|(c, _)| *c += 1)
+                .or_insert((1, val));
+        }
+
+        if counts.is_empty() {
+            return Ok(Value::Null);
+        }
+
+        let max_count = counts.values().map(|(c, _)| *c).max().unwrap_or(0);
+        let mode_values: Vec<&Value> = counts
+            .values()
+            .filter(|(c, _)| *c == max_count)
+            .map(|(_, v)| v)
+            .collect();
+
+        Ok(mode_values.first().map(|v| (*v).clone()).unwrap_or(Value::Null))
+    }
+
+    fn compute_count_distinct(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
+        let col = source_col.as_ref().ok_or_else(|| {
+            DataError::InvalidOperation("count_distinct requires a column".to_string())
+        })?;
+
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for &idx in indices {
+            let val = col.get(idx)?;
+            if matches!(val, Value::Null) {
+                continue;
+            }
+            let key = format!("{val:?}");
+            seen.insert(key);
+        }
+
+        Ok(Value::Int(seen.len() as i64))
+    }
+
     /// Compare two values for less-than
     fn value_lt(a: &Value, b: &Value) -> DataResult<bool> {
         match (a, b) {
@@ -543,6 +736,36 @@ impl GroupedDataFrame {
     pub fn last(&self, column: &str, output_name: Option<&str>) -> DataResult<DataFrame> {
         let out_name = output_name.unwrap_or(column);
         self.aggregate(&[AggSpec::last(column, out_name)])
+    }
+
+    /// Simple aggregation: standard deviation of a column
+    pub fn std(&self, column: &str, output_name: Option<&str>) -> DataResult<DataFrame> {
+        let out_name = output_name.unwrap_or(column);
+        self.aggregate(&[AggSpec::std(column, out_name)])
+    }
+
+    /// Simple aggregation: variance of a column
+    pub fn var(&self, column: &str, output_name: Option<&str>) -> DataResult<DataFrame> {
+        let out_name = output_name.unwrap_or(column);
+        self.aggregate(&[AggSpec::var(column, out_name)])
+    }
+
+    /// Simple aggregation: median of a column
+    pub fn median(&self, column: &str, output_name: Option<&str>) -> DataResult<DataFrame> {
+        let out_name = output_name.unwrap_or(column);
+        self.aggregate(&[AggSpec::median(column, out_name)])
+    }
+
+    /// Simple aggregation: mode of a column
+    pub fn mode(&self, column: &str, output_name: Option<&str>) -> DataResult<DataFrame> {
+        let out_name = output_name.unwrap_or(column);
+        self.aggregate(&[AggSpec::mode(column, out_name)])
+    }
+
+    /// Simple aggregation: count distinct values in a column
+    pub fn count_distinct(&self, column: &str, output_name: Option<&str>) -> DataResult<DataFrame> {
+        let out_name = output_name.unwrap_or(column);
+        self.aggregate(&[AggSpec::count_distinct(column, out_name)])
     }
 }
 

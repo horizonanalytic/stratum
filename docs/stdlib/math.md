@@ -798,6 +798,150 @@ Math.to_radians(360)    // ~6.2831853 (τ)
 
 ---
 
+## Statistical Functions
+
+These functions operate on lists of numbers for statistical calculations.
+
+### `Math.sum(list)`
+
+Returns the sum of all numbers in a list.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `list` | `List<Int \| Float>` | List of numbers |
+
+**Returns:** `Float` - Sum of all values
+
+**Example:**
+
+```stratum
+Math.sum([1, 2, 3, 4, 5])      // 15.0
+Math.sum([1.5, 2.5, 3.0])      // 7.0
+Math.sum([])                    // 0.0
+```
+
+---
+
+### `Math.mean(list)`
+
+Returns the arithmetic mean (average) of numbers in a list.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `list` | `List<Int \| Float>` | List of numbers |
+
+**Returns:** `Float` - The mean value
+
+**Throws:** Error if the list is empty
+
+**Example:**
+
+```stratum
+Math.mean([1, 2, 3, 4, 5])     // 3.0
+Math.mean([10, 20, 30])        // 20.0
+Math.mean([2.5, 3.5])          // 3.0
+```
+
+---
+
+### `Math.median(list)`
+
+Returns the median (middle value) of numbers in a list.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `list` | `List<Int \| Float>` | List of numbers |
+
+**Returns:** `Float` - The median value (average of two middle values if even count)
+
+**Throws:** Error if the list is empty
+
+**Example:**
+
+```stratum
+Math.median([1, 2, 3, 4, 5])   // 3.0
+Math.median([1, 2, 3, 4])      // 2.5 (average of 2 and 3)
+Math.median([5, 1, 3])         // 3.0 (sorted: 1, 3, 5)
+```
+
+---
+
+### `Math.std(list)`
+
+Returns the standard deviation of numbers in a list (population standard deviation).
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `list` | `List<Int \| Float>` | List of numbers |
+
+**Returns:** `Float` - The standard deviation
+
+**Throws:** Error if the list is empty
+
+**Example:**
+
+```stratum
+Math.std([2, 4, 4, 4, 5, 5, 7, 9])  // ~2.0
+Math.std([1, 1, 1, 1])              // 0.0 (no variance)
+```
+
+---
+
+### `Math.variance(list)`
+
+Returns the variance of numbers in a list (population variance).
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `list` | `List<Int \| Float>` | List of numbers |
+
+**Returns:** `Float` - The variance
+
+**Throws:** Error if the list is empty
+
+**Example:**
+
+```stratum
+Math.variance([2, 4, 4, 4, 5, 5, 7, 9])  // 4.0
+Math.variance([1, 1, 1, 1])              // 0.0
+```
+
+---
+
+### `Math.round_to(x, decimals)`
+
+Rounds a number to the specified number of decimal places.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `x` | `Int \| Float` | The number to round |
+| `decimals` | `Int` | Number of decimal places |
+
+**Returns:** `Float` - The rounded value
+
+**Example:**
+
+```stratum
+Math.round_to(3.14159, 2)   // 3.14
+Math.round_to(3.14159, 4)   // 3.1416
+Math.round_to(123.456, 0)   // 123.0
+Math.round_to(123.456, 1)   // 123.5
+```
+
+---
+
 ## Validation Functions
 
 ### `Math.is_nan(x)`

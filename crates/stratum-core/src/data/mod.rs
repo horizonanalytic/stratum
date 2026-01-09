@@ -15,6 +15,9 @@ mod error;
 mod grouped;
 pub mod io;
 mod join;
+pub mod lazy;
+mod memory;
+mod parallel;
 mod series;
 mod sql;
 mod types;
@@ -28,7 +31,14 @@ pub use io::{
     write_json, write_parquet,
 };
 pub use join::{JoinSpec, JoinType};
-pub use series::Series;
+pub use lazy::{LazyFrame, LazyGroupBy};
+pub use memory::{
+    categories as memory_categories, detect_leaks, enable_profiling, disable_profiling,
+    is_profiling_enabled, profiler_summary, record_allocation, record_deallocation,
+    reset_profiler, set_profiler_gc_stats, CategoryStats, LeakInfo, MemoryProfiler, MemoryStats,
+};
+pub use parallel::{parallel_threshold, set_parallel_threshold, ParallelConfig};
+pub use series::{Rolling, Series};
 pub use sql::{sql_query, sql_query_with_name, SqlContext};
 pub use types::{arrow_to_stratum_type, stratum_to_arrow_type};
 

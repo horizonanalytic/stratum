@@ -6,6 +6,7 @@ import {
     TransportKind,
     Trace,
 } from 'vscode-languageclient/node';
+import { StratumTaskProvider, createManifestWatcher } from './taskProvider';
 
 let client: LanguageClient | undefined;
 
@@ -103,10 +104,118 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 
     context.subscriptions.push(client);
+
+    // Register debug adapter factory
+    const debugOutputChannel = vscode.window.createOutputChannel('Stratum Debug');
+    const debugAdapterFactory = new StratumDebugAdapterFactory(serverPath, debugOutputChannel);
+    context.subscriptions.push(
+        vscode.debug.registerDebugAdapterDescriptorFactory('stratum', debugAdapterFactory)
+    );
+    context.subscriptions.push(debugAdapterFactory);
+
+    // Register debug configuration provider
+    const configProvider = new StratumDebugConfigurationProvider();
+    context.subscriptions.push(
+        vscode.debug.registerDebugConfigurationProvider('stratum', configProvider)
+    );
+
+    outputChannel.appendLine('Stratum debug adapter registered.');
+
+    // Register task provider
+    const taskProvider = new StratumTaskProvider(serverPath);
+    context.subscriptions.push(
+        vscode.tasks.registerTaskProvider(StratumTaskProvider.StratumType, taskProvider)
+    );
+
+    // Watch for stratum.toml changes to refresh tasks
+    const manifestWatcher = createManifestWatcher(taskProvider);
+    context.subscriptions.push(manifestWatcher);
+
+    outputChannel.appendLine('Stratum task provider registered.');
 }
 
 export async function deactivate(): Promise<void> {
     if (client) {
         await client.stop();
+    }
+}
+
+/**
+ * Debug adapter factory that spawns the Stratum DAP server
+ */
+class StratumDebugAdapterFactory implements vscode.DebugAdapterDescriptorFactory {
+    private stratumPath: string;
+    private outputChannel: vscode.OutputChannel;
+
+    constructor(stratumPath: string, outputChannel: vscode.OutputChannel) {
+        this.stratumPath = stratumPath;
+        this.outputChannel = outputChannel;
+    }
+
+    createDebugAdapterDescriptor(
+        _session: vscode.DebugSession,
+        _executable: vscode.DebugAdapterExecutable | undefined
+    ): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
+        this.outputChannel.appendLine(`Starting Stratum debug adapter: ${this.stratumPath} dap`);
+
+        // Spawn the Stratum DAP server as an executable
+        return new vscode.DebugAdapterExecutable(this.stratumPath, ['dap']);
+    }
+
+    dispose(): void {
+        // Nothing to dispose
+    }
+}
+
+/**
+ * Debug configuration provider for Stratum
+ */
+class StratumDebugConfigurationProvider implements vscode.DebugConfigurationProvider {
+    resolveDebugConfiguration(
+        folder: vscode.WorkspaceFolder | undefined,
+        config: vscode.DebugConfiguration,
+        _token?: vscode.CancellationToken
+    ): vscode.ProviderResult<vscode.DebugConfiguration> {
+        // If no configuration is provided, create a default one
+        if (!config.type && !config.request && !config.name) {
+            const editor = vscode.window.activeTextEditor;
+            if (editor && editor.document.languageId === 'stratum') {
+                config.type = 'stratum';
+                config.name = 'Debug Stratum File';
+                config.request = 'launch';
+                config.program = '${file}';
+                config.stopOnEntry = false;
+            }
+        }
+
+        // Ensure program is specified
+        if (!config.program) {
+            return vscode.window.showInformationMessage('Cannot find a program to debug').then(() => {
+                return undefined;
+            });
+        }
+
+        // Resolve ${file} and similar variables
+        if (config.program) {
+            config.program = this.resolveVariables(config.program, folder);
+        }
+
+        return config;
+    }
+
+    private resolveVariables(value: string, folder: vscode.WorkspaceFolder | undefined): string {
+        const editor = vscode.window.activeTextEditor;
+
+        // Replace ${file}
+        if (editor) {
+            value = value.replace(/\${file}/g, editor.document.uri.fsPath);
+        }
+
+        // Replace ${workspaceFolder}
+        if (folder) {
+            value = value.replace(/\${workspaceFolder}/g, folder.uri.fsPath);
+        }
+
+        return value;
     }
 }

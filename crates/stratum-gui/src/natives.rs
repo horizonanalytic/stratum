@@ -1318,9 +1318,9 @@ fn gui_computed(args: &[Value]) -> NativeResult {
 
     let name = get_string(args, 0, "name")?;
 
-    // Get dependencies as a list of strings
+    // Get dependencies as a list of strings (validated but stored via args[1])
     let deps_value = &args[1];
-    let dependencies = match deps_value {
+    let _dependencies = match deps_value {
         Value::List(list) => {
             let list = list.borrow();
             let mut deps = Vec::new();
@@ -2561,8 +2561,6 @@ fn gui_theme_presets(_args: &[Value]) -> NativeResult {
 /// Create an interactive wrapper element
 /// gui_interactive(child?) -> element
 fn gui_interactive(args: &[Value]) -> NativeResult {
-    use crate::element::{InteractiveConfig, CursorStyle};
-
     let builder = GuiElement::interactive();
 
     // If a child element is provided, add it

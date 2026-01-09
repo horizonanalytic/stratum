@@ -1026,3 +1026,948 @@ fn test_pipeline_dataframe_to_cube_back_to_dataframe() {
         Err(e) => panic!("Program failed: {}", e),
     }
 }
+
+// ============================================================================
+// Collection Enhancements Tests (11.8)
+// ============================================================================
+
+#[test]
+fn test_set_creation_and_operations() {
+    // Test Set.new() and basic operations
+    let result = eval_expr_dynamic(r#"{
+        let s = Set.new()
+        s.add(1).add(2).add(3).len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 3),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_set_from_list() {
+    // Test Set.from() with duplicates
+    let result = eval_expr_dynamic(r#"{
+        let s = Set.from([1, 2, 2, 3, 3, 3])
+        s.len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 3),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_set_contains() {
+    // Test contains - true case
+    let result = eval_expr_dynamic(r#"{
+        let s = Set.from([1, 2, 3])
+        s.contains(2)
+    }"#);
+
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        Ok(other) => panic!("Expected Bool, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test contains - false case
+    let result = eval_expr_dynamic(r#"{
+        let s = Set.from([1, 2, 3])
+        s.contains(5)
+    }"#);
+
+    match result {
+        Ok(Value::Bool(b)) => assert!(!b),
+        Ok(other) => panic!("Expected Bool, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_set_union_intersection() {
+    // Test union
+    let result = eval_expr_dynamic(r#"{
+        let a = Set.from([1, 2, 3])
+        let b = Set.from([3, 4, 5])
+        a.union(b).len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 5),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test intersection
+    let result = eval_expr_dynamic(r#"{
+        let a = Set.from([1, 2, 3])
+        let b = Set.from([2, 3, 4])
+        a.intersection(b).len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_set_difference() {
+    let result = eval_expr_dynamic(r#"{
+        let a = Set.from([1, 2, 3, 4])
+        let b = Set.from([3, 4, 5])
+        a.difference(b).len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2), // 1 and 2
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_set_subset_superset() {
+    // Test is_subset
+    let result = eval_expr_dynamic(r#"{
+        let a = Set.from([1, 2])
+        let b = Set.from([1, 2, 3])
+        a.is_subset(b)
+    }"#);
+
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        Ok(other) => panic!("Expected Bool, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test is_superset
+    let result = eval_expr_dynamic(r#"{
+        let a = Set.from([1, 2])
+        let b = Set.from([1, 2, 3])
+        b.is_superset(a)
+    }"#);
+
+    match result {
+        Ok(Value::Bool(b)) => assert!(b),
+        Ok(other) => panic!("Expected Bool, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_list_enumerate() {
+    let result = eval_expr_dynamic(r#"{
+        let items = ["a", "b", "c"]
+        let enumerated = items.enumerate()
+        enumerated.len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 3),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Check that enumerate returns [index, value] pairs
+    let result = eval_expr_dynamic(r#"{
+        let items = ["a", "b", "c"]
+        let enumerated = items.enumerate()
+        enumerated[1][0]  // Index of second element
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 1),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_list_chunk() {
+    let result = eval_expr_dynamic(r#"{
+        let items = [1, 2, 3, 4, 5, 6, 7]
+        let chunks = items.chunk(3)
+        chunks.len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 3), // [1,2,3], [4,5,6], [7]
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Check chunk contents
+    let result = eval_expr_dynamic(r#"{
+        let items = [1, 2, 3, 4, 5]
+        let chunks = items.chunk(2)
+        chunks[0].len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_list_window() {
+    let result = eval_expr_dynamic(r#"{
+        let items = [1, 2, 3, 4, 5]
+        let windows = items.window(3)
+        windows.len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 3), // [1,2,3], [2,3,4], [3,4,5]
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Empty result for window larger than list
+    let result = eval_expr_dynamic(r#"{
+        let items = [1, 2]
+        items.window(5).len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 0),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_list_unique() {
+    let result = eval_expr_dynamic(r#"{
+        let items = [1, 2, 2, 3, 1, 4, 3]
+        items.unique().len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 4), // 1, 2, 3, 4
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Check order preservation
+    let result = eval_expr_dynamic(r#"{
+        let items = ["c", "a", "b", "a", "c"]
+        let unique = items.unique()
+        unique[0]
+    }"#);
+
+    match result {
+        Ok(Value::String(s)) => assert_eq!(s.as_ref(), "c"),
+        Ok(other) => panic!("Expected String, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_list_group_by() {
+    let result = eval_expr_dynamic(r#"{
+        let items = [1, 2, 3, 4, 5, 6]
+        let groups = items.group_by(|x| { x % 2 })
+        groups.keys().len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2), // 0 (even) and 1 (odd)
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Check group contents
+    let result = eval_expr_dynamic(r#"{
+        let words = ["apple", "ant", "bear", "ace"]
+        let groups = words.group_by(|w| { w.substring(0, 1) })
+        groups.get("a").len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 3), // apple, ant, ace
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+// ============================================================================
+// P0 Statistical Functions Tests (11.1)
+// ============================================================================
+
+#[test]
+fn test_series_std_variance() {
+    // Test standard deviation
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0])
+        s.std()
+    }"#);
+
+    match result {
+        Ok(Value::Float(f)) => assert!((f - 2.0).abs() < 0.1, "Expected std ~2.0, got {}", f),
+        Ok(other) => panic!("Expected Float, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test variance
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0])
+        s.var()
+    }"#);
+
+    match result {
+        Ok(Value::Float(f)) => assert!((f - 4.0).abs() < 0.1, "Expected var ~4.0, got {}", f),
+        Ok(other) => panic!("Expected Float, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_series_median_mode() {
+    // Test median
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 3, 5, 7, 9])
+        s.median()
+    }"#);
+
+    match result {
+        Ok(Value::Float(f)) => assert!((f - 5.0).abs() < 0.01),
+        Ok(other) => panic!("Expected Float, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test mode
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 2, 2, 3, 3, 3, 4])
+        s.mode()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 3),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_series_quantile_percentile() {
+    // Test quantile (0-1 scale)
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        s.quantile(0.5)
+    }"#);
+
+    match result {
+        Ok(Value::Float(f)) => assert!((f - 5.5).abs() < 0.1),
+        Ok(other) => panic!("Expected Float, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test percentile (0-100 scale)
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        s.percentile(25)
+    }"#);
+
+    match result {
+        Ok(Value::Float(f)) => assert!(f >= 2.0 && f <= 3.5, "Expected percentile ~2.75, got {}", f),
+        Ok(other) => panic!("Expected Float, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_series_skew_kurtosis() {
+    // Test skewness (symmetric distribution should have skew ~0)
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        s.skew()
+    }"#);
+
+    match result {
+        Ok(Value::Float(f)) => assert!(f.abs() < 0.5, "Expected skew near 0, got {}", f),
+        Ok(other) => panic!("Expected Float, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test kurtosis
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 2, 3, 4, 5, 6, 7, 8, 9])
+        s.kurtosis()
+    }"#);
+
+    match result {
+        Ok(Value::Float(_)) => (), // Just verify it returns a float
+        Ok(other) => panic!("Expected Float, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_dataframe_describe() {
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"a": 1, "b": 10.0},
+            {"a": 2, "b": 20.0},
+            {"a": 3, "b": 30.0},
+            {"a": 4, "b": 40.0},
+            {"a": 5, "b": 50.0}
+        ]
+        let df = Data.frame(rows)
+        let desc = df.describe()
+        desc.num_rows()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 8, "describe() should have 8 rows (count, mean, std, min, 25%, 50%, 75%, max)"),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_dataframe_corr() {
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"a": 1, "b": 2},
+            {"a": 2, "b": 4},
+            {"a": 3, "b": 6},
+            {"a": 4, "b": 8}
+        ]
+        let df = Data.frame(rows)
+        let corr = df.corr()
+        corr.num_columns()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 3, "corr() should have columns (index + a + b)"),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_dataframe_cov() {
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"x": 1.0, "y": 2.0},
+            {"x": 2.0, "y": 4.0},
+            {"x": 3.0, "y": 6.0}
+        ]
+        let df = Data.frame(rows)
+        let cov = df.cov()
+        cov.num_rows()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2, "cov() should have row per numeric column"),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_dataframe_value_counts() {
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"category": "A"},
+            {"category": "B"},
+            {"category": "A"},
+            {"category": "A"},
+            {"category": "B"}
+        ]
+        let df = Data.frame(rows)
+        let counts = df.value_counts("category")
+        counts.num_rows()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2, "value_counts should have 2 unique values"),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+// ============================================================================
+// P0 Window Functions Tests (11.2)
+// ============================================================================
+
+#[test]
+fn test_series_rolling_operations() {
+    // Test rolling mean
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1.0, 2.0, 3.0, 4.0, 5.0])
+        let r = s.rolling(3)
+        r.mean().len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 5),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test rolling sum
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1.0, 2.0, 3.0, 4.0, 5.0])
+        s.rolling(2).sum().len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 5),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_series_cumulative_operations() {
+    // Test cumsum
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 2, 3, 4, 5])
+        let cs = s.cumsum()
+        cs.get(4)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 15), // 1+2+3+4+5 = 15
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test cummax
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [3, 1, 4, 1, 5])
+        let cm = s.cummax()
+        cm.get(4)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 5),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test cummin
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [5, 3, 4, 1, 2])
+        let cm = s.cummin()
+        cm.get(4)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 1),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test cumprod
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 2, 3, 4])
+        let cp = s.cumprod()
+        cp.get(3)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 24), // 1*2*3*4 = 24
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_series_shift_lag_lead() {
+    // Test shift (positive = lag)
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 2, 3, 4, 5])
+        let shifted = s.shift(1)
+        shifted.get(1)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 1), // Value at index 0 shifted to index 1
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test lag
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, 2, 3, 4, 5])
+        let lagged = s.lag(1)
+        lagged.get(2)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2), // lag(1) at index 2 = value at index 1
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_series_diff_pct_change() {
+    // Test diff
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [10, 15, 25, 30])
+        let d = s.diff(1)
+        d.get(2)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 10), // 25 - 15 = 10
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test pct_change
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [100.0, 110.0, 121.0])
+        let pct = s.pct_change(1)
+        pct.get(1)
+    }"#);
+
+    match result {
+        Ok(Value::Float(f)) => assert!((f - 0.1).abs() < 0.01, "Expected ~0.1, got {}", f),
+        Ok(other) => panic!("Expected Float, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+// ============================================================================
+// P0 Missing Data Handling Tests (11.3)
+// ============================================================================
+
+#[test]
+fn test_series_dropna() {
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, null, 3, null, 5])
+        s.dropna().len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 3), // Only 1, 3, 5 remain
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_series_fillna() {
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, null, 3, null, 5])
+        let filled = s.fillna(0)
+        filled.get(1)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 0),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_series_fillna_forward_backward() {
+    // Test forward fill
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, null, null, 4, 5])
+        let filled = s.fillna("forward")
+        filled.get(2)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 1), // Forward filled from index 0
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    // Test backward fill
+    let result = eval_expr_dynamic(r#"{
+        let s = Data.series("vals", [1, null, null, 4, 5])
+        let filled = s.fillna("backward")
+        filled.get(1)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 4), // Backward filled from index 3
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_dataframe_dropna() {
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"a": 1, "b": 10},
+            {"a": null, "b": 20},
+            {"a": 3, "b": null},
+            {"a": 4, "b": 40}
+        ]
+        let df = Data.frame(rows)
+        df.dropna().num_rows()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2), // Only rows without any nulls
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_dataframe_fillna() {
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"a": 1, "b": null},
+            {"a": null, "b": 20}
+        ]
+        let df = Data.frame(rows)
+        let filled = df.fillna(0)
+        filled.column("b").get(0)
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 0),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+// ============================================================================
+// P0 Aggregation Extensions Tests (11.1.13-17)
+// ============================================================================
+
+#[test]
+fn test_agg_std_var() {
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"region": "A", "val": 10},
+            {"region": "A", "val": 20},
+            {"region": "B", "val": 5},
+            {"region": "B", "val": 15}
+        ]
+        let df = Data.frame(rows)
+        let result = df |> group_by(.region) |> agg(Agg.std("val", "std_val"))
+        result.columns().len()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2), // region, std_val
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"region": "A", "val": 10},
+            {"region": "A", "val": 20}
+        ]
+        let df = Data.frame(rows)
+        let result = df |> group_by(.region) |> agg(Agg.var("val", "var_val"))
+        result.num_rows()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 1), // One group
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_agg_median_mode() {
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"cat": "X", "val": 1},
+            {"cat": "X", "val": 3},
+            {"cat": "X", "val": 5}
+        ]
+        let df = Data.frame(rows)
+        let result = df |> group_by(.cat) |> agg(Agg.median("val", "med"))
+        result.columns()
+    }"#);
+
+    match result {
+        Ok(Value::List(cols)) => {
+            let cols = cols.borrow();
+            assert!(cols.len() == 2);
+        }
+        Ok(other) => panic!("Expected List, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"cat": "X", "val": 1},
+            {"cat": "X", "val": 2},
+            {"cat": "X", "val": 2}
+        ]
+        let df = Data.frame(rows)
+        let result = df |> group_by(.cat) |> agg(Agg.mode("val", "mode_val"))
+        result.num_rows()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 1),
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+#[test]
+fn test_agg_count_distinct() {
+    let result = eval_expr_dynamic(r#"{
+        let rows = [
+            {"region": "A", "product": "X"},
+            {"region": "A", "product": "X"},
+            {"region": "A", "product": "Y"},
+            {"region": "B", "product": "Z"}
+        ]
+        let df = Data.frame(rows)
+        let result = df |> group_by(.region) |> agg(Agg.count_distinct("product", "unique_products"))
+        result.num_rows()
+    }"#);
+
+    match result {
+        Ok(Value::Int(n)) => assert_eq!(n, 2), // Two groups: A and B
+        Ok(other) => panic!("Expected Int, got {:?}", other),
+        Err(e) => panic!("Program failed: {}", e),
+    }
+}
+
+// ============================================================================
+// Phase 8.5: Performance Optimization Tests
+// ============================================================================
+
+#[test]
+fn test_memory_usage_dataframe() {
+    // Test that memory_usage returns valid statistics
+    let names = Series::from_strings("name", vec!["Alice", "Bob", "Charlie"]);
+    let ages = Series::from_ints("age", vec![25, 30, 35]);
+    let df = DataFrame::from_series(vec![names, ages]).unwrap();
+
+    let stats = df.memory_usage();
+    assert_eq!(stats.num_rows, 3);
+    assert_eq!(stats.num_columns, 2);
+    assert!(stats.data_bytes > 0);
+    assert!(stats.total_bytes > 0);
+    assert!(stats.bytes_per_row > 0.0);
+}
+
+#[test]
+fn test_memory_usage_series() {
+    let series = Series::from_ints("numbers", vec![1, 2, 3, 4, 5]);
+    let stats = series.memory_usage();
+
+    assert_eq!(stats.num_rows, 5);
+    assert_eq!(stats.num_columns, 1);
+    assert!(stats.data_bytes > 0);
+    assert!(stats.total_bytes > 0);
+}
+
+#[test]
+fn test_parallel_threshold_configuration() {
+    use stratum_core::data::{parallel_threshold, set_parallel_threshold};
+
+    // Get the default threshold
+    let default = parallel_threshold();
+    assert!(default > 0);
+
+    // Set a custom threshold
+    set_parallel_threshold(5000);
+    assert_eq!(parallel_threshold(), 5000);
+
+    // Reset to default
+    set_parallel_threshold(default);
+    assert_eq!(parallel_threshold(), default);
+}
+
+#[test]
+fn test_filter_by_indices_uses_parallel() {
+    // Create a large DataFrame to test parallel filtering
+    let n = 100;
+    let values: Vec<i64> = (0..n).collect();
+    let series = Series::from_ints("value", values);
+    let df = DataFrame::from_series(vec![series]).unwrap();
+
+    // Set a low threshold to ensure parallel path is used
+    use stratum_core::data::{set_parallel_threshold, parallel_threshold};
+    let original = parallel_threshold();
+    set_parallel_threshold(10);
+
+    // Filter by indices (should use parallel path)
+    let indices: Vec<usize> = (0..50).collect();
+    let filtered = df.filter_by_indices(&indices).unwrap();
+
+    assert_eq!(filtered.num_rows(), 50);
+
+    // Restore threshold
+    set_parallel_threshold(original);
+}
+
+#[test]
+fn test_lazy_frame_basic() {
+    use stratum_core::data::LazyFrame;
+
+    let names = Series::from_strings("name", vec!["Alice", "Bob", "Charlie"]);
+    let ages = Series::from_ints("age", vec![25, 30, 35]);
+    let df = DataFrame::from_series(vec![names, ages]).unwrap();
+
+    // Create lazy frame and apply operations
+    let result = LazyFrame::new(df)
+        .select(["name", "age"])
+        .limit(2)
+        .collect()
+        .unwrap();
+
+    assert_eq!(result.num_rows(), 2);
+    assert_eq!(result.num_columns(), 2);
+}
+
+#[test]
+fn test_lazy_frame_filter() {
+    use stratum_core::data::{LazyFrame, lazy::FilterPredicate};
+
+    let ages = Series::from_ints("age", vec![20, 30, 40, 50]);
+    let df = DataFrame::from_series(vec![ages]).unwrap();
+
+    // Filter using LazyFrame
+    let result = LazyFrame::new(df)
+        .filter(FilterPredicate::Gt("age".to_string(), Value::Int(25)))
+        .collect()
+        .unwrap();
+
+    assert_eq!(result.num_rows(), 3); // 30, 40, 50
+}
+
+#[test]
+fn test_lazy_frame_query_optimization() {
+    use stratum_core::data::LazyFrame;
+
+    let ages = Series::from_ints("age", vec![20, 30, 40, 50]);
+    let df = DataFrame::from_series(vec![ages]).unwrap();
+
+    // Chain operations that will be optimized
+    let lf = LazyFrame::new(df)
+        .select(["age"])
+        .select(["age"]) // Duplicate select - should be pruned
+        .limit(10)
+        .limit(5); // Multiple limits - should be merged to min
+
+    // Get query plan
+    let plan = lf.explain();
+    assert!(plan.contains("Query Plan"));
+
+    // Execute optimized plan
+    let result = lf.collect().unwrap();
+    assert_eq!(result.num_rows(), 4); // All 4 rows (limit 5 > row count)
+}

@@ -4,7 +4,7 @@
 //! when the debugger is paused.
 
 use iced::widget::{column, container, scrollable, text, Column, Row};
-use iced::{Element, Font, Length, Theme};
+use iced::{Element, Font, Length};
 use stratum_core::{DebugStackFrame, DebugVariable};
 
 /// Message type for debug panel actions

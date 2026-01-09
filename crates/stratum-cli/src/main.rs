@@ -5,7 +5,10 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod add;
+mod dap;
+mod extension;
 mod init;
+mod publish;
 mod remove;
 mod repl;
 mod update;
@@ -40,8 +43,15 @@ enum Commands {
     },
 
     /// Add a dependency to stratum.toml
+    ///
+    /// Supports multiple formats:
+    /// - `stratum add http` - Add from registry (future)
+    /// - `stratum add http@1.0` - Add specific version
+    /// - `stratum add github:user/repo` - Add from GitHub
+    /// - `stratum add mylib --github user/repo` - Add from GitHub with custom name
     Add {
         /// Package name (optionally with @version suffix, e.g., "http@1.0")
+        /// or GitHub spec (e.g., "github:user/repo@v1.0.0")
         package: String,
 
         /// Add as a development dependency
@@ -60,15 +70,19 @@ enum Commands {
         #[arg(long)]
         git: Option<String>,
 
-        /// Git branch to use (requires --git)
+        /// Use a GitHub repository (shorthand for --git https://github.com/USER/REPO)
+        #[arg(long)]
+        github: Option<String>,
+
+        /// Git branch to use (requires --git or --github)
         #[arg(long, requires = "git")]
         branch: Option<String>,
 
-        /// Git tag to use (requires --git)
+        /// Git tag to use (requires --git or --github)
         #[arg(long, requires = "git")]
         tag: Option<String>,
 
-        /// Git revision/commit to use (requires --git)
+        /// Git revision/commit to use (requires --git or --github)
         #[arg(long, requires = "git")]
         rev: Option<String>,
 
@@ -107,6 +121,10 @@ enum Commands {
         /// Perform a dry run without writing changes
         #[arg(long)]
         dry_run: bool,
+
+        /// Only sync lock file with manifest (no version updates)
+        #[arg(long, conflicts_with_all = ["packages", "dry_run"])]
+        sync: bool,
     },
 
     /// Run a Stratum source file
@@ -125,6 +143,10 @@ enum Commands {
         /// Enable JIT compilation for hot paths (default behavior)
         #[arg(long)]
         jit: bool,
+
+        /// Enable memory profiling and print report after execution
+        #[arg(long)]
+        memory_profile: bool,
     },
 
     /// Evaluate a Stratum expression
@@ -180,6 +202,12 @@ enum Commands {
     /// Start the Language Server Protocol (LSP) server
     Lsp,
 
+    /// Start the Debug Adapter Protocol (DAP) server
+    ///
+    /// This is used by VS Code and other DAP-compatible editors to debug Stratum programs.
+    /// Communicates via stdio using the Debug Adapter Protocol.
+    Dap,
+
     /// Generate documentation for a Stratum source file or project
     Doc {
         /// Path to the source file or directory
@@ -198,6 +226,49 @@ enum Commands {
         #[arg(long)]
         open: bool,
     },
+
+    /// Publish a package to GitHub Releases
+    ///
+    /// Creates a tarball of your package and publishes it as a GitHub release.
+    /// Requires the GitHub CLI (gh) to be installed and authenticated.
+    Publish {
+        /// Version tag to publish (e.g., "v1.0.0"). If not specified, uses version from stratum.toml
+        #[arg(long)]
+        tag: Option<String>,
+
+        /// Perform a dry run without actually publishing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Allow publishing with uncommitted changes
+        #[arg(long)]
+        allow_dirty: bool,
+
+        /// Target GitHub repository (owner/repo). Defaults to origin remote.
+        #[arg(long)]
+        target: Option<String>,
+    },
+
+    /// Manage VS Code extension
+    #[command(subcommand)]
+    Extension(ExtensionCommand),
+}
+
+/// Subcommands for `stratum extension`
+#[derive(Subcommand)]
+enum ExtensionCommand {
+    /// Install the Stratum VS Code extension
+    Install {
+        /// Path to VSIX file (uses bundled/downloaded by default)
+        #[arg(long)]
+        vsix: Option<PathBuf>,
+    },
+
+    /// Check if the Stratum extension is installed
+    List,
+
+    /// Uninstall the Stratum VS Code extension
+    Uninstall,
 }
 
 fn main() -> Result<()> {
@@ -224,6 +295,7 @@ fn main() -> Result<()> {
             build,
             path,
             git,
+            github,
             branch,
             tag,
             rev,
@@ -244,6 +316,7 @@ fn main() -> Result<()> {
                 section,
                 path,
                 git,
+                github,
                 branch,
                 tag,
                 rev,
@@ -267,13 +340,17 @@ fn main() -> Result<()> {
             remove::remove_dependency(options)?;
         }
 
-        Some(Commands::Update { packages, dry_run }) => {
-            let options = update::UpdateOptions { packages, dry_run };
-            let result = update::update_dependencies(options)?;
-            result.print_summary();
+        Some(Commands::Update { packages, dry_run, sync }) => {
+            if sync {
+                update::sync_lockfile()?;
+            } else {
+                let options = update::UpdateOptions { packages, dry_run };
+                let result = update::update_dependencies(options)?;
+                result.print_summary();
+            }
         }
 
-        Some(Commands::Run { file, interpret_all, compile_all, jit: _ }) => {
+        Some(Commands::Run { file, interpret_all, compile_all, jit: _, memory_profile }) => {
             let mode_override = if interpret_all {
                 Some(stratum_core::ExecutionModeOverride::InterpretAll)
             } else if compile_all {
@@ -281,7 +358,7 @@ fn main() -> Result<()> {
             } else {
                 None // Respect directives
             };
-            run_file(&file, mode_override)?;
+            run_file(&file, mode_override, memory_profile)?;
         }
 
         Some(Commands::Eval { expression }) => {
@@ -312,6 +389,10 @@ fn main() -> Result<()> {
             run_lsp_server()?;
         }
 
+        Some(Commands::Dap) => {
+            run_dap_server()?;
+        }
+
         Some(Commands::Doc {
             path,
             output,
@@ -319,6 +400,35 @@ fn main() -> Result<()> {
             open,
         }) => {
             generate_documentation(&path, output, &format, open)?;
+        }
+
+        Some(Commands::Publish {
+            tag,
+            dry_run,
+            allow_dirty,
+            target,
+        }) => {
+            let options = publish::PublishOptions {
+                tag,
+                dry_run,
+                allow_dirty,
+                target,
+            };
+            publish::publish_package(options)?;
+        }
+
+        Some(Commands::Extension(cmd)) => {
+            match cmd {
+                ExtensionCommand::Install { vsix } => {
+                    extension::install_extension(vsix)?;
+                }
+                ExtensionCommand::List => {
+                    extension::list_extensions()?;
+                }
+                ExtensionCommand::Uninstall => {
+                    extension::uninstall_extension()?;
+                }
+            }
         }
 
         None => {
@@ -332,7 +442,17 @@ fn main() -> Result<()> {
 }
 
 /// Run a Stratum source file
-fn run_file(path: &PathBuf, mode_override: Option<stratum_core::ExecutionModeOverride>) -> Result<()> {
+fn run_file(
+    path: &PathBuf,
+    mode_override: Option<stratum_core::ExecutionModeOverride>,
+    memory_profile: bool,
+) -> Result<()> {
+    // Enable memory profiling if requested
+    if memory_profile {
+        stratum_core::reset_profiler();
+        stratum_core::enable_profiling();
+    }
+
     let source = std::fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", path.display(), e))?;
 
@@ -392,6 +512,16 @@ fn run_file(path: &PathBuf, mode_override: Option<stratum_core::ExecutionModeOve
         if !matches!(result, stratum_core::bytecode::Value::Null) {
             println!("{result}");
         }
+    }
+
+    // Print memory profile report if enabled
+    if memory_profile {
+        // Capture GC stats before printing report
+        stratum_core::set_profiler_gc_stats(vm.gc_stats());
+        stratum_core::disable_profiling();
+
+        eprintln!();
+        eprintln!("{}", stratum_core::profiler_summary());
     }
 
     Ok(())
@@ -607,6 +737,11 @@ fn run_lsp_server() -> Result<()> {
         .block_on(stratum_lsp::run_server())
 }
 
+/// Run the Debug Adapter Protocol (DAP) server
+fn run_dap_server() -> Result<()> {
+    dap::run_dap_server()
+}
+
 /// Generate documentation for Stratum source files
 fn generate_documentation(
     path: &PathBuf,
@@ -614,7 +749,10 @@ fn generate_documentation(
     format: &str,
     open: bool,
 ) -> Result<()> {
-    use stratum_core::doc::{DocExtractor, HtmlGenerator, MarkdownGenerator};
+    use stratum_core::doc::{
+        generate_search_index, DocExtractor, HtmlGenerator, HtmlOptions, MarkdownGenerator,
+        ProjectDoc,
+    };
 
     // Collect source files
     let files = if path.is_file() {
@@ -632,6 +770,12 @@ fn generate_documentation(
         ));
     }
 
+    // Determine project name
+    let project_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Project");
+
     // Determine output directory
     let output_dir = output.unwrap_or_else(|| {
         if path.is_file() {
@@ -645,20 +789,18 @@ fn generate_documentation(
     std::fs::create_dir_all(&output_dir)
         .map_err(|e| anyhow::anyhow!("Failed to create output directory: {}", e))?;
 
-    let extension = if format == "markdown" || format == "md" {
-        "md"
-    } else {
-        "html"
-    };
+    let is_html = format != "markdown" && format != "md";
+    let extension = if is_html { "html" } else { "md" };
 
+    // Build project-wide documentation
+    let mut project = ProjectDoc::new(project_name);
     let mut generated_files = Vec::new();
 
-    // Process each file
+    // First pass: parse all files and build project index
     for file in &files {
         let source = std::fs::read_to_string(file)
             .map_err(|e| anyhow::anyhow!("Failed to read '{}': {}", file.display(), e))?;
 
-        // Parse the module
         let module = match stratum_core::Parser::parse_module(&source) {
             Ok(m) => m,
             Err(errors) => {
@@ -670,22 +812,33 @@ fn generate_documentation(
             }
         };
 
-        // Extract documentation
         let module_name = file
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
         let doc_module = DocExtractor::extract(&module, module_name);
+        project.add_module(doc_module);
+    }
 
-        // Generate output
-        let content = if format == "markdown" || format == "md" {
-            MarkdownGenerator::generate(&doc_module)
+    if project.modules.is_empty() {
+        return Err(anyhow::anyhow!("No documentation was generated"));
+    }
+
+    // HTML options with search and cross-linking enabled
+    let options = HtmlOptions {
+        enable_search: is_html,
+        enable_crosslinks: is_html,
+    };
+
+    // Second pass: generate output with cross-linking
+    for module in &project.modules {
+        let content = if is_html {
+            HtmlGenerator::generate_with_project(module, &project, &options)
         } else {
-            HtmlGenerator::generate(&doc_module)
+            MarkdownGenerator::generate(module)
         };
 
-        // Write output file
-        let output_file = output_dir.join(format!("{}.{}", module_name, extension));
+        let output_file = output_dir.join(format!("{}.{}", module.name, extension));
         std::fs::write(&output_file, &content)
             .map_err(|e| anyhow::anyhow!("Failed to write '{}': {}", output_file.display(), e))?;
 
@@ -693,13 +846,25 @@ fn generate_documentation(
         generated_files.push(output_file);
     }
 
-    if generated_files.is_empty() {
-        return Err(anyhow::anyhow!("No documentation was generated"));
-    }
+    // Generate index file
+    if is_html {
+        // HTML index with full project view
+        let index_content = HtmlGenerator::generate_index(&project, &options);
+        let index_file = output_dir.join("index.html");
+        std::fs::write(&index_file, &index_content)
+            .map_err(|e| anyhow::anyhow!("Failed to write index: {}", e))?;
+        println!("Generated: {}", index_file.display());
+        generated_files.insert(0, index_file);
 
-    // Generate index file if multiple files
-    if generated_files.len() > 1 {
-        let index_file = output_dir.join(format!("index.{}", extension));
+        // Generate search index JSON
+        let search_index = generate_search_index(&project);
+        let search_file = output_dir.join("search-index.json");
+        std::fs::write(&search_file, &search_index)
+            .map_err(|e| anyhow::anyhow!("Failed to write search index: {}", e))?;
+        println!("Generated: {}", search_file.display());
+    } else if project.modules.len() > 1 {
+        // Markdown index
+        let index_file = output_dir.join("index.md");
         let index_content = generate_index(&files, format);
         std::fs::write(&index_file, &index_content)
             .map_err(|e| anyhow::anyhow!("Failed to write index: {}", e))?;
@@ -716,6 +881,9 @@ fn generate_documentation(
     }
 
     println!("\nDocumentation generated in: {}", output_dir.display());
+    if is_html {
+        println!("Features enabled: cross-linking, search");
+    }
 
     Ok(())
 }
@@ -979,6 +1147,31 @@ mod tests {
     }
 
     #[test]
+    fn test_run_with_memory_profile_flag() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "run", "test.strat", "--memory-profile"]).unwrap();
+        match cli.command {
+            Some(Commands::Run { memory_profile, .. }) => {
+                assert!(memory_profile);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    #[test]
+    fn test_run_with_memory_profile_and_jit() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "run", "test.strat", "--memory-profile", "--jit"]).unwrap();
+        match cli.command {
+            Some(Commands::Run { memory_profile, jit, .. }) => {
+                assert!(memory_profile);
+                assert!(jit);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    #[test]
     fn test_workshop_no_path() {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "workshop"]).unwrap();
@@ -1167,9 +1360,10 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "update"]).unwrap();
         match cli.command {
-            Some(Commands::Update { packages, dry_run }) => {
+            Some(Commands::Update { packages, dry_run, sync }) => {
                 assert!(packages.is_empty());
                 assert!(!dry_run);
+                assert!(!sync);
             }
             _ => panic!("Expected Update command"),
         }
@@ -1180,9 +1374,10 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "update", "http", "json"]).unwrap();
         match cli.command {
-            Some(Commands::Update { packages, dry_run }) => {
+            Some(Commands::Update { packages, dry_run, sync }) => {
                 assert_eq!(packages, vec!["http", "json"]);
                 assert!(!dry_run);
+                assert!(!sync);
             }
             _ => panic!("Expected Update command"),
         }
@@ -1193,9 +1388,24 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "update", "--dry-run"]).unwrap();
         match cli.command {
-            Some(Commands::Update { packages, dry_run }) => {
+            Some(Commands::Update { packages, dry_run, sync }) => {
                 assert!(packages.is_empty());
                 assert!(dry_run);
+                assert!(!sync);
+            }
+            _ => panic!("Expected Update command"),
+        }
+    }
+
+    #[test]
+    fn test_update_sync() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "update", "--sync"]).unwrap();
+        match cli.command {
+            Some(Commands::Update { packages, dry_run, sync }) => {
+                assert!(packages.is_empty());
+                assert!(!dry_run);
+                assert!(sync);
             }
             _ => panic!("Expected Update command"),
         }
@@ -1206,5 +1416,50 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "lsp"]).unwrap();
         assert!(matches!(cli.command, Some(Commands::Lsp)));
+    }
+
+    #[test]
+    fn test_dap_command() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "dap"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Dap)));
+    }
+
+    #[test]
+    fn test_extension_install() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "extension", "install"]).unwrap();
+        match cli.command {
+            Some(Commands::Extension(ExtensionCommand::Install { vsix })) => {
+                assert!(vsix.is_none());
+            }
+            _ => panic!("Expected Extension Install command"),
+        }
+    }
+
+    #[test]
+    fn test_extension_install_with_vsix() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "extension", "install", "--vsix", "/path/to/ext.vsix"]).unwrap();
+        match cli.command {
+            Some(Commands::Extension(ExtensionCommand::Install { vsix })) => {
+                assert_eq!(vsix, Some(PathBuf::from("/path/to/ext.vsix")));
+            }
+            _ => panic!("Expected Extension Install command"),
+        }
+    }
+
+    #[test]
+    fn test_extension_list() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "extension", "list"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Extension(ExtensionCommand::List))));
+    }
+
+    #[test]
+    fn test_extension_uninstall() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "extension", "uninstall"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Extension(ExtensionCommand::Uninstall))));
     }
 }

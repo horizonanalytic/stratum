@@ -85,6 +85,7 @@ pub fn compute_rename_cached(
 }
 
 /// Prepare for rename operation - validates and returns the range to rename (non-cached)
+#[allow(dead_code)] // Standalone API used by tests
 pub fn prepare_rename(source: &str, position: Position) -> Option<PrepareRenameResponse> {
     let line_index = LineIndex::new(source);
 
@@ -109,6 +110,7 @@ pub fn prepare_rename(source: &str, position: Position) -> Option<PrepareRenameR
 }
 
 /// Compute rename edits for a symbol at the given position (non-cached)
+#[allow(dead_code)] // Standalone API used by tests
 pub fn compute_rename(
     uri: &Url,
     source: &str,

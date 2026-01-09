@@ -470,6 +470,138 @@ let by_age = users.sort(|a, b| { a.age - b.age })
 
 ---
 
+### `.enumerate()`
+
+Returns a list of (index, value) pairs.
+
+**Returns:** `List[(Int, T)]` - List of tuples containing index and value
+
+**Example:**
+
+```stratum
+let items = ["a", "b", "c"]
+let indexed = items.enumerate()
+// [(0, "a"), (1, "b"), (2, "c")]
+
+// Useful in loops
+for (idx, value) in items.enumerate() {
+    println(str(idx) + ": " + value)
+}
+// 0: a
+// 1: b
+// 2: c
+```
+
+---
+
+### `.chunk(size)`
+
+Splits the list into chunks of the specified size.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `size` | `Int` | Maximum size of each chunk |
+
+**Returns:** `List[List[T]]` - List of chunks
+
+**Example:**
+
+```stratum
+let numbers = [1, 2, 3, 4, 5, 6, 7]
+let chunks = numbers.chunk(3)
+// [[1, 2, 3], [4, 5, 6], [7]]
+
+let even_chunks = [1, 2, 3, 4, 5, 6].chunk(2)
+// [[1, 2], [3, 4], [5, 6]]
+```
+
+---
+
+### `.window(size)`
+
+Creates sliding windows over the list.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `size` | `Int` | Size of each window |
+
+**Returns:** `List[List[T]]` - List of overlapping windows
+
+**Aliases:** `.windows(size)`
+
+**Example:**
+
+```stratum
+let numbers = [1, 2, 3, 4, 5]
+let windows = numbers.window(3)
+// [[1, 2, 3], [2, 3, 4], [3, 4, 5]]
+
+// Useful for rolling calculations
+let pairs = [1, 2, 3, 4].window(2)
+// [[1, 2], [2, 3], [3, 4]]
+```
+
+---
+
+### `.unique()`
+
+Returns a new list with duplicates removed, preserving original order.
+
+**Returns:** `List[T]` - List with only unique elements
+
+**Aliases:** `.distinct()`
+
+**Example:**
+
+```stratum
+let values = [1, 2, 2, 3, 1, 4, 3, 5]
+let unique = values.unique()
+// [1, 2, 3, 4, 5]
+
+let words = ["apple", "banana", "apple", "cherry"]
+let unique_words = words.unique()
+// ["apple", "banana", "cherry"]
+```
+
+---
+
+### `.group_by(fn)`
+
+Groups elements into a Map by a key function.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `fn` | `(T) -> K` | Function that returns the grouping key |
+
+**Returns:** `Map[K, List[T]]` - Map from keys to groups of elements
+
+**Example:**
+
+```stratum
+let numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+// Group by even/odd
+let by_parity = numbers.group_by(|n| n % 2 == 0)
+// {true: [2, 4, 6, 8, 10], false: [1, 3, 5, 7, 9]}
+
+// Group strings by first letter
+let words = ["apple", "apricot", "banana", "blueberry", "cherry"]
+let by_letter = words.group_by(|w| w[0])
+// {"a": ["apple", "apricot"], "b": ["banana", "blueberry"], "c": ["cherry"]}
+
+// Group by length
+let by_length = words.group_by(|w| w.len())
+// {5: ["apple"], 7: ["apricot", "cherry"], 6: ["banana"], 9: ["blueberry"]}
+```
+
+---
+
 ## Iteration
 
 Lists can be used directly in `for` loops:

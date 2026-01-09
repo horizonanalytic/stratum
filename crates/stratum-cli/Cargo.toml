@@ -22,6 +22,18 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 rustyline = "15"
 clap = { version = "4", features = ["derive"] }
 
+# For publish command
+flate2.workspace = true
+tar = "0.4"
+semver.workspace = true
+
+# For debug adapter protocol
+dap = "0.4.1-alpha1"
+serde_json.workspace = true
+
+# For extension command
+dirs = "5"
+
 [dev-dependencies]
 tempfile.workspace = true
 

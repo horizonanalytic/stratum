@@ -56,6 +56,7 @@ pub fn compute_completions_cached(data: &CachedData<'_>, position: Position) -> 
 }
 
 /// Compute completions at the given position (non-cached)
+#[allow(dead_code)] // Standalone API used by tests
 pub fn compute_completions(source: &str, position: Position) -> Vec<CompletionItem> {
     let line_index = LineIndex::new(source);
     let Some(offset) = position_to_offset(&line_index, position) else {

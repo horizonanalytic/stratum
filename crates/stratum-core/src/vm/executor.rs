@@ -666,6 +666,149 @@ impl AsyncExecutor {
                                 Err("ws_conn_close: invalid connection metadata".to_string())
                             }
                         }
+                        "all" => {
+                            // Async.all - wait for all futures in the list
+                            if let Some(Value::List(futures_list)) = &metadata {
+                                let futures = futures_list.borrow().clone();
+                                let mut results = Vec::with_capacity(futures.len());
+
+                                for (i, future_val) in futures.iter().enumerate() {
+                                    // Recursively wait for each future
+                                    let result = Box::pin(self.wait_for_future(future_val)).await;
+                                    // Check if this was an error (Value::String starting with "Error:")
+                                    if let Value::String(s) = &result {
+                                        if s.starts_with("Error:") {
+                                            return self.mark_future_done(
+                                                fut_ref,
+                                                Err(format!("Async.all: future at index {i} failed: {s}"))
+                                            );
+                                        }
+                                    }
+                                    results.push(result);
+                                }
+
+                                Ok(Value::list(results))
+                            } else {
+                                Err("Async.all: invalid futures list metadata".to_string())
+                            }
+                        }
+                        "race" => {
+                            // Async.race - wait for first future to complete
+                            if let Some(Value::List(futures_list)) = &metadata {
+                                let futures = futures_list.borrow().clone();
+
+                                if futures.is_empty() {
+                                    return self.mark_future_done(
+                                        fut_ref,
+                                        Err("Async.race: empty futures list".to_string())
+                                    );
+                                }
+
+                                // Poll all futures repeatedly until one completes
+                                loop {
+                                    for future_val in &futures {
+                                        if let Value::Future(inner_ref) = future_val {
+                                            let inner = inner_ref.borrow();
+                                            match &inner.status {
+                                                FutureStatus::Ready => {
+                                                    return self.mark_future_done(
+                                                        fut_ref,
+                                                        Ok(inner.result.clone().unwrap_or(Value::Null))
+                                                    );
+                                                }
+                                                FutureStatus::Failed(err) => {
+                                                    return self.mark_future_done(
+                                                        fut_ref,
+                                                        Err(format!("Async.race: {err}"))
+                                                    );
+                                                }
+                                                FutureStatus::Pending => {
+                                                    // Check if this is a sleep or other kind we can advance
+                                                    if let Some(kind) = inner.kind() {
+                                                        if kind == "sleep" {
+                                                            // Drop borrow, wait for it, continue
+                                                            drop(inner);
+                                                            let result = Box::pin(self.wait_for_future(future_val)).await;
+                                                            return self.mark_future_done(fut_ref, Ok(result));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Yield and try again
+                                    tokio::task::yield_now().await;
+                                }
+                            } else {
+                                Err("Async.race: invalid futures list metadata".to_string())
+                            }
+                        }
+                        "timeout" => {
+                            // Async.timeout - add timeout to a future
+                            if let Some(Value::Map(map_ref)) = &metadata {
+                                let (future_val, ms) = {
+                                    let map = map_ref.borrow();
+                                    let inner_future = map.get(&HashableValue::String(Rc::new("future".into())));
+                                    let timeout_ms = map.get(&HashableValue::String(Rc::new("ms".into())));
+
+                                    match (inner_future, timeout_ms) {
+                                        (Some(future_val), Some(Value::Int(ms))) => {
+                                            (future_val.clone(), *ms)
+                                        }
+                                        _ => {
+                                            return self.mark_future_done(
+                                                fut_ref,
+                                                Err("Async.timeout: invalid metadata (expected future and ms)".to_string())
+                                            );
+                                        }
+                                    }
+                                };
+
+                                let duration = std::time::Duration::from_millis(ms as u64);
+
+                                // Use tokio timeout
+                                match tokio::time::timeout(
+                                    duration,
+                                    Box::pin(self.wait_for_future(&future_val))
+                                ).await {
+                                    Ok(result) => Ok(result),
+                                    Err(_) => Err(format!("Async.timeout: operation timed out after {ms}ms")),
+                                }
+                            } else {
+                                Err("Async.timeout: invalid metadata".to_string())
+                            }
+                        }
+                        "spawn" => {
+                            // Async.spawn - run closure on separate OS thread
+                            // For true parallelism, we need to handle closures specially:
+                            // - Closures with no upvalues (pure functions) can theoretically be
+                            //   spawned on separate threads, but still need VM execution
+                            // - Closures with captured state use Rc (not Send) and cannot be
+                            //   moved across threads safely
+                            //
+                            // Current limitation: spawn returns a future that will execute
+                            // the closure when awaited, but not on a separate OS thread.
+                            // True parallelism requires VM-level changes to support thread-safe
+                            // execution (Arc+Mutex or per-thread VM instances).
+                            //
+                            // For now, we mark this as pending and let the coroutine system
+                            // handle it cooperatively - the spawned "task" will run interleaved
+                            // with other async work, similar to JavaScript's event loop model.
+                            if let Some(Value::Closure(closure)) = &metadata {
+                                // Check if closure has captured state
+                                if closure.upvalues.is_empty() {
+                                    // Pure closure - could theoretically parallelize
+                                    // For now, just mark as ready for cooperative execution
+                                    // The VM will need to call this closure when the coroutine resumes
+                                    Ok(Value::Closure(Rc::clone(closure)))
+                                } else {
+                                    // Closure with captured state - cooperative execution only
+                                    Ok(Value::Closure(Rc::clone(closure)))
+                                }
+                            } else {
+                                Err("Async.spawn: invalid closure metadata".to_string())
+                            }
+                        }
                         _ => {
                             // Unknown kind - poll until ready
                             Ok(Value::Null)

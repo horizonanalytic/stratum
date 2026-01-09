@@ -3,7 +3,7 @@
 //! Implements the IDE window with resizable pane layout.
 
 use crate::config::{LayoutConfig, WorkshopConfig};
-use crate::debug::{DebugSession, DebugSessionState};
+use crate::debug::DebugSession;
 use crate::execution::{build_source_async, execute_source_async, BuildResult, CancellationToken, ExecutionResult};
 use crate::panels::{DataExplorerAction, DataExplorerMessage, DataExplorerPanel, DebugPanel, DebugPanelMessage, EditorMessage, EditorPanel, EditorTab, FileBrowserMessage, FileBrowserPanel, OutputMessage, OutputPanel, PaneContent, PanelKind, RecentFilesData, ReplMessage, ReplPanel, SourceLocation, WelcomeAction};
 use iced::event::{self, Event};
@@ -192,6 +192,9 @@ pub enum WorkshopMessage {
 
     // Data Explorer operations
     DataExplorer(DataExplorerMessage),
+
+    // Debug panel operations
+    DebugPanelMsg(DebugPanelMessage),
 
     // Help menu actions
     ShowAbout,
@@ -582,6 +585,10 @@ impl Workshop {
                 }
             }
 
+            WorkshopMessage::DebugPanelMsg(msg) => {
+                self.debug_panel.update(msg);
+            }
+
             WorkshopMessage::Output(msg) => {
                 // Handle output panel messages
                 if let Some(location) = self.output.update(msg) {
@@ -785,7 +792,7 @@ impl Workshop {
                 self.output.info("Debug session stopped.".to_string());
             }
 
-            WorkshopMessage::DebugPaused { file, line, function_name, call_stack, locals, reason } => {
+            WorkshopMessage::DebugPaused { file: _, line, function_name, call_stack, locals, reason } => {
                 self.output.info(format!("Paused at {} line {} ({})", function_name, line, reason));
                 self.editor.set_debug_line(Some(line as usize));
                 self.debug_call_stack = call_stack;
@@ -1148,7 +1155,7 @@ impl Workshop {
     }
 
     /// Render the application
-    pub fn view(&self) -> Element<WorkshopMessage> {
+    pub fn view(&self) -> Element<'_, WorkshopMessage> {
         let menu_bar = self.menu_bar();
         let toolbar = self.toolbar();
 
@@ -1158,6 +1165,7 @@ impl Workshop {
             recent_folders: self.config.recent_folders.clone(),
         };
 
+        let is_debugging = self.state == WorkshopState::Debugging;
         let pane_grid: Element<WorkshopMessage> = PaneGrid::new(&self.panes, |_pane, content, _is_maximized| {
             let header = content.header();
             let body = content.content(
@@ -1166,12 +1174,17 @@ impl Workshop {
                 &self.output,
                 &self.repl,
                 &self.data_explorer,
+                &self.debug_panel,
+                &self.debug_call_stack,
+                &self.debug_locals,
+                is_debugging,
                 Some(&recent_data),
                 WorkshopMessage::Editor,
                 WorkshopMessage::FileBrowser,
                 WorkshopMessage::Output,
                 WorkshopMessage::Repl,
                 WorkshopMessage::DataExplorer,
+                WorkshopMessage::DebugPanelMsg,
                 Some(WorkshopMessage::Welcome),
             );
 
@@ -1205,7 +1218,7 @@ impl Workshop {
     }
 
     /// Render modal dialog content
-    fn render_modal(&self, modal_state: &ModalState) -> Element<WorkshopMessage> {
+    fn render_modal(&self, modal_state: &ModalState) -> Element<'_, WorkshopMessage> {
         match modal_state {
             ModalState::CloseConfirm { file_name, .. } => {
                 let dialog_content = column![
@@ -1282,7 +1295,7 @@ impl Workshop {
     }
 
     /// Render the menu bar with dropdown menus
-    fn menu_bar(&self) -> Element<WorkshopMessage> {
+    fn menu_bar(&self) -> Element<'_, WorkshopMessage> {
         // Menu title buttons
         let file_title = Self::menu_title("File", MenuKind::File, self.active_menu);
         let edit_title = Self::menu_title("Edit", MenuKind::Edit, self.active_menu);
@@ -1327,7 +1340,7 @@ impl Workshop {
     }
 
     /// Render a dropdown menu based on the menu kind
-    fn render_dropdown(&self, kind: MenuKind) -> Element<WorkshopMessage> {
+    fn render_dropdown(&self, kind: MenuKind) -> Element<'_, WorkshopMessage> {
         let (items, offset) = match kind {
             MenuKind::File => (self.file_menu_items(), 0.0),
             MenuKind::Edit => (self.edit_menu_items(), 50.0),
@@ -1555,7 +1568,7 @@ impl Workshop {
     }
 
     /// Render the toolbar
-    fn toolbar(&self) -> Element<WorkshopMessage> {
+    fn toolbar(&self) -> Element<'_, WorkshopMessage> {
         use iced::widget::text_input;
 
         let is_debugging = self.state == WorkshopState::Debugging;

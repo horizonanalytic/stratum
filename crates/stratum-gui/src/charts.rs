@@ -767,11 +767,12 @@ impl canvas::Program<crate::runtime::Message> for PieChartProgram {
                         center.x + radius * start_angle.cos(),
                         center.y + radius * start_angle.sin(),
                     );
-                    let inner_start = Point::new(
+                    // inner_start/outer_end calculated for arc geometry reference but drawing uses draw_arc
+                    let _inner_start = Point::new(
                         center.x + inner_radius * start_angle.cos(),
                         center.y + inner_radius * start_angle.sin(),
                     );
-                    let outer_end = Point::new(
+                    let _outer_end = Point::new(
                         center.x + radius * (start_angle + sweep_angle).cos(),
                         center.y + radius * (start_angle + sweep_angle).sin(),
                     );

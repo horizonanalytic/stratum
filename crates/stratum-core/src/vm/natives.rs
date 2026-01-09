@@ -37,7 +37,11 @@ use pbkdf2::pbkdf2_hmac_array;
 use crate::bytecode::{
     FutureState, HashableValue, TcpListenerWrapper, TcpStreamWrapper, UdpSocketWrapper,
     WebSocketWrapper, WebSocketServerWrapper, WebSocketServerConnWrapper, Value,
+    WeakRefValue, XmlDocumentWrapper, ImageWrapper,
 };
+use image::{DynamicImage, ImageFormat, imageops::FilterType};
+use sxd_document::parser as xml_parser;
+use sxd_xpath::{evaluate_xpath, Context, Factory, Value as XPathValue};
 use std::sync::Arc;
 use crate::data::{
     read_csv_with_options, read_json, read_parquet, sql_query, write_csv, write_json,
@@ -3176,6 +3180,16 @@ pub fn math_method(method: &str, args: &[Value]) -> NativeResult {
         "is_infinite" => math_is_infinite(args),
         "is_finite" => math_is_finite(args),
 
+        // List aggregate functions
+        "sum" => math_sum(args),
+        "mean" => math_mean(args),
+        "median" => math_median(args),
+        "std" => math_std(args),
+        "variance" => math_variance(args),
+
+        // Rounding with precision
+        "round_to" => math_round_to(args),
+
         _ => Err(format!("Math has no method '{method}'")),
     }
 }
@@ -3579,6 +3593,117 @@ fn math_is_finite(args: &[Value]) -> NativeResult {
         Value::Int(_) => Ok(Value::Bool(true)), // Integers are always finite
         _ => Err(format!("Math.is_finite() expects number, got {}", args[0].type_name())),
     }
+}
+
+// List aggregate functions
+
+/// Helper to extract a list of numbers from a Value::List
+fn get_number_list(arg: &Value) -> Result<Vec<f64>, String> {
+    match arg {
+        Value::List(list) => {
+            list.borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::Int(n) => Ok(*n as f64),
+                    Value::Float(f) => Ok(*f),
+                    _ => Err(format!("list element must be a number, got {}", v.type_name())),
+                })
+                .collect()
+        }
+        _ => Err(format!("expected List, got {}", arg.type_name())),
+    }
+}
+
+/// Math.sum(list) -> Float
+/// Sum all numbers in a list
+fn math_sum(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.sum() expects 1 argument, got {}", args.len()));
+    }
+    let numbers = get_number_list(&args[0])?;
+    Ok(Value::Float(numbers.iter().sum()))
+}
+
+/// Math.mean(list) -> Float
+/// Calculate the arithmetic mean (average) of numbers in a list
+fn math_mean(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.mean() expects 1 argument, got {}", args.len()));
+    }
+    let numbers = get_number_list(&args[0])?;
+    if numbers.is_empty() {
+        return Ok(Value::Float(f64::NAN));
+    }
+    let sum: f64 = numbers.iter().sum();
+    Ok(Value::Float(sum / numbers.len() as f64))
+}
+
+/// Math.median(list) -> Float
+/// Calculate the median of numbers in a list
+fn math_median(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.median() expects 1 argument, got {}", args.len()));
+    }
+    let mut numbers = get_number_list(&args[0])?;
+    if numbers.is_empty() {
+        return Ok(Value::Float(f64::NAN));
+    }
+    numbers.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let len = numbers.len();
+    let median = if len % 2 == 0 {
+        (numbers[len / 2 - 1] + numbers[len / 2]) / 2.0
+    } else {
+        numbers[len / 2]
+    };
+    Ok(Value::Float(median))
+}
+
+/// Math.variance(list) -> Float
+/// Calculate the population variance of numbers in a list
+fn math_variance(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.variance() expects 1 argument, got {}", args.len()));
+    }
+    let numbers = get_number_list(&args[0])?;
+    if numbers.is_empty() {
+        return Ok(Value::Float(f64::NAN));
+    }
+    let mean: f64 = numbers.iter().sum::<f64>() / numbers.len() as f64;
+    let variance = numbers.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / numbers.len() as f64;
+    Ok(Value::Float(variance))
+}
+
+/// Math.std(list) -> Float
+/// Calculate the population standard deviation of numbers in a list
+fn math_std(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Math.std() expects 1 argument, got {}", args.len()));
+    }
+    let numbers = get_number_list(&args[0])?;
+    if numbers.is_empty() {
+        return Ok(Value::Float(f64::NAN));
+    }
+    let mean: f64 = numbers.iter().sum::<f64>() / numbers.len() as f64;
+    let variance = numbers.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / numbers.len() as f64;
+    Ok(Value::Float(variance.sqrt()))
+}
+
+/// Math.round_to(x, decimals) -> Float
+/// Round a number to the specified number of decimal places
+fn math_round_to(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!("Math.round_to() expects 2 arguments, got {}", args.len()));
+    }
+    let x = get_float_arg_math(&args[0], "x")?;
+    let decimals = match &args[1] {
+        Value::Int(n) => *n,
+        _ => return Err(format!("Math.round_to() decimals must be Int, got {}", args[1].type_name())),
+    };
+    if decimals < 0 {
+        return Err("Math.round_to() decimals must be non-negative".to_string());
+    }
+    let multiplier = 10_f64.powi(decimals as i32);
+    Ok(Value::Float((x * multiplier).round() / multiplier))
 }
 
 // ============================================================================
@@ -4161,6 +4286,8 @@ pub fn system_method(method: &str, args: &[Value]) -> NativeResult {
         "exit" => system_exit(args),
         "cpu_count" => system_cpu_count(args),
         "total_memory" => system_total_memory(args),
+        "hostname" => system_hostname(args),
+        "uptime" => system_uptime(args),
         _ => Err(format!("System has no method '{method}'")),
     }
 }
@@ -4277,6 +4404,205 @@ fn system_total_memory(args: &[Value]) -> NativeResult {
     use sysinfo::System;
     let sys = System::new_all();
     Ok(Value::Int(sys.total_memory() as i64))
+}
+
+fn system_hostname(args: &[Value]) -> NativeResult {
+    if !args.is_empty() {
+        return Err(format!(
+            "System.hostname() expects 0 arguments, got {}",
+            args.len()
+        ));
+    }
+    use sysinfo::System;
+    match System::host_name() {
+        Some(name) => Ok(Value::string(name)),
+        None => Ok(Value::Null),
+    }
+}
+
+fn system_uptime(args: &[Value]) -> NativeResult {
+    if !args.is_empty() {
+        return Err(format!(
+            "System.uptime() expects 0 arguments, got {}",
+            args.len()
+        ));
+    }
+    use sysinfo::System;
+    Ok(Value::Int(System::uptime() as i64))
+}
+
+// ============================================================================
+// Process Module
+// ============================================================================
+
+pub fn process_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "spawn" => process_spawn(args),
+        "kill" => process_kill(args),
+        _ => Err(format!("Process has no method '{method}'")),
+    }
+}
+
+fn process_spawn(args: &[Value]) -> NativeResult {
+    if args.is_empty() || args.len() > 2 {
+        return Err(format!(
+            "Process.spawn() expects 1-2 arguments, got {}",
+            args.len()
+        ));
+    }
+
+    let program = get_string_arg(&args[0], "program")?;
+    let cmd_args: Vec<String> = if args.len() == 2 {
+        match &args[1] {
+            Value::List(list) => list
+                .borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => Ok(s.to_string()),
+                    _ => Err(format!(
+                        "Process.spawn() argument must be string, got {}",
+                        v.type_name()
+                    )),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => {
+                return Err(format!(
+                    "Process.spawn() expects List as second argument, got {}",
+                    args[1].type_name()
+                ))
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
+    let child = Command::new(&program)
+        .args(&cmd_args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to spawn '{}': {}", program, e))?;
+
+    let pid = child.id();
+
+    // Store the child process handle for later interaction
+    let mut result = HashMap::new();
+    result.insert(
+        HashableValue::String(Rc::new("pid".to_string())),
+        Value::Int(pid as i64),
+    );
+    result.insert(
+        HashableValue::String(Rc::new("program".to_string())),
+        Value::string(&program),
+    );
+
+    // Store the child handle in a thread-safe wrapper for later use
+    // For now, we return basic info - the process runs in background
+    Ok(Value::Map(Rc::new(std::cell::RefCell::new(result))))
+}
+
+fn process_kill(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!(
+            "Process.kill() expects 1 argument, got {}",
+            args.len()
+        ));
+    }
+
+    let pid = get_int_arg(&args[0], "pid")?;
+    if pid < 0 {
+        return Err("Process.kill() pid must be non-negative".to_string());
+    }
+
+    #[cfg(unix)]
+    {
+        // Use kill command for cross-platform compatibility
+        let result = Command::new("kill")
+            .arg(pid.to_string())
+            .output()
+            .map_err(|e| format!("failed to kill process {}: {}", pid, e))?;
+
+        if result.status.success() {
+            Ok(Value::Bool(true))
+        } else {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            Err(format!("failed to kill process {}: {}", pid, stderr.trim()))
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let result = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .output()
+            .map_err(|e| format!("failed to kill process {}: {}", pid, e))?;
+
+        if result.status.success() {
+            Ok(Value::Bool(true))
+        } else {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            Err(format!("failed to kill process {}: {}", pid, stderr.trim()))
+        }
+    }
+}
+
+// ============================================================================
+// Signal Module
+// ============================================================================
+
+pub fn signal_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "handle" => signal_handle(args),
+        _ => Err(format!("Signal has no method '{method}'")),
+    }
+}
+
+fn signal_handle(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!(
+            "Signal.handle() expects 2 arguments, got {}",
+            args.len()
+        ));
+    }
+
+    let signal_name = get_string_arg(&args[0], "signal")?;
+
+    // Validate signal name
+    let valid_signals = ["SIGINT", "SIGTERM", "SIGHUP", "SIGUSR1", "SIGUSR2"];
+    if !valid_signals.contains(&signal_name.as_str()) {
+        return Err(format!(
+            "Signal.handle() invalid signal '{}'. Valid signals: {}",
+            signal_name,
+            valid_signals.join(", ")
+        ));
+    }
+
+    // Validate that second argument is a closure
+    match &args[1] {
+        Value::Closure(_) => {}
+        _ => {
+            return Err(format!(
+                "Signal.handle() handler must be a closure, got {}",
+                args[1].type_name()
+            ))
+        }
+    }
+
+    // Note: Actual signal handling requires VM-level integration.
+    // This registers the intent; the VM executor handles the actual signals.
+    // For now, return the signal registration info.
+    let mut result = HashMap::new();
+    result.insert(
+        HashableValue::String(Rc::new("signal".to_string())),
+        Value::string(&signal_name),
+    );
+    result.insert(
+        HashableValue::String(Rc::new("registered".to_string())),
+        Value::Bool(true),
+    );
+
+    Ok(Value::Map(Rc::new(std::cell::RefCell::new(result))))
 }
 
 // ============================================================================
@@ -5305,6 +5631,10 @@ pub fn async_method(method: &str, args: &[Value]) -> NativeResult {
         "sleep" => async_sleep(args),
         "ready" => async_ready(args),
         "failed" => async_failed(args),
+        "all" => async_all(args),
+        "race" => async_race(args),
+        "timeout" => async_timeout(args),
+        "spawn" => async_spawn(args),
         _ => Err(format!("Async has no method '{method}'")),
     }
 }
@@ -5356,6 +5686,130 @@ fn async_failed(args: &[Value]) -> NativeResult {
     };
 
     let future = FutureState::failed(msg);
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Async.all(futures) - Wait for all futures to complete
+/// Returns a Future<List<T>> containing all results in order
+fn async_all(args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("Async.all() requires a List of futures".to_string());
+    }
+
+    let futures = match &args[0] {
+        Value::List(list) => {
+            let items = list.borrow();
+            // Validate all items are futures
+            for (i, item) in items.iter().enumerate() {
+                if !matches!(item, Value::Future(_)) {
+                    return Err(format!(
+                        "Async.all() element at index {i} is not a Future, got {}",
+                        item.type_name()
+                    ));
+                }
+            }
+            Value::List(Rc::new(RefCell::new(items.clone())))
+        }
+        _ => return Err(format!(
+            "Async.all() expects List<Future>, got {}",
+            args[0].type_name()
+        )),
+    };
+
+    let future = FutureState::pending_with_metadata(futures, "all".to_string());
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Async.race(futures) - Wait for the first future to complete
+/// Returns the result of the first future that completes
+fn async_race(args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("Async.race() requires a List of futures".to_string());
+    }
+
+    let futures = match &args[0] {
+        Value::List(list) => {
+            let items = list.borrow();
+            if items.is_empty() {
+                return Err("Async.race() requires at least one future".to_string());
+            }
+            // Validate all items are futures
+            for (i, item) in items.iter().enumerate() {
+                if !matches!(item, Value::Future(_)) {
+                    return Err(format!(
+                        "Async.race() element at index {i} is not a Future, got {}",
+                        item.type_name()
+                    ));
+                }
+            }
+            Value::List(Rc::new(RefCell::new(items.clone())))
+        }
+        _ => return Err(format!(
+            "Async.race() expects List<Future>, got {}",
+            args[0].type_name()
+        )),
+    };
+
+    let future = FutureState::pending_with_metadata(futures, "race".to_string());
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Async.timeout(future, ms) - Add a timeout to a future
+/// Returns the future's result if it completes in time, or fails with timeout error
+fn async_timeout(args: &[Value]) -> NativeResult {
+    if args.len() < 2 {
+        return Err("Async.timeout() requires (future, ms)".to_string());
+    }
+
+    let inner_future = match &args[0] {
+        Value::Future(_) => args[0].clone(),
+        _ => return Err(format!(
+            "Async.timeout() first argument must be Future, got {}",
+            args[0].type_name()
+        )),
+    };
+
+    let timeout_ms = match &args[1] {
+        Value::Int(ms) if *ms >= 0 => *ms,
+        Value::Int(ms) => return Err(format!("Async.timeout() ms must be non-negative, got {ms}")),
+        _ => return Err(format!(
+            "Async.timeout() second argument must be Int (ms), got {}",
+            args[1].type_name()
+        )),
+    };
+
+    // Store both the future and timeout in a map
+    let mut metadata_map = std::collections::HashMap::new();
+    metadata_map.insert(
+        HashableValue::String(Rc::new("future".to_string())),
+        inner_future,
+    );
+    metadata_map.insert(
+        HashableValue::String(Rc::new("ms".to_string())),
+        Value::Int(timeout_ms),
+    );
+    let metadata = Value::Map(Rc::new(RefCell::new(metadata_map)));
+
+    let future = FutureState::pending_with_metadata(metadata, "timeout".to_string());
+    Ok(Value::Future(Rc::new(RefCell::new(future))))
+}
+
+/// Async.spawn(closure) - Spawn a closure on a parallel OS thread
+/// Returns a Future<T> that resolves when the thread completes
+fn async_spawn(args: &[Value]) -> NativeResult {
+    if args.is_empty() {
+        return Err("Async.spawn() requires a closure argument".to_string());
+    }
+
+    let closure = match &args[0] {
+        Value::Closure(_) => args[0].clone(),
+        _ => return Err(format!(
+            "Async.spawn() expects a closure, got {}",
+            args[0].type_name()
+        )),
+    };
+
+    let future = FutureState::pending_with_metadata(closure, "spawn".to_string());
     Ok(Value::Future(Rc::new(RefCell::new(future))))
 }
 
@@ -5960,6 +6414,8 @@ pub fn data_method(method: &str, args: &[Value]) -> NativeResult {
         "frame" | "dataframe" => data_frame(args),
         "series" => data_series(args),
         "from_columns" => data_from_columns(args),
+        // Concatenation
+        "concat" => data_concat(args),
         // File I/O - readers
         "read_parquet" => data_read_parquet(args),
         "read_csv" => data_read_csv(args),
@@ -5973,8 +6429,34 @@ pub fn data_method(method: &str, args: &[Value]) -> NativeResult {
         "sql_context" => data_sql_context(args),
         // Database query to DataFrame
         "from_query" => data_from_query(args),
+        // Parallel configuration
+        "set_parallel_threshold" => data_set_parallel_threshold(args),
+        "parallel_threshold" => data_parallel_threshold(args),
         _ => Err(format!("Data has no method '{method}'")),
     }
+}
+
+/// Set the parallel processing threshold
+fn data_set_parallel_threshold(args: &[Value]) -> NativeResult {
+    use crate::data::set_parallel_threshold;
+
+    if args.len() != 1 {
+        return Err(format!("Data.set_parallel_threshold expects 1 argument, got {}", args.len()));
+    }
+    match &args[0] {
+        Value::Int(n) => {
+            set_parallel_threshold(*n as usize);
+            Ok(Value::Null)
+        }
+        _ => Err("Data.set_parallel_threshold expects an Int".to_string()),
+    }
+}
+
+/// Get the current parallel processing threshold
+fn data_parallel_threshold(_args: &[Value]) -> NativeResult {
+    use crate::data::parallel_threshold;
+
+    Ok(Value::Int(parallel_threshold() as i64))
 }
 
 /// Create a DataFrame from a list of maps (each map is a row)
@@ -6093,6 +6575,33 @@ fn data_from_columns(args: &[Value]) -> NativeResult {
 
     let df = DataFrame::from_series(series_list).map_err(|e| e.to_string())?;
     Ok(Value::DataFrame(Arc::new(df)))
+}
+
+/// Concatenate multiple DataFrames vertically: Data.concat(df1, df2, ...)
+fn data_concat(args: &[Value]) -> NativeResult {
+    use std::sync::Arc;
+
+    if args.is_empty() {
+        return Err("Data.concat expects at least one DataFrame".to_string());
+    }
+
+    // Collect all DataFrames from arguments
+    let dataframes: Result<Vec<&DataFrame>, String> = args
+        .iter()
+        .enumerate()
+        .map(|(i, v)| match v {
+            Value::DataFrame(df) => Ok(df.as_ref()),
+            _ => Err(format!(
+                "Data.concat argument {} must be a DataFrame, got {}",
+                i, v.type_name()
+            )),
+        })
+        .collect();
+
+    let dataframes = dataframes?;
+
+    let result = DataFrame::concat(&dataframes).map_err(|e| e.to_string())?;
+    Ok(Value::DataFrame(Arc::new(result)))
 }
 
 // ============================================================================
@@ -6455,6 +6964,11 @@ pub fn agg_method(method: &str, args: &[Value]) -> NativeResult {
         "count" => agg_count(args),
         "first" => agg_first(args),
         "last" => agg_last(args),
+        "std" | "stddev" => agg_std(args),
+        "var" | "variance" => agg_var(args),
+        "median" => agg_median(args),
+        "mode" => agg_mode(args),
+        "count_distinct" | "nunique" => agg_count_distinct(args),
         _ => Err(format!("Agg has no method '{method}'")),
     }
 }
@@ -6514,6 +7028,41 @@ fn agg_first(args: &[Value]) -> NativeResult {
 fn agg_last(args: &[Value]) -> NativeResult {
     let (column, output) = parse_agg_args(args, "last")?;
     let spec = AggSpec::new(AggOp::Last, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.std("column", "output_name") - creates a standard deviation aggregation spec
+fn agg_std(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "std")?;
+    let spec = AggSpec::new(AggOp::Std, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.var("column", "output_name") - creates a variance aggregation spec
+fn agg_var(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "var")?;
+    let spec = AggSpec::new(AggOp::Var, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.median("column", "output_name") - creates a median aggregation spec
+fn agg_median(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "median")?;
+    let spec = AggSpec::new(AggOp::Median, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.mode("column", "output_name") - creates a mode aggregation spec
+fn agg_mode(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "mode")?;
+    let spec = AggSpec::new(AggOp::Mode, Some(column.clone()), output.unwrap_or(column));
+    Ok(Value::AggSpec(std::sync::Arc::new(spec)))
+}
+
+/// Agg.count_distinct("column", "output_name") - creates a count distinct aggregation spec
+fn agg_count_distinct(args: &[Value]) -> NativeResult {
+    let (column, output) = parse_agg_args(args, "count_distinct")?;
+    let spec = AggSpec::new(AggOp::CountDistinct, Some(column.clone()), output.unwrap_or(column));
     Ok(Value::AggSpec(std::sync::Arc::new(spec)))
 }
 
@@ -6738,9 +7287,775 @@ fn cube_from(args: &[Value]) -> NativeResult {
     }
 }
 
+// ============================================================================
+// Set Module
+// ============================================================================
+
+/// Set namespace for creating and working with sets
+pub fn set_native_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "new" => set_new(args),
+        "from" | "from_list" => set_from_list(args),
+        _ => Err(format!("Set has no method '{method}'")),
+    }
+}
+
+/// Set.new() -> Set
+/// Create an empty set
+fn set_new(args: &[Value]) -> NativeResult {
+    if !args.is_empty() {
+        return Err(format!("Set.new() expects 0 arguments, got {}", args.len()));
+    }
+    Ok(Value::empty_set())
+}
+
+/// Set.from(list) -> Set
+/// Create a set from a list of values
+fn set_from_list(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Set.from() expects 1 argument (list), got {}", args.len()));
+    }
+
+    match &args[0] {
+        Value::List(list) => {
+            let mut set = std::collections::HashSet::new();
+            for value in list.borrow().iter() {
+                let hashable = HashableValue::try_from(value.clone())
+                    .map_err(|_| format!("Set can only contain hashable values (null, bool, int, string), got {}", value.type_name()))?;
+                set.insert(hashable);
+            }
+            Ok(Value::set(set))
+        }
+        _ => Err(format!("Set.from() expects a List, got {}", args[0].type_name())),
+    }
+}
+
+// ============================================================================
+// Test Module - Testing framework for Stratum
+// ============================================================================
+
+/// Test namespace for the Stratum testing framework
+pub fn test_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "expect" => test_expect(args),
+        "fail" => test_fail(args),
+        "skip" => test_skip(args),
+        "pending" => test_pending(args),
+        "mock" => test_mock(args),
+        "spy" => test_spy(args),
+        _ => Err(format!("Test has no method '{method}'")),
+    }
+}
+
+/// Test.expect(value) -> Expectation
+/// Creates an expectation that can be used with matchers like to_be, to_equal, etc.
+fn test_expect(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Test.expect() expects 1 argument, got {}", args.len()));
+    }
+    Ok(Value::expectation(args[0].clone()))
+}
+
+/// Test.fail(message?) -> throws
+/// Immediately fails the current test with an optional message
+fn test_fail(args: &[Value]) -> NativeResult {
+    let message = if args.is_empty() {
+        "Test failed".to_string()
+    } else {
+        match &args[0] {
+            Value::String(s) => (**s).clone(),
+            v => format!("{}", v),
+        }
+    };
+    Err(message)
+}
+
+/// Test.skip(message?) -> null
+/// Marks the current test as skipped (does not fail)
+fn test_skip(args: &[Value]) -> NativeResult {
+    let _message = if args.is_empty() {
+        "Test skipped".to_string()
+    } else {
+        match &args[0] {
+            Value::String(s) => (**s).clone(),
+            v => format!("{}", v),
+        }
+    };
+    // For now, skip just returns null - could add special handling later
+    Ok(Value::Null)
+}
+
+/// Test.pending(message?) -> null
+/// Marks the current test as pending (not yet implemented)
+fn test_pending(args: &[Value]) -> NativeResult {
+    let _message = if args.is_empty() {
+        "Test pending".to_string()
+    } else {
+        match &args[0] {
+            Value::String(s) => (**s).clone(),
+            v => format!("{}", v),
+        }
+    };
+    // For now, pending just returns null - could add special handling later
+    Ok(Value::Null)
+}
+
+/// Test.mock(return_value?) -> Mock
+/// Creates a mock function that records calls and returns a configured value.
+/// The mock is represented as a Map with the following structure:
+/// { "__is_mock": true, "return_value": value, "calls": [], "call_count": 0 }
+fn test_mock(args: &[Value]) -> NativeResult {
+    let return_value = if args.is_empty() {
+        Value::Null
+    } else {
+        args[0].clone()
+    };
+
+    let mut mock = HashMap::new();
+    // Marker to identify this as a mock
+    mock.insert(
+        HashableValue::String(Rc::new("__is_mock".to_string())),
+        Value::Bool(true),
+    );
+    // The value to return when called
+    mock.insert(
+        HashableValue::String(Rc::new("return_value".to_string())),
+        return_value,
+    );
+    // Record of all calls made (list of argument lists)
+    mock.insert(
+        HashableValue::String(Rc::new("calls".to_string())),
+        Value::empty_list(),
+    );
+    // Count of calls made
+    mock.insert(
+        HashableValue::String(Rc::new("call_count".to_string())),
+        Value::Int(0),
+    );
+
+    Ok(Value::Map(Rc::new(RefCell::new(mock))))
+}
+
+/// Test.spy(fn?) -> Spy
+/// Creates a spy that wraps a function and tracks calls.
+/// If no function is provided, creates a spy that returns null.
+fn test_spy(args: &[Value]) -> NativeResult {
+    // For now, spy is similar to mock but can optionally wrap a real function
+    let wrapped = if args.is_empty() {
+        Value::Null
+    } else {
+        args[0].clone()
+    };
+
+    let mut spy = HashMap::new();
+    // Marker to identify this as a spy
+    spy.insert(
+        HashableValue::String(Rc::new("__is_spy".to_string())),
+        Value::Bool(true),
+    );
+    // The wrapped function (if any)
+    spy.insert(
+        HashableValue::String(Rc::new("wrapped".to_string())),
+        wrapped,
+    );
+    // Record of all calls made
+    spy.insert(
+        HashableValue::String(Rc::new("calls".to_string())),
+        Value::empty_list(),
+    );
+    // Count of calls made
+    spy.insert(
+        HashableValue::String(Rc::new("call_count".to_string())),
+        Value::Int(0),
+    );
+
+    Ok(Value::Map(Rc::new(RefCell::new(spy))))
+}
+
+// ============================================================================
+// XML Module
+// ============================================================================
+
+/// Xml namespace methods (static methods)
+pub fn xml_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "parse" => xml_parse(args),
+        "stringify" | "serialize" => xml_stringify(args),
+        _ => Err(format!("Xml has no method '{method}'")),
+    }
+}
+
+/// Xml.parse(content: String) -> XmlDocument
+/// Parse XML content into a document object
+fn xml_parse(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Xml.parse() expects 1 argument, got {}", args.len()));
+    }
+    let content = get_string_arg(&args[0], "content")?;
+
+    // Parse the document to validate it and get root name
+    let package = xml_parser::parse(&content)
+        .map_err(|e| format!("XML parse error: {}", e))?;
+    let doc = package.as_document();
+
+    let root_name = doc.root()
+        .children()
+        .iter()
+        .find_map(|child| child.element().map(|e| e.name().local_part().to_string()))
+        .unwrap_or_else(|| "document".to_string());
+
+    let wrapper = XmlDocumentWrapper::new(content, root_name);
+    Ok(Value::XmlDocument(Arc::new(wrapper)))
+}
+
+/// Xml.stringify(doc: XmlDocument) -> String
+/// Convert an XmlDocument back to a string
+fn xml_stringify(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Xml.stringify() expects 1 argument, got {}", args.len()));
+    }
+    match &args[0] {
+        Value::XmlDocument(doc) => Ok(Value::string(&doc.content)),
+        other => Err(format!("Xml.stringify() expects XmlDocument, got {}", other.type_name())),
+    }
+}
+
+/// Methods on XmlDocument instances
+pub fn xml_document_method(doc: &Arc<XmlDocumentWrapper>, method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "query" | "xpath" => xml_doc_query(doc, args),
+        "text" => xml_doc_text(doc, args),
+        "root" => xml_doc_root(doc),
+        "content" => Ok(Value::string(&doc.content)),
+        _ => Err(format!("XmlDocument has no method '{method}'")),
+    }
+}
+
+/// doc.query(xpath: String) -> Value
+/// Execute an XPath query and return results
+fn xml_doc_query(doc: &Arc<XmlDocumentWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("query() expects 1 argument, got {}", args.len()));
+    }
+    let xpath_expr = get_string_arg(&args[0], "xpath")?;
+
+    let package = xml_parser::parse(&doc.content)
+        .map_err(|e| format!("XML parse error: {}", e))?;
+    let document = package.as_document();
+
+    // Create XPath factory and context
+    let factory = Factory::new();
+    let xpath = factory.build(&xpath_expr)
+        .map_err(|e| format!("XPath parse error: {}", e))?
+        .ok_or("Empty XPath expression")?;
+
+    let context = Context::new();
+    let result = xpath.evaluate(&context, document.root())
+        .map_err(|e| format!("XPath evaluation error: {}", e))?;
+
+    xpath_value_to_stratum(result)
+}
+
+/// Convert XPath result to Stratum value
+fn xpath_value_to_stratum(value: XPathValue) -> NativeResult {
+    match value {
+        XPathValue::Boolean(b) => Ok(Value::Bool(b)),
+        XPathValue::Number(n) => {
+            if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
+                Ok(Value::Int(n as i64))
+            } else {
+                Ok(Value::Float(n))
+            }
+        }
+        XPathValue::String(s) => Ok(Value::string(s)),
+        XPathValue::Nodeset(nodes) => {
+            let items: Vec<Value> = nodes.iter().map(|node| {
+                // Get text content from node
+                let text = node.string_value();
+                Value::string(text)
+            }).collect();
+            Ok(Value::list(items))
+        }
+    }
+}
+
+/// doc.text() -> String
+/// Get all text content from the document
+fn xml_doc_text(doc: &Arc<XmlDocumentWrapper>, args: &[Value]) -> NativeResult {
+    if !args.is_empty() {
+        return Err(format!("text() expects 0 arguments, got {}", args.len()));
+    }
+
+    let package = xml_parser::parse(&doc.content)
+        .map_err(|e| format!("XML parse error: {}", e))?;
+    let document = package.as_document();
+
+    // Use XPath to get all text
+    let result = evaluate_xpath(&document, "//text()")
+        .map_err(|e| format!("XPath error: {}", e))?;
+
+    match result {
+        XPathValue::Nodeset(nodes) => {
+            let text: String = nodes.iter()
+                .map(|n| n.string_value())
+                .collect::<Vec<_>>()
+                .join("");
+            Ok(Value::string(text.trim()))
+        }
+        XPathValue::String(s) => Ok(Value::string(s)),
+        _ => Ok(Value::string("")),
+    }
+}
+
+/// doc.root() -> String
+/// Get the root element name
+fn xml_doc_root(doc: &Arc<XmlDocumentWrapper>) -> NativeResult {
+    Ok(Value::string(&doc.root_name))
+}
+
+// ============================================================================
+// Image Module
+// ============================================================================
+
+/// Image namespace methods (static methods)
+pub fn image_namespace_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "open" | "load" => image_open(args),
+        "new" | "create" => image_new(args),
+        _ => Err(format!("Image has no method '{method}'")),
+    }
+}
+
+/// Image.open(path: String) -> Image
+/// Load an image from a file
+fn image_open(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Image.open() expects 1 argument, got {}", args.len()));
+    }
+    let path = get_string_arg(&args[0], "path")?;
+
+    let img = image::open(&path)
+        .map_err(|e| format!("failed to open image '{}': {}", path, e))?;
+
+    // Detect format from extension
+    let format = std::path::Path::new(&path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|s| s.to_lowercase());
+
+    let wrapper = ImageWrapper::new(img, Some(path), format);
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// Image.new(width: Int, height: Int, color?: String) -> Image
+/// Create a new blank image
+fn image_new(args: &[Value]) -> NativeResult {
+    if args.len() < 2 {
+        return Err(format!("Image.new() expects at least 2 arguments (width, height), got {}", args.len()));
+    }
+
+    let width = get_int_arg(&args[0], "width")? as u32;
+    let height = get_int_arg(&args[1], "height")? as u32;
+
+    // Parse optional color (default white)
+    let color = if args.len() > 2 {
+        parse_color(&args[2])?
+    } else {
+        image::Rgba([255, 255, 255, 255])
+    };
+
+    let img = DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(width, height, color));
+    let wrapper = ImageWrapper::new(img, None, Some("png".to_string()));
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// Parse color from value (string like "#RRGGBB" or "white", or list [r,g,b] or [r,g,b,a])
+fn parse_color(value: &Value) -> Result<image::Rgba<u8>, String> {
+    match value {
+        Value::String(s) => {
+            let s = s.trim();
+            if s.starts_with('#') {
+                // Parse hex color
+                let hex = s.trim_start_matches('#');
+                match hex.len() {
+                    6 => {
+                        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| "invalid hex color")?;
+                        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| "invalid hex color")?;
+                        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| "invalid hex color")?;
+                        Ok(image::Rgba([r, g, b, 255]))
+                    }
+                    8 => {
+                        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| "invalid hex color")?;
+                        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| "invalid hex color")?;
+                        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| "invalid hex color")?;
+                        let a = u8::from_str_radix(&hex[6..8], 16).map_err(|_| "invalid hex color")?;
+                        Ok(image::Rgba([r, g, b, a]))
+                    }
+                    _ => Err("hex color must be #RRGGBB or #RRGGBBAA".to_string()),
+                }
+            } else {
+                // Named colors
+                match s.to_lowercase().as_str() {
+                    "white" => Ok(image::Rgba([255, 255, 255, 255])),
+                    "black" => Ok(image::Rgba([0, 0, 0, 255])),
+                    "red" => Ok(image::Rgba([255, 0, 0, 255])),
+                    "green" => Ok(image::Rgba([0, 255, 0, 255])),
+                    "blue" => Ok(image::Rgba([0, 0, 255, 255])),
+                    "yellow" => Ok(image::Rgba([255, 255, 0, 255])),
+                    "cyan" => Ok(image::Rgba([0, 255, 255, 255])),
+                    "magenta" => Ok(image::Rgba([255, 0, 255, 255])),
+                    "transparent" => Ok(image::Rgba([0, 0, 0, 0])),
+                    _ => Err(format!("unknown color name: {}", s)),
+                }
+            }
+        }
+        Value::List(list) => {
+            let list = list.borrow();
+            if list.len() < 3 || list.len() > 4 {
+                return Err("color list must have 3 or 4 elements [r, g, b] or [r, g, b, a]".to_string());
+            }
+            let r = get_int_arg(&list[0], "r")? as u8;
+            let g = get_int_arg(&list[1], "g")? as u8;
+            let b = get_int_arg(&list[2], "b")? as u8;
+            let a = if list.len() > 3 {
+                get_int_arg(&list[3], "a")? as u8
+            } else {
+                255
+            };
+            Ok(image::Rgba([r, g, b, a]))
+        }
+        _ => Err(format!("color must be string or list, got {}", value.type_name())),
+    }
+}
+
+/// Methods on Image instances
+pub fn image_method(img: &Arc<ImageWrapper>, method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        // Basic info
+        "width" => Ok(Value::Int(img.width() as i64)),
+        "height" => Ok(Value::Int(img.height() as i64)),
+        "dimensions" => {
+            let (w, h) = img.dimensions();
+            Ok(Value::list(vec![Value::Int(w as i64), Value::Int(h as i64)]))
+        }
+
+        // Transformations
+        "resize" => image_resize(img, args),
+        "crop" => image_crop(img, args),
+        "rotate" | "rotate90" => image_rotate(img, args),
+        "flip_h" | "flip_horizontal" => image_flip_h(img),
+        "flip_v" | "flip_vertical" => image_flip_v(img),
+
+        // Color operations
+        "grayscale" => image_grayscale(img),
+        "invert" => image_invert(img),
+        "brightness" => image_brightness(img, args),
+        "contrast" => image_contrast(img, args),
+        "hue_rotate" => image_hue_rotate(img, args),
+        "saturate" => image_saturate(img, args),
+        "blur" => image_blur(img, args),
+        "sharpen" => image_sharpen(img),
+
+        // I/O
+        "save" => image_save(img, args),
+        "to_bytes" => image_to_bytes(img, args),
+
+        _ => Err(format!("Image has no method '{method}'")),
+    }
+}
+
+/// img.resize(width: Int, height: Int) -> Image
+fn image_resize(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err(format!("resize() expects 2 arguments (width, height), got {}", args.len()));
+    }
+    let width = get_int_arg(&args[0], "width")? as u32;
+    let height = get_int_arg(&args[1], "height")? as u32;
+
+    let resized = img.image.resize(width, height, FilterType::Lanczos3);
+    let wrapper = ImageWrapper::new(resized, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.crop(x: Int, y: Int, width: Int, height: Int) -> Image
+fn image_crop(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() != 4 {
+        return Err(format!("crop() expects 4 arguments (x, y, width, height), got {}", args.len()));
+    }
+    let x = get_int_arg(&args[0], "x")? as u32;
+    let y = get_int_arg(&args[1], "y")? as u32;
+    let width = get_int_arg(&args[2], "width")? as u32;
+    let height = get_int_arg(&args[3], "height")? as u32;
+
+    let cropped = img.image.crop_imm(x, y, width, height);
+    let wrapper = ImageWrapper::new(cropped, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.rotate(degrees: Int) -> Image
+/// Rotate by 90, 180, or 270 degrees
+fn image_rotate(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    let degrees = if args.is_empty() {
+        90
+    } else {
+        get_int_arg(&args[0], "degrees")? as i32
+    };
+
+    let rotated = match degrees % 360 {
+        90 | -270 => img.image.rotate90(),
+        180 | -180 => img.image.rotate180(),
+        270 | -90 => img.image.rotate270(),
+        0 => (*img.image).clone(),
+        _ => return Err(format!("rotate() only supports 90, 180, 270 degrees, got {}", degrees)),
+    };
+
+    let wrapper = ImageWrapper::new(rotated, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.flip_h() -> Image
+fn image_flip_h(img: &Arc<ImageWrapper>) -> NativeResult {
+    let flipped = img.image.fliph();
+    let wrapper = ImageWrapper::new(flipped, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.flip_v() -> Image
+fn image_flip_v(img: &Arc<ImageWrapper>) -> NativeResult {
+    let flipped = img.image.flipv();
+    let wrapper = ImageWrapper::new(flipped, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.grayscale() -> Image
+fn image_grayscale(img: &Arc<ImageWrapper>) -> NativeResult {
+    let gray = img.image.grayscale();
+    let wrapper = ImageWrapper::new(gray, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.invert() -> Image
+fn image_invert(img: &Arc<ImageWrapper>) -> NativeResult {
+    let mut inverted = (*img.image).clone();
+    inverted.invert();
+    let wrapper = ImageWrapper::new(inverted, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.brightness(value: Float) -> Image
+/// Adjust brightness (-1.0 to 1.0, negative = darker, positive = lighter)
+fn image_brightness(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("brightness() expects 1 argument, got {}", args.len()));
+    }
+    let value = get_float_arg(&args[0], "value")?;
+    // Clamp to -1.0 to 1.0
+    let value = value.clamp(-1.0, 1.0);
+    // Convert to i32 range (-255 to 255)
+    let adj = (value * 255.0) as i32;
+
+    let adjusted = img.image.brighten(adj);
+    let wrapper = ImageWrapper::new(adjusted, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.contrast(value: Float) -> Image
+/// Adjust contrast (0.0 = gray, 1.0 = no change, >1.0 = more contrast)
+fn image_contrast(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("contrast() expects 1 argument, got {}", args.len()));
+    }
+    let value = get_float_arg(&args[0], "value")?;
+
+    let adjusted = img.image.adjust_contrast(((value - 1.0) * 100.0) as f32);
+    let wrapper = ImageWrapper::new(adjusted, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.hue_rotate(degrees: Int) -> Image
+fn image_hue_rotate(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("hue_rotate() expects 1 argument, got {}", args.len()));
+    }
+    let degrees = get_int_arg(&args[0], "degrees")? as i32;
+
+    let rotated = img.image.huerotate(degrees);
+    let wrapper = ImageWrapper::new(rotated, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.saturate(value: Float) -> Image
+/// Adjust saturation (0.0 = grayscale, 1.0 = no change, >1.0 = more saturated)
+fn image_saturate(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("saturate() expects 1 argument, got {}", args.len()));
+    }
+    let value = get_float_arg(&args[0], "value")?;
+
+    // Use hue rotate + contrast as a simple saturation approximation
+    // For proper saturation we'd need to convert to HSL
+    // This is a simplified version
+    if value <= 0.01 {
+        // Fully desaturated - return grayscale
+        let gray = img.image.grayscale();
+        let wrapper = ImageWrapper::new(gray, img.source_path.clone(), img.format.clone());
+        return Ok(Value::Image(Arc::new(wrapper)));
+    }
+    // For values >= 1.0, increase contrast slightly as approximation
+    let contrast_adj = ((value - 1.0) * 20.0) as f32;
+    let adjusted = img.image.adjust_contrast(contrast_adj);
+    let wrapper = ImageWrapper::new(adjusted, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.blur(sigma: Float) -> Image
+fn image_blur(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("blur() expects 1 argument, got {}", args.len()));
+    }
+    let sigma = get_float_arg(&args[0], "sigma")? as f32;
+
+    let blurred = img.image.blur(sigma);
+    let wrapper = ImageWrapper::new(blurred, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.sharpen() -> Image
+fn image_sharpen(img: &Arc<ImageWrapper>) -> NativeResult {
+    let sharpened = img.image.unsharpen(1.0, 1);
+    let wrapper = ImageWrapper::new(sharpened, img.source_path.clone(), img.format.clone());
+    Ok(Value::Image(Arc::new(wrapper)))
+}
+
+/// img.save(path: String) -> null
+fn image_save(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("save() expects 1 argument (path), got {}", args.len()));
+    }
+    let path = get_string_arg(&args[0], "path")?;
+
+    img.image.save(&path)
+        .map_err(|e| format!("failed to save image to '{}': {}", path, e))?;
+
+    Ok(Value::Null)
+}
+
+/// img.to_bytes(format?: String) -> List<Int>
+fn image_to_bytes(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
+    let format_str = if args.is_empty() {
+        img.format.clone().unwrap_or_else(|| "png".to_string())
+    } else {
+        get_string_arg(&args[0], "format")?
+    };
+
+    let format = match format_str.to_lowercase().as_str() {
+        "png" => ImageFormat::Png,
+        "jpg" | "jpeg" => ImageFormat::Jpeg,
+        "gif" => ImageFormat::Gif,
+        "bmp" => ImageFormat::Bmp,
+        "webp" => ImageFormat::WebP,
+        _ => return Err(format!("unsupported image format: {}", format_str)),
+    };
+
+    let mut bytes = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut bytes);
+    img.image.write_to(&mut cursor, format)
+        .map_err(|e| format!("failed to encode image: {}", e))?;
+
+    let values: Vec<Value> = bytes.iter().map(|&b| Value::Int(b as i64)).collect();
+    Ok(Value::list(values))
+}
+
+/// Helper to get float argument
+fn get_float_arg(value: &Value, name: &str) -> Result<f64, String> {
+    match value {
+        Value::Float(f) => Ok(*f),
+        Value::Int(i) => Ok(*i as f64),
+        _ => Err(format!("{} must be a number, got {}", name, value.type_name())),
+    }
+}
+
+// ============================================================================
+// Ref Module - Weak References
+// ============================================================================
+
+pub fn ref_method(method: &str, args: &[Value]) -> NativeResult {
+    match method {
+        "weak" => ref_weak(args),
+        "upgrade" => ref_upgrade(args),
+        "is_alive" => ref_is_alive(args),
+        _ => Err(format!("Ref has no method '{method}'")),
+    }
+}
+
+fn ref_weak(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Ref.weak() expects 1 argument, got {}", args.len()));
+    }
+    match args[0].weak_ref() {
+        Some(weak) => Ok(weak),
+        None => Err(format!(
+            "Ref.weak() requires a container type (List, Map, Set, or Struct), got {}",
+            args[0].type_name()
+        )),
+    }
+}
+
+fn ref_upgrade(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Ref.upgrade() expects 1 argument, got {}", args.len()));
+    }
+    match &args[0] {
+        Value::WeakRef(weak) => Ok(weak.upgrade().unwrap_or(Value::Null)),
+        _ => Err(format!(
+            "Ref.upgrade() requires a WeakRef, got {}",
+            args[0].type_name()
+        )),
+    }
+}
+
+fn ref_is_alive(args: &[Value]) -> NativeResult {
+    if args.len() != 1 {
+        return Err(format!("Ref.is_alive() expects 1 argument, got {}", args.len()));
+    }
+    match &args[0] {
+        Value::WeakRef(weak) => Ok(Value::Bool(weak.is_alive())),
+        _ => Err(format!(
+            "Ref.is_alive() requires a WeakRef, got {}",
+            args[0].type_name()
+        )),
+    }
+}
+
+/// Methods available directly on WeakRef values
+pub fn weak_ref_method(method: &str, args: &[Value], weak: &WeakRefValue) -> NativeResult {
+    match method {
+        "upgrade" => {
+            if !args.is_empty() {
+                return Err(format!("upgrade() expects 0 arguments, got {}", args.len()));
+            }
+            Ok(weak.upgrade().unwrap_or(Value::Null))
+        }
+        "is_alive" => {
+            if !args.is_empty() {
+                return Err(format!("is_alive() expects 0 arguments, got {}", args.len()));
+            }
+            Ok(Value::Bool(weak.is_alive()))
+        }
+        "target_type" => {
+            if !args.is_empty() {
+                return Err(format!("target_type() expects 0 arguments, got {}", args.len()));
+            }
+            Ok(Value::string(weak.target_type_name()))
+        }
+        _ => Err(format!("WeakRef has no method '{method}'")),
+    }
+}
+
 /// Dispatch a method call on a native namespace
 pub fn dispatch_namespace_method(namespace: &str, method: &str, args: &[Value]) -> NativeResult {
     match namespace {
+        "Set" => set_native_method(method, args),
         "File" => file_method(method, args),
         "Dir" => dir_method(method, args),
         "Path" => path_method(method, args),
@@ -6767,6 +8082,8 @@ pub fn dispatch_namespace_method(namespace: &str, method: &str, args: &[Value]) 
         "Input" => input_method(method, args),
         "Log" => log_method(method, args),
         "System" => system_method(method, args),
+        "Process" => process_method(method, args),
+        "Signal" => signal_method(method, args),
         "Db" => db_method(method, args),
         "Async" => async_method(method, args),
         "Tcp" => tcp_method(method, args),
@@ -6776,6 +8093,10 @@ pub fn dispatch_namespace_method(namespace: &str, method: &str, args: &[Value]) 
         "Agg" => agg_method(method, args),
         "Join" => join_method(method, args),
         "Cube" => cube_method(method, args),
+        "Test" => test_method(method, args),
+        "Xml" => xml_method(method, args),
+        "Image" => image_namespace_method(method, args),
+        "Ref" => ref_method(method, args),
         _ => Err(format!("unknown namespace '{}'", namespace)),
     }
 }
@@ -9532,6 +10853,176 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[test]
+    fn test_system_hostname() {
+        let result = system_method("hostname", &[]);
+        assert!(result.is_ok());
+        // Hostname should be a string or null
+        match result.unwrap() {
+            Value::String(_) | Value::Null => {}
+            _ => panic!("Expected String or Null"),
+        }
+    }
+
+    #[test]
+    fn test_system_hostname_no_args() {
+        let result = system_method("hostname", &[Value::Int(1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 0 arguments"));
+    }
+
+    #[test]
+    fn test_system_uptime() {
+        let result = system_method("uptime", &[]);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Value::Int(seconds) => {
+                assert!(seconds >= 0, "Uptime should be non-negative");
+            }
+            _ => panic!("Expected Int"),
+        }
+    }
+
+    #[test]
+    fn test_system_uptime_no_args() {
+        let result = system_method("uptime", &[Value::Int(1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 0 arguments"));
+    }
+
+    // ============================================================================
+    // Process Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_process_spawn() {
+        // Spawn a simple command that exits immediately
+        #[cfg(unix)]
+        let result = process_method("spawn", &[Value::string("true")]);
+        #[cfg(windows)]
+        let result = process_method("spawn", &[Value::string("cmd"), Value::list(vec![Value::string("/C"), Value::string("echo hello")])]);
+
+        assert!(result.is_ok());
+        let map = result.unwrap();
+        if let Value::Map(m) = map {
+            let m = m.borrow();
+            // Should have pid
+            let pid_key = HashableValue::String(Rc::new("pid".to_string()));
+            assert!(m.contains_key(&pid_key));
+            if let Some(Value::Int(pid)) = m.get(&pid_key) {
+                assert!(*pid > 0);
+            } else {
+                panic!("pid should be an Int");
+            }
+        } else {
+            panic!("Expected Map");
+        }
+    }
+
+    #[test]
+    fn test_process_spawn_with_args() {
+        #[cfg(unix)]
+        let result = process_method("spawn", &[
+            Value::string("echo"),
+            Value::list(vec![Value::string("hello")]),
+        ]);
+        #[cfg(windows)]
+        let result = process_method("spawn", &[
+            Value::string("cmd"),
+            Value::list(vec![Value::string("/C"), Value::string("echo hello")]),
+        ]);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_process_spawn_invalid_args() {
+        // No args
+        let result = process_method("spawn", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 1-2 arguments"));
+
+        // Wrong second arg type
+        let result = process_method("spawn", &[Value::string("echo"), Value::Int(42)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects List"));
+    }
+
+    #[test]
+    fn test_process_kill_invalid_args() {
+        // No args
+        let result = process_method("kill", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 1 argument"));
+
+        // Negative pid
+        let result = process_method("kill", &[Value::Int(-1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be non-negative"));
+    }
+
+    #[test]
+    fn test_process_unknown_method() {
+        let result = process_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method 'unknown'"));
+    }
+
+    #[test]
+    fn test_dispatch_process_namespace() {
+        // Verify Process is properly routed through dispatch
+        let result = dispatch_namespace_method("Process", "spawn", &[]);
+        assert!(result.is_err()); // Should fail due to missing args
+        assert!(result.unwrap_err().contains("expects 1-2 arguments"));
+    }
+
+    // ============================================================================
+    // Signal Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_signal_handle_validates_signal() {
+        // Valid signal with dummy closure (will fail on closure validation)
+        let result = signal_method("handle", &[Value::string("SIGINT"), Value::Int(1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be a closure"));
+    }
+
+    #[test]
+    fn test_signal_handle_invalid_signal() {
+        let result = signal_method("handle", &[Value::string("INVALID"), Value::Int(1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid signal"));
+    }
+
+    #[test]
+    fn test_signal_handle_invalid_args() {
+        // No args
+        let result = signal_method("handle", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 2 arguments"));
+
+        // Only one arg
+        let result = signal_method("handle", &[Value::string("SIGINT")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 2 arguments"));
+    }
+
+    #[test]
+    fn test_signal_unknown_method() {
+        let result = signal_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method 'unknown'"));
+    }
+
+    #[test]
+    fn test_dispatch_signal_namespace() {
+        // Verify Signal is properly routed through dispatch
+        let result = dispatch_namespace_method("Signal", "handle", &[]);
+        assert!(result.is_err()); // Should fail due to missing args
+        assert!(result.unwrap_err().contains("expects 2 arguments"));
+    }
+
     // ============================================================================
     // Database Module Tests (SQLite and DuckDB - no external server required)
     // ============================================================================
@@ -9898,6 +11389,168 @@ mod tests {
     fn test_dispatch_async_namespace() {
         let result = dispatch_namespace_method("Async", "ready", &[Value::Int(42)]);
         assert!(result.is_ok());
+    }
+
+    fn make_ready_future(value: Value) -> Value {
+        let future = FutureState::ready(value);
+        Value::Future(Rc::new(RefCell::new(future)))
+    }
+
+    fn make_pending_future_with_kind(kind: &str) -> Value {
+        let future = FutureState::pending_with_metadata(Value::Null, kind.to_string());
+        Value::Future(Rc::new(RefCell::new(future)))
+    }
+
+    #[test]
+    fn test_async_all_with_list() {
+        let futures = Value::list(vec![
+            make_ready_future(Value::Int(1)),
+            make_ready_future(Value::Int(2)),
+            make_ready_future(Value::Int(3)),
+        ]);
+
+        let result = async_method("all", &[futures]).unwrap();
+        match result {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("all"));
+                assert!(matches!(fut.metadata(), Some(Value::List(_))));
+            }
+            _ => panic!("Expected Future"),
+        }
+    }
+
+    #[test]
+    fn test_async_all_empty_list() {
+        let futures = Value::list(vec![]);
+        let result = async_method("all", &[futures]).unwrap();
+        match result {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("all"));
+            }
+            _ => panic!("Expected Future"),
+        }
+    }
+
+    #[test]
+    fn test_async_all_invalid_element() {
+        let futures = Value::list(vec![
+            make_ready_future(Value::Int(1)),
+            Value::Int(42), // Not a future
+        ]);
+
+        let result = async_method("all", &[futures]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a Future"));
+    }
+
+    #[test]
+    fn test_async_all_not_list() {
+        let result = async_method("all", &[Value::Int(42)]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_async_race_with_list() {
+        let futures = Value::list(vec![
+            make_pending_future_with_kind("sleep"),
+            make_ready_future(Value::Int(42)),
+        ]);
+
+        let result = async_method("race", &[futures]).unwrap();
+        match result {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("race"));
+            }
+            _ => panic!("Expected Future"),
+        }
+    }
+
+    #[test]
+    fn test_async_race_empty_list() {
+        let futures = Value::list(vec![]);
+        let result = async_method("race", &[futures]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("at least one future"));
+    }
+
+    #[test]
+    fn test_async_race_invalid_element() {
+        let futures = Value::list(vec![Value::string("not a future")]);
+        let result = async_method("race", &[futures]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_async_timeout() {
+        let inner_future = make_pending_future_with_kind("sleep");
+        let result = async_method("timeout", &[inner_future, Value::Int(1000)]).unwrap();
+
+        match result {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("timeout"));
+                if let Some(Value::Map(m)) = fut.metadata() {
+                    let m = m.borrow();
+                    assert!(m.contains_key(&HashableValue::String(Rc::new("future".into()))));
+                    assert!(m.contains_key(&HashableValue::String(Rc::new("ms".into()))));
+                } else {
+                    panic!("Expected Map metadata");
+                }
+            }
+            _ => panic!("Expected Future"),
+        }
+    }
+
+    #[test]
+    fn test_async_timeout_negative_ms() {
+        let inner_future = make_pending_future_with_kind("sleep");
+        let result = async_method("timeout", &[inner_future, Value::Int(-100)]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_async_timeout_not_future() {
+        let result = async_method("timeout", &[Value::Int(42), Value::Int(1000)]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_async_spawn() {
+        // Create a simple closure value for testing
+        let func = crate::bytecode::Function {
+            name: "test_closure".to_string(),
+            arity: 0,
+            upvalue_count: 0,
+            chunk: crate::bytecode::Chunk::new(),
+            execution_mode: crate::ast::ExecutionMode::Interpret,
+        };
+        let closure = crate::bytecode::Closure::new(Rc::new(func));
+        let closure_val = Value::Closure(Rc::new(closure));
+
+        let result = async_method("spawn", &[closure_val]).unwrap();
+        match result {
+            Value::Future(fut_ref) => {
+                let fut = fut_ref.borrow();
+                assert!(fut.is_pending());
+                assert_eq!(fut.kind(), Some("spawn"));
+                assert!(matches!(fut.metadata(), Some(Value::Closure(_))));
+            }
+            _ => panic!("Expected Future"),
+        }
+    }
+
+    #[test]
+    fn test_async_spawn_not_closure() {
+        let result = async_method("spawn", &[Value::Int(42)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("closure"));
     }
 
     // ============================================================================
@@ -10306,5 +11959,511 @@ mod tests {
         let result = crypto_method("unknown", &[]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("has no method"));
+    }
+
+    // ============================================================================
+    // Test Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_test_expect() {
+        // Test.expect(value) should return an Expectation
+        let result = test_method("expect", &[Value::Int(42)]);
+        assert!(result.is_ok());
+        let value = result.unwrap();
+        assert!(matches!(value, Value::Expectation(_)));
+    }
+
+    #[test]
+    fn test_test_expect_wrong_args() {
+        // Test.expect() with no args should fail
+        let result = test_method("expect", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("expects 1 argument"));
+    }
+
+    #[test]
+    fn test_test_fail() {
+        // Test.fail() should return an error
+        let result = test_method("fail", &[]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Test failed");
+    }
+
+    #[test]
+    fn test_test_fail_with_message() {
+        // Test.fail(message) should return the message as error
+        let result = test_method("fail", &[Value::string("Custom error")]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Custom error");
+    }
+
+    #[test]
+    fn test_test_skip() {
+        // Test.skip() should return null
+        let result = test_method("skip", &[]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn test_test_pending() {
+        // Test.pending() should return null
+        let result = test_method("pending", &[]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn test_test_mock() {
+        // Test.mock() should return a Map with mock structure
+        let result = test_method("mock", &[]).unwrap();
+        if let Value::Map(map) = result {
+            let map = map.borrow();
+            // Check __is_mock flag
+            let key = HashableValue::String(Rc::new("__is_mock".to_string()));
+            assert_eq!(map.get(&key), Some(&Value::Bool(true)));
+            // Check call_count starts at 0
+            let key = HashableValue::String(Rc::new("call_count".to_string()));
+            assert_eq!(map.get(&key), Some(&Value::Int(0)));
+        } else {
+            panic!("Expected Map from mock()");
+        }
+    }
+
+    #[test]
+    fn test_test_mock_with_return_value() {
+        // Test.mock(42) should set return_value to 42
+        let result = test_method("mock", &[Value::Int(42)]).unwrap();
+        if let Value::Map(map) = result {
+            let map = map.borrow();
+            let key = HashableValue::String(Rc::new("return_value".to_string()));
+            assert_eq!(map.get(&key), Some(&Value::Int(42)));
+        } else {
+            panic!("Expected Map from mock()");
+        }
+    }
+
+    #[test]
+    fn test_test_spy() {
+        // Test.spy() should return a Map with spy structure
+        let result = test_method("spy", &[]).unwrap();
+        if let Value::Map(map) = result {
+            let map = map.borrow();
+            let key = HashableValue::String(Rc::new("__is_spy".to_string()));
+            assert_eq!(map.get(&key), Some(&Value::Bool(true)));
+        } else {
+            panic!("Expected Map from spy()");
+        }
+    }
+
+    #[test]
+    fn test_test_unknown_method() {
+        let result = test_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method"));
+    }
+
+    #[test]
+    fn test_dispatch_test_namespace() {
+        // Verify Test namespace is properly routed through dispatch
+        let result = dispatch_namespace_method("Test", "expect", &[Value::Int(1)]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Value::Expectation(_)));
+    }
+
+    // ============================================================================
+    // Math List Aggregate Functions Tests
+    // ============================================================================
+
+    fn make_number_list(nums: &[f64]) -> Value {
+        use std::cell::RefCell;
+        Value::List(Rc::new(RefCell::new(
+            nums.iter().map(|&n| Value::Float(n)).collect(),
+        )))
+    }
+
+    #[test]
+    fn test_math_sum() {
+        let list = make_number_list(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        let result = math_method("sum", &[list]).unwrap();
+        assert_eq!(result, Value::Float(15.0));
+    }
+
+    #[test]
+    fn test_math_mean() {
+        let list = make_number_list(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        let result = math_method("mean", &[list]).unwrap();
+        assert_eq!(result, Value::Float(3.0));
+    }
+
+    #[test]
+    fn test_math_median_odd() {
+        let list = make_number_list(&[1.0, 3.0, 2.0, 5.0, 4.0]);
+        let result = math_method("median", &[list]).unwrap();
+        assert_eq!(result, Value::Float(3.0));
+    }
+
+    #[test]
+    fn test_math_median_even() {
+        let list = make_number_list(&[1.0, 2.0, 3.0, 4.0]);
+        let result = math_method("median", &[list]).unwrap();
+        assert_eq!(result, Value::Float(2.5));
+    }
+
+    #[test]
+    fn test_math_variance() {
+        // Variance of [2, 4, 4, 4, 5, 5, 7, 9] = 4.0
+        let list = make_number_list(&[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]);
+        let result = math_method("variance", &[list]).unwrap();
+        assert_eq!(result, Value::Float(4.0));
+    }
+
+    #[test]
+    fn test_math_std() {
+        // Std of [2, 4, 4, 4, 5, 5, 7, 9] = 2.0
+        let list = make_number_list(&[2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]);
+        let result = math_method("std", &[list]).unwrap();
+        assert_eq!(result, Value::Float(2.0));
+    }
+
+    #[test]
+    fn test_math_round_to() {
+        let result = math_method("round_to", &[Value::Float(3.14159), Value::Int(2)]).unwrap();
+        assert_eq!(result, Value::Float(3.14));
+
+        let result = math_method("round_to", &[Value::Float(3.14159), Value::Int(4)]).unwrap();
+        assert_eq!(result, Value::Float(3.1416));
+    }
+
+    #[test]
+    fn test_math_empty_list() {
+        let empty = make_number_list(&[]);
+
+        // All aggregate functions return NaN for empty lists
+        if let Value::Float(f) = math_method("mean", &[empty.clone()]).unwrap() {
+            assert!(f.is_nan());
+        }
+        if let Value::Float(f) = math_method("median", &[empty.clone()]).unwrap() {
+            assert!(f.is_nan());
+        }
+    }
+
+    // ============================================================================
+    // XML Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_xml_parse_simple() {
+        let xml = "<root><item>hello</item></root>";
+        let result = xml_method("parse", &[Value::string(xml)]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Value::XmlDocument(_)));
+    }
+
+    #[test]
+    fn test_xml_parse_invalid() {
+        let result = xml_method("parse", &[Value::string("<unclosed>")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("XML parse error"));
+    }
+
+    #[test]
+    fn test_xml_query_count() {
+        let xml = "<root><item/><item/><item/></root>";
+        let doc = xml_method("parse", &[Value::string(xml)]).unwrap();
+        if let Value::XmlDocument(doc_ref) = doc {
+            let result = xml_document_method(&doc_ref, "query", &[Value::string("count(//item)")]);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), Value::Int(3));
+        }
+    }
+
+    #[test]
+    fn test_xml_root() {
+        let xml = "<library><book/></library>";
+        let doc = xml_method("parse", &[Value::string(xml)]).unwrap();
+        if let Value::XmlDocument(doc_ref) = doc {
+            let result = xml_document_method(&doc_ref, "root", &[]);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), Value::string("library"));
+        }
+    }
+
+    #[test]
+    fn test_xml_stringify() {
+        let xml = "<root><child>text</child></root>";
+        let doc = xml_method("parse", &[Value::string(xml)]).unwrap();
+        let result = xml_method("stringify", &[doc]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::string(xml));
+    }
+
+    #[test]
+    fn test_xml_dispatch() {
+        let result = dispatch_namespace_method("Xml", "parse", &[Value::string("<root/>")]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Value::XmlDocument(_)));
+    }
+
+    // ============================================================================
+    // Image Module Tests
+    // ============================================================================
+
+    #[test]
+    fn test_image_new_basic() {
+        let result = image_namespace_method("new", &[Value::Int(100), Value::Int(50)]);
+        assert!(result.is_ok());
+        if let Value::Image(img) = result.unwrap() {
+            assert_eq!(img.width(), 100);
+            assert_eq!(img.height(), 50);
+        } else {
+            panic!("Expected Image value");
+        }
+    }
+
+    #[test]
+    fn test_image_new_with_color() {
+        let result = image_namespace_method("new", &[Value::Int(10), Value::Int(10), Value::string("red")]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Value::Image(_)));
+    }
+
+    #[test]
+    fn test_image_new_hex_color() {
+        let result = image_namespace_method("new", &[Value::Int(10), Value::Int(10), Value::string("#FF0000")]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_image_dimensions() {
+        let img = image_namespace_method("new", &[Value::Int(200), Value::Int(150)]).unwrap();
+        if let Value::Image(img_ref) = img {
+            let result = image_method(&img_ref, "dimensions", &[]);
+            assert!(result.is_ok());
+            if let Value::List(dims) = result.unwrap() {
+                let dims = dims.borrow();
+                assert_eq!(dims[0], Value::Int(200));
+                assert_eq!(dims[1], Value::Int(150));
+            }
+        }
+    }
+
+    #[test]
+    fn test_image_resize() {
+        let img = image_namespace_method("new", &[Value::Int(100), Value::Int(100)]).unwrap();
+        if let Value::Image(img_ref) = img {
+            let result = image_method(&img_ref, "resize", &[Value::Int(50), Value::Int(50)]);
+            assert!(result.is_ok());
+            if let Value::Image(resized) = result.unwrap() {
+                assert_eq!(resized.width(), 50);
+                assert_eq!(resized.height(), 50);
+            }
+        }
+    }
+
+    #[test]
+    fn test_image_rotate() {
+        let img = image_namespace_method("new", &[Value::Int(100), Value::Int(50)]).unwrap();
+        if let Value::Image(img_ref) = img {
+            let result = image_method(&img_ref, "rotate", &[Value::Int(90)]);
+            assert!(result.is_ok());
+            if let Value::Image(rotated) = result.unwrap() {
+                // Dimensions should be swapped after 90 degree rotation
+                assert_eq!(rotated.width(), 50);
+                assert_eq!(rotated.height(), 100);
+            }
+        }
+    }
+
+    #[test]
+    fn test_image_grayscale() {
+        let img = image_namespace_method("new", &[Value::Int(10), Value::Int(10), Value::string("red")]).unwrap();
+        if let Value::Image(img_ref) = img {
+            let result = image_method(&img_ref, "grayscale", &[]);
+            assert!(result.is_ok());
+            assert!(matches!(result.unwrap(), Value::Image(_)));
+        }
+    }
+
+    #[test]
+    fn test_image_color_operations() {
+        let img = image_namespace_method("new", &[Value::Int(10), Value::Int(10)]).unwrap();
+        if let Value::Image(img_ref) = img {
+            assert!(image_method(&img_ref, "brightness", &[Value::Float(0.5)]).is_ok());
+            assert!(image_method(&img_ref, "contrast", &[Value::Float(1.5)]).is_ok());
+            assert!(image_method(&img_ref, "blur", &[Value::Float(1.0)]).is_ok());
+            assert!(image_method(&img_ref, "sharpen", &[]).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_image_to_bytes() {
+        let img = image_namespace_method("new", &[Value::Int(5), Value::Int(5)]).unwrap();
+        if let Value::Image(img_ref) = img {
+            let result = image_method(&img_ref, "to_bytes", &[Value::string("png")]);
+            assert!(result.is_ok());
+            if let Value::List(bytes) = result.unwrap() {
+                assert!(!bytes.borrow().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn test_image_dispatch() {
+        let result = dispatch_namespace_method("Image", "new", &[Value::Int(10), Value::Int(10)]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Value::Image(_)));
+    }
+
+    // ============================================================================
+    // Ref Module Tests (Weak References)
+    // ============================================================================
+
+    #[test]
+    fn test_ref_weak_creates_weak_ref() {
+        let list = Value::list(vec![Value::Int(1), Value::Int(2)]);
+        let result = ref_method("weak", &[list]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Value::WeakRef(_)));
+    }
+
+    #[test]
+    fn test_ref_weak_with_map() {
+        let map = Value::empty_map();
+        let result = ref_method("weak", &[map]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Value::WeakRef(_)));
+    }
+
+    #[test]
+    fn test_ref_weak_with_set() {
+        let set = Value::empty_set();
+        let result = ref_method("weak", &[set]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Value::WeakRef(_)));
+    }
+
+    #[test]
+    fn test_ref_weak_rejects_non_container() {
+        // Should fail with Int
+        let result = ref_method("weak", &[Value::Int(42)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("requires a container type"));
+
+        // Should fail with String
+        let result = ref_method("weak", &[Value::string("hello")]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ref_upgrade_alive() {
+        let list = Value::list(vec![Value::Int(42)]);
+        let weak = ref_method("weak", &[list.clone()]).unwrap();
+
+        // Upgrade should return the original list
+        let result = ref_method("upgrade", &[weak]);
+        assert!(result.is_ok());
+        let upgraded = result.unwrap();
+        assert!(matches!(upgraded, Value::List(_)));
+    }
+
+    #[test]
+    fn test_ref_upgrade_dead() {
+        // Create weak ref in a scope, then drop the strong ref
+        let weak = {
+            let list = Value::list(vec![Value::Int(1)]);
+            ref_method("weak", &[list]).unwrap()
+        };
+
+        // Upgrade should return Null
+        let result = ref_method("upgrade", &[weak]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn test_ref_is_alive_true() {
+        let list = Value::list(vec![Value::Int(1)]);
+        let weak = ref_method("weak", &[list.clone()]).unwrap();
+
+        let result = ref_method("is_alive", &[weak]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Bool(true));
+    }
+
+    #[test]
+    fn test_ref_is_alive_false() {
+        let weak = {
+            let list = Value::list(vec![Value::Int(1)]);
+            ref_method("weak", &[list]).unwrap()
+        };
+
+        let result = ref_method("is_alive", &[weak]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Bool(false));
+    }
+
+    #[test]
+    fn test_ref_dispatch() {
+        let list = Value::list(vec![Value::Int(1)]);
+        let result = dispatch_namespace_method("Ref", "weak", &[list]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), Value::WeakRef(_)));
+    }
+
+    #[test]
+    fn test_ref_unknown_method() {
+        let result = ref_method("unknown", &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has no method 'unknown'"));
+    }
+
+    #[test]
+    fn test_weak_ref_method_upgrade() {
+        let list = Value::list(vec![Value::Int(42)]);
+        if let Some(Value::WeakRef(weak)) = list.weak_ref() {
+            let result = weak_ref_method("upgrade", &[], &weak);
+            assert!(result.is_ok());
+            assert!(matches!(result.unwrap(), Value::List(_)));
+        } else {
+            panic!("Expected WeakRef");
+        }
+    }
+
+    #[test]
+    fn test_weak_ref_method_is_alive() {
+        let list = Value::list(vec![Value::Int(42)]);
+        if let Some(Value::WeakRef(weak)) = list.weak_ref() {
+            let result = weak_ref_method("is_alive", &[], &weak);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), Value::Bool(true));
+        } else {
+            panic!("Expected WeakRef");
+        }
+    }
+
+    #[test]
+    fn test_weak_ref_method_target_type() {
+        let list = Value::list(vec![Value::Int(42)]);
+        if let Some(Value::WeakRef(weak)) = list.weak_ref() {
+            let result = weak_ref_method("target_type", &[], &weak);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), Value::string("List"));
+        } else {
+            panic!("Expected WeakRef");
+        }
+    }
+
+    #[test]
+    fn test_weak_ref_method_target_type_map() {
+        let map = Value::empty_map();
+        if let Some(Value::WeakRef(weak)) = map.weak_ref() {
+            let result = weak_ref_method("target_type", &[], &weak);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), Value::string("Map"));
+        } else {
+            panic!("Expected WeakRef");
+        }
     }
 }

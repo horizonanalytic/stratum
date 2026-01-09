@@ -19,6 +19,7 @@ pub use repl::{ReplMessage, ReplPanel};
 use iced::widget::{button, column, container, row, text, Column, Space};
 use iced::{Alignment, Element, Length, Theme};
 use std::path::PathBuf;
+use stratum_core::{DebugStackFrame, DebugVariable};
 
 /// Panel identifier for the pane grid
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -82,12 +83,17 @@ impl PaneContent {
         output: &'a OutputPanel,
         repl: &'a ReplPanel,
         data_explorer: &'a DataExplorerPanel,
+        debug_panel: &'a DebugPanel,
+        debug_call_stack: &'a [DebugStackFrame],
+        debug_locals: &'a [DebugVariable],
+        is_debugging: bool,
         recent_data: Option<&RecentFilesData>,
         editor_mapper: impl Fn(EditorMessage) -> Message + 'a,
         file_browser_mapper: impl Fn(FileBrowserMessage) -> Message + 'a,
         output_mapper: impl Fn(OutputMessage) -> Message + 'a,
         repl_mapper: impl Fn(ReplMessage) -> Message + 'a,
         data_explorer_mapper: impl Fn(DataExplorerMessage) -> Message + 'a,
+        debug_panel_mapper: impl Fn(DebugPanelMessage) -> Message + 'a,
         welcome_handler: Option<impl Fn(WelcomeAction) -> Message + 'a>,
     ) -> Element<'a, Message> {
         match self.kind {
@@ -103,9 +109,20 @@ impl PaneContent {
                 }
             }
             PanelKind::Output => {
-                column![output.view().map(output_mapper), repl.view().map(repl_mapper)]
+                // When debugging, show debug panel alongside output and REPL
+                if is_debugging {
+                    column![
+                        debug_panel.view(debug_call_stack, debug_locals, is_debugging).map(debug_panel_mapper),
+                        output.view().map(output_mapper),
+                        repl.view().map(repl_mapper)
+                    ]
                     .spacing(2)
                     .into()
+                } else {
+                    column![output.view().map(output_mapper), repl.view().map(repl_mapper)]
+                        .spacing(2)
+                        .into()
+                }
             }
             PanelKind::DataExplorer => data_explorer.view().map(data_explorer_mapper),
         }

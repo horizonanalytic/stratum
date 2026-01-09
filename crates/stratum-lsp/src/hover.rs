@@ -48,6 +48,7 @@ pub fn compute_hover_cached(data: &CachedData<'_>, position: Position) -> Option
 }
 
 /// Compute hover information for a position in the source (non-cached version)
+#[allow(dead_code)] // Standalone API used by tests
 pub fn compute_hover(source: &str, position: Position) -> Option<HoverInfo> {
     let line_index = LineIndex::new(source);
 

@@ -23,6 +23,7 @@ pub fn compute_document_symbols_cached(data: &CachedData<'_>) -> Vec<DocumentSym
 }
 
 /// Compute all document symbols for a source file (non-cached)
+#[allow(dead_code)] // Standalone API used by tests
 pub fn compute_document_symbols(source: &str) -> Vec<DocumentSymbol> {
     let line_index = LineIndex::new(source);
 

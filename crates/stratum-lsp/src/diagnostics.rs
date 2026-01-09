@@ -37,6 +37,7 @@ pub fn compute_diagnostics_cached(data: &CachedData<'_>) -> Vec<Diagnostic> {
 /// Compute diagnostics for a source file (non-cached version for compatibility)
 ///
 /// This runs the parser and type checker, collecting all errors.
+#[allow(dead_code)] // Standalone API used by tests
 pub fn compute_diagnostics(source: &str) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     let line_index = LineIndex::new(source);

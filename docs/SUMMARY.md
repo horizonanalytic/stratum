@@ -28,6 +28,7 @@
 - [Json](stdlib/json.md)
 - [Toml](stdlib/toml.md)
 - [Yaml](stdlib/yaml.md)
+- [Xml](stdlib/xml.md)
 - [Base64](stdlib/base64.md)
 - [Url](stdlib/url.md)
 
@@ -81,3 +82,20 @@
 
 - [Async](stdlib/async.md)
 - [Db](stdlib/db.md)
+
+# Concurrency & Processes
+
+- [Process](stdlib/process.md)
+- [Signal](stdlib/signal.md)
+
+# Testing
+
+- [Test](stdlib/test.md)
+
+# Collections (Extended)
+
+- [Set](stdlib/set.md)
+
+# Media
+
+- [Image](stdlib/image.md)

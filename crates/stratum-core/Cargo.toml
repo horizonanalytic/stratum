@@ -59,6 +59,17 @@ datafusion.workspace = true
 # OLAP Cube
 elasticube-core.workspace = true
 
+# XML parsing with XPath
+sxd-document.workspace = true
+sxd-xpath.workspace = true
+
+# Image processing
+image.workspace = true
+imageproc.workspace = true
+
+# Parallel processing
+rayon.workspace = true
+
 # JIT/AOT compilation
 cranelift-codegen.workspace = true
 cranelift-frontend.workspace = true

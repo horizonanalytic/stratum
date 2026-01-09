@@ -6,10 +6,12 @@
 //! - Workspace support for multi-package projects
 //! - Dependency resolution and conflict detection
 //! - Lock file support for reproducible builds
+//! - GitHub-based package registry support
 
 mod lockfile;
 mod manifest;
 mod package;
+pub mod registry;
 mod resolve;
 mod workspace;
 

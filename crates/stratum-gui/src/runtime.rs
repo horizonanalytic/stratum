@@ -406,7 +406,8 @@ pub enum AppTheme {
 }
 
 impl AppTheme {
-    /// Convert to iced Theme
+    /// Convert to iced Theme (convenience wrapper for to_stratum_theme().to_iced_theme())
+    #[allow(dead_code)]
     fn to_iced_theme(self) -> Theme {
         self.to_stratum_theme().to_iced_theme()
     }
@@ -600,7 +601,8 @@ impl GuiRuntime {
         &self.state
     }
 
-    /// Get the current counter value (for the proof-of-concept)
+    /// Get the current counter value (for the proof-of-concept demo)
+    #[allow(dead_code)]
     fn get_count(&self) -> i64 {
         self.state
             .get_field("count")
@@ -729,6 +731,8 @@ struct App {
     state: ReactiveState,
     spacing: f32,
     padding: f32,
+    /// Callback registry (callbacks executed via executor, registry kept for future direct access)
+    #[allow(dead_code)]
     registry: Rc<RefCell<CallbackRegistry>>,
     executor: Option<CallbackExecutor>,
     lifecycle: LifecycleManager,

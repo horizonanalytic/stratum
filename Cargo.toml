@@ -23,7 +23,7 @@ thiserror = "2"
 anyhow = "1"
 logos = "0.14"
 tempfile = "3"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
 
 # Data encoding
 serde = { version = "1", features = ["derive"] }
@@ -112,6 +112,17 @@ elasticube-core = { path = "../elasticube_library/elasticube-core" }
 
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
+
+# Parallel processing
+rayon = "1.10"
+
+# XML parsing with XPath 1.0 support
+sxd-document = "0.3"
+sxd-xpath = "0.4"
+
+# Image processing
+image = { version = "0.25", features = ["png", "jpeg", "gif", "webp", "bmp"] }
+imageproc = "0.25"
 
 # GUI Framework (iced)
 iced = { version = "0.14", features = ["canvas", "tokio", "advanced"] }

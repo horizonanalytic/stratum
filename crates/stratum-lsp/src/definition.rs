@@ -38,6 +38,7 @@ pub enum SymbolKind {
     Interface,
     Variable,
     Parameter,
+    #[allow(dead_code)] // Used in completions for field completion
     Field,
     EnumVariant,
 }
@@ -584,6 +585,7 @@ pub fn compute_definition_cached(
 }
 
 /// Compute definition (non-cached version for compatibility)
+#[allow(dead_code)] // Standalone API used by tests
 pub fn compute_definition(
     uri: &Url,
     source: &str,

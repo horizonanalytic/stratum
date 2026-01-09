@@ -184,6 +184,125 @@ let result = df
 
 ---
 
+### `Agg.std(column, output_name?)`
+
+Calculates the standard deviation of values in a column.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `column` | `String` | Column to calculate standard deviation |
+| `output_name` | `String?` | Output column name (default: `column_std`) |
+
+**Returns:** `AggSpec` - Aggregation specification
+
+**Aliases:** `Agg.stddev(column, output_name?)`
+
+**Example:**
+
+```stratum
+let result = df.group_by("category")
+    |> .aggregate(Agg.std("price", "price_stddev"))
+```
+
+---
+
+### `Agg.var(column, output_name?)`
+
+Calculates the variance of values in a column.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `column` | `String` | Column to calculate variance |
+| `output_name` | `String?` | Output column name (default: `column_var`) |
+
+**Returns:** `AggSpec` - Aggregation specification
+
+**Aliases:** `Agg.variance(column, output_name?)`
+
+**Example:**
+
+```stratum
+let result = df.group_by("region")
+    |> .aggregate(Agg.var("sales", "sales_variance"))
+```
+
+---
+
+### `Agg.median(column, output_name?)`
+
+Calculates the median of values in a column.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `column` | `String` | Column to find median |
+| `output_name` | `String?` | Output column name (default: `column_median`) |
+
+**Returns:** `AggSpec` - Aggregation specification
+
+**Example:**
+
+```stratum
+let result = df.group_by("department")
+    |> .aggregate(Agg.median("salary", "median_salary"))
+```
+
+---
+
+### `Agg.mode(column, output_name?)`
+
+Finds the most frequent value in a column.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `column` | `String` | Column to find mode |
+| `output_name` | `String?` | Output column name (default: `column_mode`) |
+
+**Returns:** `AggSpec` - Aggregation specification
+
+**Example:**
+
+```stratum
+let result = df.group_by("store")
+    |> .aggregate(Agg.mode("product_category", "most_popular"))
+```
+
+---
+
+### `Agg.count_distinct(column, output_name?)`
+
+Counts the number of distinct (unique) values in a column.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `column` | `String` | Column to count distinct values |
+| `output_name` | `String?` | Output column name (default: `column_distinct`) |
+
+**Returns:** `AggSpec` - Aggregation specification
+
+**Aliases:** `Agg.nunique(column, output_name?)`
+
+**Example:**
+
+```stratum
+let result = df.group_by("region")
+    |> .aggregate(
+        Agg.count("total_orders"),
+        Agg.count_distinct("customer_id", "unique_customers")
+    )
+```
+
+---
+
 ## Combined Examples
 
 ### Multiple Aggregations

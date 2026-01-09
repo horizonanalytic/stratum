@@ -43,6 +43,7 @@ pub fn compute_signature_help_cached(data: &CachedData<'_>, position: Position) 
 }
 
 /// Compute signature help for a position in the source (non-cached)
+#[allow(dead_code)] // Standalone API used by tests
 pub fn compute_signature_help(source: &str, position: Position) -> Option<SignatureHelp> {
     let line_index = LineIndex::new(source);
 
@@ -177,6 +178,7 @@ fn extract_function_name_before_paren(text: &str) -> Option<String> {
 }
 
 /// Try to find a function signature by parsing the source
+#[allow(dead_code)] // Called by compute_signature_help
 fn find_signature_from_parse(source: &str, name: &str) -> Option<FunctionSig> {
     let module = Parser::parse_module(source).ok()?;
     let func = find_function_definition(&module, name)?;

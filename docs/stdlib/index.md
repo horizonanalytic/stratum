@@ -40,7 +40,7 @@ Built-in functions available without a namespace prefix.
 
 | Namespace | Description | Functions |
 |-----------|-------------|-----------|
-| [Math](math.md) | Mathematical constants and functions | 45+ |
+| [Math](math.md) | Mathematical constants and functions | 50+ |
 | [Random](random.md) | Random number generation | 6 |
 
 ### Strings & Text
@@ -54,8 +54,9 @@ Built-in functions available without a namespace prefix.
 
 | Type | Description | Methods |
 |------|-------------|---------|
-| [List](list.md) | Ordered, mutable collection | 14 |
+| [List](list.md) | Ordered, mutable collection | 20 |
 | [Map](map.md) | Key-value dictionary | 10 |
+| [Set](set.md) | Unique value collection | 12 |
 
 ### Data Encoding
 
@@ -112,18 +113,20 @@ Built-in functions available without a namespace prefix.
 
 | Namespace | Description | Functions |
 |-----------|-------------|-----------|
-| [System](system.md) | System info and control | 9 |
+| [System](system.md) | System info and control | 11 |
 | [Env](env.md) | Environment variables | 5 |
 | [Args](args.md) | Command-line arguments | 3 |
 | [Shell](shell.md) | Shell command execution | 2 |
+| [Process](process.md) | Process spawning and control | 2 |
+| [Signal](signal.md) | Signal handling | 1 |
 | [Log](log.md) | Logging and output control | 10 |
 
 ### Data Operations
 
 | Namespace | Description | Functions |
 |-----------|-------------|-----------|
-| [Data](data.md) | DataFrame creation and I/O | 12 |
-| [Agg](agg.md) | Aggregation functions | 7 |
+| [Data](data.md) | DataFrame/Series with statistical, window, reshape operations | 100+ |
+| [Agg](agg.md) | Aggregation functions | 12 |
 | [Join](join.md) | DataFrame join operations | 5 |
 | [Cube](cube.md) | OLAP cube operations | 7 |
 
@@ -131,8 +134,14 @@ Built-in functions available without a namespace prefix.
 
 | Namespace | Description | Functions |
 |-----------|-------------|-----------|
-| [Async](async.md) | Async utilities | 3 |
+| [Async](async.md) | Async utilities | 7 |
 | [Db](db.md) | Database connections | 8 |
+
+### Testing
+
+| Namespace | Description | Functions |
+|-----------|-------------|-----------|
+| [Test](test.md) | Testing framework and assertions | 15 |
 
 ---
 

@@ -21,8 +21,13 @@
     "data",
     "dataframe"
   ],
+  "icon": "icons/icon.png",
   "activationEvents": [
-    "onLanguage:stratum"
+    "onLanguage:stratum",
+    "onDebug",
+    "onDebugResolve:stratum",
+    "onDebugDynamicConfigurations:stratum",
+    "workspaceContains:**/stratum.toml"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -92,6 +97,116 @@
         "command": "stratum.restartServer",
         "title": "Stratum: Restart Language Server"
       }
+    ],
+    "breakpoints": [
+      {
+        "language": "stratum"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "stratum",
+        "required": ["task"],
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "The Stratum task to run (run, build, test, fmt)"
+          },
+          "file": {
+            "type": "string",
+            "description": "The file to operate on"
+          },
+          "release": {
+            "type": "boolean",
+            "description": "Build with optimizations (for build task)"
+          },
+          "filter": {
+            "type": "string",
+            "description": "Test filter pattern (for test task)"
+          }
+        }
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "stratum",
+        "owner": "stratum",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": [
+          {
+            "regexp": "^error\\[E\\d+\\]: (.+)$",
+            "message": 1
+          },
+          {
+            "regexp": "^\\s*--> (.+):(\\d+):(\\d+)$",
+            "file": 1,
+            "line": 2,
+            "column": 3
+          }
+        ]
+      },
+      {
+        "name": "stratum-simple",
+        "owner": "stratum",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^\\s*(.+) at (\\d+)\\.\\.(\\d+)$",
+          "message": 1
+        }
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "stratum",
+        "label": "Stratum Debug",
+        "languages": ["stratum"],
+        "program": "./out/debugAdapter.js",
+        "runtime": "node",
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Absolute path to the Stratum file to debug.",
+                "default": "${file}"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "Automatically stop after launch.",
+                "default": false
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory for the debugger.",
+                "default": "${workspaceFolder}"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "stratum",
+            "request": "launch",
+            "name": "Debug Stratum File",
+            "program": "${file}",
+            "stopOnEntry": false
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Stratum: Debug File",
+            "description": "Debug the current Stratum file",
+            "body": {
+              "type": "stratum",
+              "request": "launch",
+              "name": "Debug ${1:file}",
+              "program": "^\"\\${file}\"",
+              "stopOnEntry": false
+            }
+          }
+        ]
+      }
     ]
   },
   "scripts": {
@@ -99,7 +214,8 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
-    "test": "npm run compile && mocha out/test/**/*.test.js"
+    "test": "npm run compile && mocha out/test/**/*.test.js",
+    "package": "npm run compile && vsce package --out stratum.vsix"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",
@@ -107,11 +223,13 @@
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^6.13.0",
     "@typescript-eslint/parser": "^6.13.0",
+    "@vscode/vsce": "^3.2.0",
     "eslint": "^8.55.0",
     "mocha": "^10.2.0",
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.1"
+    "vscode-languageclient": "^9.0.1",
+    "@vscode/debugadapter": "^1.65.0"
   }
 }

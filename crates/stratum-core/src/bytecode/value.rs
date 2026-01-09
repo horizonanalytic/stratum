@@ -1,12 +1,13 @@
 //! Runtime values for the Stratum virtual machine
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::{Arc, Mutex};
 
+use image::{DynamicImage, GenericImageView};
 use regex::Regex as CompiledRegex;
 use tokio::net::{TcpListener as TokioTcpListener, TcpStream as TokioTcpStream, UdpSocket as TokioUdpSocket};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -15,7 +16,7 @@ use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use super::Chunk;
 use crate::ast::ExecutionMode;
-use crate::data::{AggSpec, Cube, CubeBuilder, CubeQuery, DataFrame, GroupedDataFrame, JoinSpec, Series, SqlContext};
+use crate::data::{AggSpec, Cube, CubeBuilder, CubeQuery, DataFrame, GroupedDataFrame, JoinSpec, Rolling, Series, SqlContext};
 
 /// Database connection types supported by Stratum
 #[derive(Clone)]
@@ -356,6 +357,158 @@ impl WebSocketServerConnWrapper {
     }
 }
 
+/// XML document wrapper for Stratum
+/// Wraps a parsed XML document stored as a string (for thread safety)
+/// along with metadata about the document
+#[derive(Clone)]
+pub struct XmlDocumentWrapper {
+    /// The XML content as a string (re-parsed on demand for XPath queries)
+    pub content: String,
+    /// Root element name (cached for quick access)
+    pub root_name: String,
+}
+
+impl fmt::Debug for XmlDocumentWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XmlDocument")
+            .field("root", &self.root_name)
+            .field("size", &self.content.len())
+            .finish()
+    }
+}
+
+impl XmlDocumentWrapper {
+    /// Create a new XML document wrapper from parsed content
+    #[must_use]
+    pub fn new(content: String, root_name: String) -> Self {
+        Self { content, root_name }
+    }
+}
+
+/// Image wrapper for Stratum
+/// Wraps a dynamic image with metadata
+#[derive(Clone)]
+pub struct ImageWrapper {
+    /// The underlying image data
+    pub image: Arc<DynamicImage>,
+    /// Original file path (if loaded from file)
+    pub source_path: Option<String>,
+    /// Image format (for saving)
+    pub format: Option<String>,
+}
+
+impl fmt::Debug for ImageWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Image")
+            .field("width", &self.image.width())
+            .field("height", &self.image.height())
+            .field("source", &self.source_path)
+            .finish()
+    }
+}
+
+impl ImageWrapper {
+    /// Create a new image wrapper
+    #[must_use]
+    pub fn new(image: DynamicImage, source_path: Option<String>, format: Option<String>) -> Self {
+        Self {
+            image: Arc::new(image),
+            source_path,
+            format,
+        }
+    }
+
+    /// Get the image dimensions
+    #[must_use]
+    pub fn dimensions(&self) -> (u32, u32) {
+        self.image.dimensions()
+    }
+
+    /// Get the image width
+    #[must_use]
+    pub fn width(&self) -> u32 {
+        self.image.width()
+    }
+
+    /// Get the image height
+    #[must_use]
+    pub fn height(&self) -> u32 {
+        self.image.height()
+    }
+}
+
+/// A weak reference to a container value
+///
+/// Weak references do not prevent garbage collection of the referenced value.
+/// Use `upgrade()` to attempt to get a strong reference, which returns `None`
+/// if the value has been collected.
+#[derive(Clone)]
+pub enum WeakRefValue {
+    /// Weak reference to a list
+    List(Weak<RefCell<Vec<Value>>>),
+    /// Weak reference to a map
+    Map(Weak<RefCell<HashMap<HashableValue, Value>>>),
+    /// Weak reference to a set
+    Set(Weak<RefCell<HashSet<HashableValue>>>),
+    /// Weak reference to a struct instance
+    Struct(Weak<RefCell<StructInstance>>),
+}
+
+impl WeakRefValue {
+    /// Attempt to upgrade the weak reference to a strong reference.
+    /// Returns `Some(Value)` if the referenced value is still alive,
+    /// or `None` if it has been collected.
+    #[must_use]
+    pub fn upgrade(&self) -> Option<Value> {
+        match self {
+            WeakRefValue::List(weak) => weak.upgrade().map(Value::List),
+            WeakRefValue::Map(weak) => weak.upgrade().map(Value::Map),
+            WeakRefValue::Set(weak) => weak.upgrade().map(Value::Set),
+            WeakRefValue::Struct(weak) => weak.upgrade().map(Value::Struct),
+        }
+    }
+
+    /// Check if the referenced value is still alive.
+    #[must_use]
+    pub fn is_alive(&self) -> bool {
+        match self {
+            WeakRefValue::List(weak) => weak.strong_count() > 0,
+            WeakRefValue::Map(weak) => weak.strong_count() > 0,
+            WeakRefValue::Set(weak) => weak.strong_count() > 0,
+            WeakRefValue::Struct(weak) => weak.strong_count() > 0,
+        }
+    }
+
+    /// Get the type name of the referenced value.
+    #[must_use]
+    pub fn target_type_name(&self) -> &'static str {
+        match self {
+            WeakRefValue::List(_) => "List",
+            WeakRefValue::Map(_) => "Map",
+            WeakRefValue::Set(_) => "Set",
+            WeakRefValue::Struct(_) => "Struct",
+        }
+    }
+
+    /// Get the raw pointer for identity comparison.
+    #[must_use]
+    pub fn ptr(&self) -> usize {
+        match self {
+            WeakRefValue::List(weak) => weak.as_ptr() as usize,
+            WeakRefValue::Map(weak) => weak.as_ptr() as usize,
+            WeakRefValue::Set(weak) => weak.as_ptr() as usize,
+            WeakRefValue::Struct(weak) => weak.as_ptr() as usize,
+        }
+    }
+}
+
+impl fmt::Debug for WeakRefValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let alive = if self.is_alive() { "alive" } else { "dead" };
+        write!(f, "<weak {} ({})>", self.target_type_name(), alive)
+    }
+}
+
 /// A runtime value in the Stratum VM
 #[derive(Clone)]
 pub enum Value {
@@ -379,6 +532,9 @@ pub enum Value {
 
     /// Map/dictionary (reference-counted, mutable)
     Map(Rc<RefCell<HashMap<HashableValue, Value>>>),
+
+    /// Set (reference-counted, mutable)
+    Set(Rc<RefCell<HashSet<HashableValue>>>),
 
     /// Function (user-defined)
     Function(Rc<Function>),
@@ -443,6 +599,9 @@ pub enum Value {
     /// Series (single column of data)
     Series(Arc<Series>),
 
+    /// Rolling window for Series (for computing windowed aggregations)
+    Rolling(Arc<Rolling>),
+
     /// GroupedDataFrame (DataFrame partitioned by key columns)
     GroupedDataFrame(Arc<GroupedDataFrame>),
 
@@ -471,6 +630,19 @@ pub enum Value {
     /// State binding for reactive GUI updates (&state.field)
     /// Contains the dotted path to the bound field
     StateBinding(String),
+
+    /// Test expectation (from Test.expect(value))
+    Expectation(Rc<RefCell<ExpectationState>>),
+
+    /// XML document (parsed XML with XPath support)
+    XmlDocument(Arc<XmlDocumentWrapper>),
+
+    /// Image (loaded image for processing)
+    Image(Arc<ImageWrapper>),
+
+    /// Weak reference to a container value
+    /// Does not prevent garbage collection of the referenced value
+    WeakRef(WeakRefValue),
 }
 
 /// Trait for GUI values that can be stored in the VM.
@@ -773,6 +945,35 @@ impl Range {
     }
 }
 
+/// State for test expectations (Test.expect(value))
+#[derive(Clone, Debug)]
+pub struct ExpectationState {
+    /// The value being tested
+    pub actual: Box<Value>,
+    /// Whether the expectation has been negated (.not)
+    pub negated: bool,
+}
+
+impl ExpectationState {
+    /// Create a new expectation with a value
+    #[must_use]
+    pub fn new(value: Value) -> Self {
+        Self {
+            actual: Box::new(value),
+            negated: false,
+        }
+    }
+
+    /// Create a negated expectation
+    #[must_use]
+    pub fn negated(value: Value) -> Self {
+        Self {
+            actual: Box::new(value),
+            negated: true,
+        }
+    }
+}
+
 /// Status of a future/promise
 #[derive(Clone, Debug, PartialEq)]
 pub enum FutureStatus {
@@ -1005,6 +1206,7 @@ impl Value {
             Value::String(_) => "String",
             Value::List(_) => "List",
             Value::Map(_) => "Map",
+            Value::Set(_) => "Set",
             Value::Function(_) => "Function",
             Value::Closure(_) => "Function",
             Value::NativeFunction(_) => "Function",
@@ -1026,6 +1228,7 @@ impl Value {
             Value::Coroutine(_) => "Coroutine",
             Value::DataFrame(_) => "DataFrame",
             Value::Series(_) => "Series",
+            Value::Rolling(_) => "Rolling",
             Value::GroupedDataFrame(_) => "GroupedDataFrame",
             Value::AggSpec(_) => "AggSpec",
             Value::JoinSpec(_) => "JoinSpec",
@@ -1035,6 +1238,10 @@ impl Value {
             Value::CubeQuery(_) => "CubeQuery",
             Value::GuiElement(e) => e.kind_name(),
             Value::StateBinding(_) => "StateBinding",
+            Value::Expectation(_) => "Expectation",
+            Value::XmlDocument(_) => "XmlDocument",
+            Value::Image(_) => "Image",
+            Value::WeakRef(_) => "WeakRef",
         }
     }
 
@@ -1080,10 +1287,76 @@ impl Value {
         Value::Map(Rc::new(RefCell::new(HashMap::new())))
     }
 
+    /// Create an empty set
+    #[must_use]
+    pub fn empty_set() -> Self {
+        Value::Set(Rc::new(RefCell::new(HashSet::new())))
+    }
+
+    /// Create a set from hashable values
+    #[must_use]
+    pub fn set(values: HashSet<HashableValue>) -> Self {
+        Value::Set(Rc::new(RefCell::new(values)))
+    }
+
     /// Create a regex value from a compiled regex
     #[must_use]
     pub fn regex(re: CompiledRegex) -> Self {
         Value::Regex(Rc::new(re))
+    }
+
+    /// Create an expectation value (for Test.expect())
+    #[must_use]
+    pub fn expectation(value: Value) -> Self {
+        Value::Expectation(Rc::new(RefCell::new(ExpectationState::new(value))))
+    }
+
+    /// Create a negated expectation value (for Test.expect().not)
+    #[must_use]
+    pub fn negated_expectation(value: Value) -> Self {
+        Value::Expectation(Rc::new(RefCell::new(ExpectationState::negated(value))))
+    }
+
+    /// Create a weak reference from a container value.
+    /// Returns `Some(Value::WeakRef(...))` for supported container types,
+    /// or `None` for non-container types.
+    #[must_use]
+    pub fn weak_ref(&self) -> Option<Value> {
+        match self {
+            Value::List(rc) => Some(Value::WeakRef(WeakRefValue::List(Rc::downgrade(rc)))),
+            Value::Map(rc) => Some(Value::WeakRef(WeakRefValue::Map(Rc::downgrade(rc)))),
+            Value::Set(rc) => Some(Value::WeakRef(WeakRefValue::Set(Rc::downgrade(rc)))),
+            Value::Struct(rc) => Some(Value::WeakRef(WeakRefValue::Struct(Rc::downgrade(rc)))),
+            _ => None,
+        }
+    }
+
+    /// Attempt to upgrade a weak reference to a strong reference.
+    /// Returns `Some(Value)` if this is a weak ref and the target is still alive,
+    /// `None` if this is a weak ref but the target was collected,
+    /// or the original value if it's not a weak ref.
+    #[must_use]
+    pub fn upgrade_weak(&self) -> Option<Value> {
+        match self {
+            Value::WeakRef(weak) => weak.upgrade(),
+            _ => Some(self.clone()),
+        }
+    }
+
+    /// Check if this value is a weak reference.
+    #[must_use]
+    pub fn is_weak_ref(&self) -> bool {
+        matches!(self, Value::WeakRef(_))
+    }
+
+    /// If this is a weak reference, check if the referenced value is still alive.
+    /// Returns `true` for non-weak-ref values.
+    #[must_use]
+    pub fn is_weak_ref_alive(&self) -> bool {
+        match self {
+            Value::WeakRef(weak) => weak.is_alive(),
+            _ => true,
+        }
     }
 }
 
@@ -1097,6 +1370,7 @@ impl PartialEq for Value {
             (Value::String(a), Value::String(b)) => a == b,
             (Value::List(a), Value::List(b)) => Rc::ptr_eq(a, b) || *a.borrow() == *b.borrow(),
             (Value::Map(a), Value::Map(b)) => Rc::ptr_eq(a, b),
+            (Value::Set(a), Value::Set(b)) => Rc::ptr_eq(a, b) || *a.borrow() == *b.borrow(),
             (Value::Function(a), Value::Function(b)) => Rc::ptr_eq(a, b),
             (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
             (Value::Struct(a), Value::Struct(b)) => Rc::ptr_eq(a, b),
@@ -1121,12 +1395,17 @@ impl PartialEq for Value {
             (Value::Coroutine(a), Value::Coroutine(b)) => Rc::ptr_eq(a, b),
             (Value::DataFrame(a), Value::DataFrame(b)) => Arc::ptr_eq(a, b),
             (Value::Series(a), Value::Series(b)) => Arc::ptr_eq(a, b),
+            (Value::Rolling(a), Value::Rolling(b)) => Arc::ptr_eq(a, b),
             (Value::JoinSpec(a), Value::JoinSpec(b)) => Arc::ptr_eq(a, b),
             (Value::Cube(a), Value::Cube(b)) => Arc::ptr_eq(a, b),
             (Value::CubeBuilder(a), Value::CubeBuilder(b)) => Arc::ptr_eq(a, b),
             (Value::CubeQuery(a), Value::CubeQuery(b)) => Arc::ptr_eq(a, b),
             (Value::GuiElement(a), Value::GuiElement(b)) => Arc::ptr_eq(a, b),
             (Value::StateBinding(a), Value::StateBinding(b)) => a == b,
+            (Value::Expectation(a), Value::Expectation(b)) => Rc::ptr_eq(a, b),
+            (Value::XmlDocument(a), Value::XmlDocument(b)) => Arc::ptr_eq(a, b),
+            (Value::Image(a), Value::Image(b)) => Arc::ptr_eq(a, b),
+            (Value::WeakRef(a), Value::WeakRef(b)) => a.ptr() == b.ptr(),
             _ => false,
         }
     }
@@ -1142,6 +1421,7 @@ impl fmt::Debug for Value {
             Value::String(s) => write!(f, "{s:?}"),
             Value::List(l) => write!(f, "{:?}", l.borrow()),
             Value::Map(m) => write!(f, "{:?}", m.borrow()),
+            Value::Set(s) => write!(f, "{:?}", s.borrow()),
             Value::Function(func) => write!(f, "<fn {}>", func.name),
             Value::Closure(c) => write!(f, "<fn {}>", c.function.name),
             Value::NativeFunction(n) => write!(f, "<native fn {}>", n.name),
@@ -1203,6 +1483,9 @@ impl fmt::Debug for Value {
             }
             Value::Series(s) => {
                 write!(f, "<Series '{}' [{} rows]>", s.name(), s.len())
+            }
+            Value::Rolling(r) => {
+                write!(f, "<Rolling window={} on '{}'>", r.window_size(), r.series().name())
             }
             Value::GroupedDataFrame(gdf) => {
                 write!(
@@ -1266,6 +1549,24 @@ impl fmt::Debug for Value {
             }
             Value::GuiElement(e) => write!(f, "<GuiElement {}>", e.kind_name()),
             Value::StateBinding(path) => write!(f, "<StateBinding &{path}>"),
+            Value::Expectation(exp) => {
+                let exp = exp.borrow();
+                if exp.negated {
+                    write!(f, "<Expectation not {:?}>", exp.actual)
+                } else {
+                    write!(f, "<Expectation {:?}>", exp.actual)
+                }
+            }
+            Value::XmlDocument(doc) => {
+                write!(f, "<XmlDocument root='{}' size={}>", doc.root_name, doc.content.len())
+            }
+            Value::Image(img) => {
+                write!(f, "<Image {}x{}>", img.width(), img.height())
+            }
+            Value::WeakRef(weak) => {
+                let alive = if weak.is_alive() { "alive" } else { "dead" };
+                write!(f, "<weak {} ({})>", weak.target_type_name(), alive)
+            }
         }
     }
 }
@@ -1299,6 +1600,16 @@ impl fmt::Display for Value {
                         HashableValue::String(s) => write!(f, "{s:?}: {v}")?,
                         _ => write!(f, "{:?}: {v}", Value::from(k.clone()))?,
                     }
+                }
+                write!(f, "}}")
+            }
+            Value::Set(s) => {
+                write!(f, "Set{{")?;
+                for (i, v) in s.borrow().iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", Value::from(v.clone()))?;
                 }
                 write!(f, "}}")
             }
@@ -1366,6 +1677,7 @@ impl fmt::Display for Value {
             }
             Value::DataFrame(df) => write!(f, "{df}"),
             Value::Series(s) => write!(f, "{s}"),
+            Value::Rolling(r) => write!(f, "{r}"),
             Value::GroupedDataFrame(gdf) => write!(
                 f,
                 "<grouped by {:?} ({} groups)>",
@@ -1405,6 +1717,24 @@ impl fmt::Display for Value {
             }
             Value::GuiElement(e) => write!(f, "<gui {}>", e.kind_name()),
             Value::StateBinding(path) => write!(f, "<binding &{path}>"),
+            Value::Expectation(exp) => {
+                let exp = exp.borrow();
+                if exp.negated {
+                    write!(f, "<expect not {}>", exp.actual)
+                } else {
+                    write!(f, "<expect {}>", exp.actual)
+                }
+            }
+            Value::XmlDocument(doc) => {
+                write!(f, "<xml root='{}'>", doc.root_name)
+            }
+            Value::Image(img) => {
+                write!(f, "<image {}x{}>", img.width(), img.height())
+            }
+            Value::WeakRef(weak) => {
+                let alive = if weak.is_alive() { "alive" } else { "dead" };
+                write!(f, "<weak {} ({})>", weak.target_type_name(), alive)
+            }
         }
     }
 }

@@ -97,6 +97,14 @@ pub use ast::{ExecutionMode, ExecutionModeOverride};
 /// Convenience re-export of cycle collector
 pub use gc::CycleCollector;
 
+/// Convenience re-export of memory profiling types and functions
+pub use data::{
+    enable_profiling, disable_profiling, is_profiling_enabled,
+    profiler_summary, record_allocation, record_deallocation,
+    reset_profiler, set_profiler_gc_stats, detect_leaks,
+    memory_categories, CategoryStats, LeakInfo, MemoryProfiler, MemoryStats,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

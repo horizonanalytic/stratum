@@ -111,6 +111,7 @@ fn compute_quick_fixes_cached(
 }
 
 /// Compute code actions for the given range and diagnostics (non-cached)
+#[allow(dead_code)] // Standalone API used by tests
 pub fn compute_code_actions(
     uri: &Url,
     source: &str,
@@ -135,6 +136,7 @@ pub fn compute_code_actions(
 }
 
 /// Compute quick fixes for a diagnostic
+#[allow(dead_code)] // Called by compute_code_actions
 fn compute_quick_fixes(
     uri: &Url,
     source: &str,
@@ -353,6 +355,7 @@ fn create_replace_action(
 }
 
 /// Compute fix for missing struct field
+#[allow(dead_code)] // Called by compute_quick_fixes
 fn compute_missing_field_fix(
     uri: &Url,
     source: &str,
@@ -445,6 +448,7 @@ fn compute_missing_field_fix(
 }
 
 /// Compute fix for extra struct field (remove it)
+#[allow(dead_code)] // Called by compute_quick_fixes
 fn compute_extra_field_fix(
     uri: &Url,
     source: &str,

@@ -58,11 +58,13 @@ impl DocumentCache {
     }
 
     /// Get the document version
+    #[allow(dead_code)] // Public API for external consumers
     pub fn version(&self) -> i32 {
         self.version
     }
 
     /// Get the cached line index
+    #[allow(dead_code)] // Public API for external consumers
     pub fn line_index(&self) -> &Arc<LineIndex> {
         &self.line_index
     }
@@ -126,6 +128,7 @@ impl DocumentCache {
     }
 
     /// Get the parsed AST if available (without parsing)
+    #[allow(dead_code)] // Public API for external consumers
     pub fn parsed_ast(&self) -> Option<&Arc<Module>> {
         match &self.parse_result {
             Some(ParseResult::Ok(module)) => Some(module),

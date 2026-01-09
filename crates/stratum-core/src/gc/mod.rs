@@ -397,6 +397,18 @@ impl CycleCollector {
                     }
                 }
             }
+            Value::Set(rc) => {
+                let ptr = Rc::as_ptr(rc) as usize;
+                if reachable.insert(ptr) {
+                    for key in rc.borrow().iter() {
+                        // Mark key if it's a string
+                        if let HashableValue::String(s) = key {
+                            let key_ptr = Rc::as_ptr(s) as usize;
+                            reachable.insert(key_ptr);
+                        }
+                    }
+                }
+            }
             Value::Struct(rc) => {
                 let ptr = Rc::as_ptr(rc) as usize;
                 if reachable.insert(ptr) {
@@ -503,6 +515,7 @@ impl CycleCollector {
             | Value::WebSocketServerConn(_)
             | Value::DataFrame(_)
             | Value::Series(_)
+            | Value::Rolling(_)
             | Value::GroupedDataFrame(_)
             | Value::AggSpec(_)
             | Value::JoinSpec(_)
@@ -511,7 +524,20 @@ impl CycleCollector {
             | Value::CubeBuilder(_)
             | Value::CubeQuery(_)
             | Value::GuiElement(_)
-            | Value::StateBinding(_) => {}
+            | Value::StateBinding(_)
+            | Value::XmlDocument(_)
+            | Value::Image(_) => {}
+            // Weak references are intentionally NOT followed during marking.
+            // This is the key behavior that allows them to break cycles -
+            // the referenced object can be collected even if a weak ref exists.
+            Value::WeakRef(_) => {}
+            Value::Expectation(rc) => {
+                let ptr = Rc::as_ptr(rc) as usize;
+                if reachable.insert(ptr) {
+                    // Mark the actual value being tested
+                    self.mark(&rc.borrow().actual, reachable);
+                }
+            }
         }
     }
 
@@ -784,6 +810,101 @@ mod tests {
         let broken = gc.force_collect(&[], &HashMap::new(), &[]);
 
         // Both maps should have been processed
+        assert!(broken >= 0);
+    }
+
+    #[test]
+    fn test_weak_ref_not_marked() {
+        let mut gc = CycleCollector::with_threshold(MIN_THRESHOLD);
+
+        // Create a list and a weak reference to it
+        let list = Value::list(vec![Value::Int(1), Value::Int(2)]);
+        let weak = list.weak_ref().expect("should create weak ref");
+
+        gc.track(&list);
+
+        // When the strong ref is on the stack, nothing should be collected
+        let stack_with_strong = vec![list.clone()];
+        let broken = gc.force_collect(&stack_with_strong, &HashMap::new(), &[]);
+        assert_eq!(broken, 0);
+
+        // The key test: weak refs should NOT be followed during marking
+        // so having only a weak ref on the stack should NOT keep the object alive
+        // (for cycle collection purposes)
+        drop(stack_with_strong);
+        drop(list);
+
+        // After all strong refs are dropped, weak ref should become dead
+        if let Value::WeakRef(w) = &weak {
+            // The list is dropped, so upgrade should return None
+            assert!(w.upgrade().is_none());
+            assert!(!w.is_alive());
+        }
+    }
+
+    #[test]
+    fn test_weak_ref_upgrade_alive() {
+        // Create a list and a weak reference
+        let list = Value::list(vec![Value::Int(42)]);
+        let weak = list.weak_ref().expect("should create weak ref");
+
+        // While the strong ref exists, upgrade should succeed
+        if let Value::WeakRef(w) = &weak {
+            assert!(w.is_alive());
+            let upgraded = w.upgrade();
+            assert!(upgraded.is_some());
+
+            // The upgraded value should be equal to the original
+            if let Some(Value::List(upgraded_list)) = upgraded {
+                assert_eq!(upgraded_list.borrow().len(), 1);
+                assert_eq!(upgraded_list.borrow()[0], Value::Int(42));
+            } else {
+                panic!("Expected List from upgrade");
+            }
+        } else {
+            panic!("Expected WeakRef");
+        }
+    }
+
+    #[test]
+    fn test_weak_ref_upgrade_dead() {
+        // Create a list in a scope and then drop it
+        let weak = {
+            let list = Value::list(vec![Value::Int(1)]);
+            list.weak_ref().expect("should create weak ref")
+        };
+
+        // After the list is dropped, upgrade should return None
+        if let Value::WeakRef(w) = &weak {
+            assert!(!w.is_alive());
+            assert!(w.upgrade().is_none());
+        } else {
+            panic!("Expected WeakRef");
+        }
+    }
+
+    #[test]
+    fn test_weak_ref_breaks_cycle() {
+        let mut gc = CycleCollector::with_threshold(MIN_THRESHOLD);
+
+        // Create a struct that would form a cycle using a weak ref
+        let outer: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(vec![]));
+        let outer_value = Value::List(Rc::clone(&outer));
+
+        // Create a weak reference instead of a strong one
+        let weak_ref = outer_value.weak_ref().expect("should create weak ref");
+
+        // Add the weak ref to the list (instead of a strong ref to itself)
+        outer.borrow_mut().push(weak_ref);
+
+        gc.track(&outer_value);
+
+        // Drop our strong reference
+        drop(outer_value);
+        drop(outer);
+
+        // Collection should work without issues
+        let broken = gc.force_collect(&[], &HashMap::new(), &[]);
         assert!(broken >= 0);
     }
 }

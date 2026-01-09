@@ -44,7 +44,8 @@ pub struct VariableEntry {
     pub type_name: String,
     /// Summary value (short preview)
     pub summary: String,
-    /// Full value (for detailed view)
+    /// Full value (for detailed view) - kept for future full value inspection API
+    #[allow(dead_code)]
     pub value: Value,
     /// Depth in tree (0 = top level)
     pub depth: usize,
@@ -61,6 +62,8 @@ pub struct VariableEntry {
 pub struct ColumnInfo {
     pub name: String,
     pub data_type: String,
+    /// Null count - part of column statistics API for future use
+    #[allow(dead_code)]
     pub null_count: usize,
 }
 
@@ -81,8 +84,9 @@ pub struct CubeInfo {
     pub measures: Vec<String>,
 }
 
-/// Context menu state
+/// Context menu state - fields used for positioning context menu (feature not yet fully implemented)
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ContextMenuState {
     pub variable_path: String,
     pub x: f32,
@@ -150,7 +154,7 @@ impl DataExplorerPanel {
         }
 
         // Update selected variable info if still valid
-        if let Some(ref path) = self.selected {
+        if let Some(ref _path) = self.selected {
             self.update_selected_info(globals);
         }
     }
@@ -206,7 +210,7 @@ impl DataExplorerPanel {
                 let entries = map.borrow();
                 let mut keys: Vec<_> = entries.keys().collect();
                 keys.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
-                for (i, key) in keys.iter().enumerate().take(100) {
+                for (_i, key) in keys.iter().enumerate().take(100) {
                     if let Some(val) = entries.get(*key) {
                         let key_str = format!("{key:?}");
                         let path = format!("{parent_path}.{key_str}");

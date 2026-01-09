@@ -142,6 +142,139 @@ let posts = await future2
 
 ---
 
+## Combinators
+
+### `Async.all(futures)`
+
+Waits for all futures to complete and returns a list of results.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `futures` | `List<Future>` | List of futures to await |
+
+**Returns:** `Future<List>` - Future that resolves to a list of all results
+
+**Throws:** Fails immediately if any future fails
+
+**Example:**
+
+```stratum
+let urls = [
+    "https://api.example.com/users",
+    "https://api.example.com/posts",
+    "https://api.example.com/comments"
+]
+
+let futures = urls.map(|url| Http.get(url))
+let responses = await Async.all(futures)
+// responses is a list of all HTTP responses
+
+// Process all results
+for response in responses {
+    println(response.status)
+}
+```
+
+---
+
+### `Async.race(futures)`
+
+Returns the result of the first future to complete.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `futures` | `List<Future>` | List of futures to race |
+
+**Returns:** `Future` - Future that resolves with the first completed result
+
+**Example:**
+
+```stratum
+// Use multiple mirrors, take fastest response
+let mirrors = [
+    Http.get("https://mirror1.example.com/file"),
+    Http.get("https://mirror2.example.com/file"),
+    Http.get("https://mirror3.example.com/file")
+]
+
+let fastest = await Async.race(mirrors)
+println("Got response from fastest mirror")
+```
+
+---
+
+### `Async.timeout(future, ms)`
+
+Adds a timeout to a future.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `future` | `Future` | The future to add timeout to |
+| `ms` | `Int` | Timeout in milliseconds |
+
+**Returns:** `Future` - Future that fails if timeout is exceeded
+
+**Throws:** Error "Timeout" if the future doesn't complete in time
+
+**Example:**
+
+```stratum
+// Fail if request takes more than 5 seconds
+let response = await Async.timeout(
+    Http.get("https://slow-api.example.com/data"),
+    5000
+)
+
+// Or handle the timeout
+try {
+    let data = await Async.timeout(fetch_data(), 3000)
+} catch (e) {
+    if e == "Timeout" {
+        println("Request timed out, using cached data")
+        data = get_cached_data()
+    }
+}
+```
+
+---
+
+### `Async.spawn(closure)`
+
+Spawns a background task (cooperative concurrency).
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `closure` | `Function` | Closure to execute in background |
+
+**Returns:** `Future` - Future that resolves when the closure completes
+
+**Example:**
+
+```stratum
+// Run computation in background
+let background_task = Async.spawn(|| {
+    // Do heavy computation
+    let result = expensive_calculation()
+    return result
+})
+
+// Continue doing other work
+do_other_work()
+
+// Get the result when needed
+let result = await background_task
+```
+
+---
+
 ## Examples
 
 ### Delayed Operations

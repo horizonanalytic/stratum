@@ -24,11 +24,11 @@ use std::rc::Rc;
 use crate::ast::ExecutionMode;
 use crate::gc::CycleCollector;
 use crate::bytecode::{
-    Chunk, Closure, CoroutineState, EnumVariantInstance, Function, FutureStatus,
+    Chunk, Closure, CoroutineState, EnumVariantInstance, ExpectationState, Function, FutureStatus,
     HashableValue, NativeFunction, OpCode, Range, SavedCallFrame, SavedExceptionHandler,
     StructInstance, Upvalue, Value,
 };
-use crate::data::{AggSpec, DataFrame, GroupedDataFrame, Series};
+use crate::data::{AggSpec, DataFrame, GroupedDataFrame, Rolling, Series};
 use crate::jit::{call_jit_function, CompiledFunction, JitCompiler, JitContext};
 
 /// Maximum call stack depth
@@ -131,6 +131,9 @@ pub struct VM {
 
     /// Cycle collector for detecting and breaking reference cycles
     gc: CycleCollector,
+
+    /// Flag indicating a spawn future is pending (for post-resume closure execution)
+    pending_spawn: bool,
 }
 
 impl Default for VM {
@@ -159,6 +162,7 @@ impl VM {
             debug_context: DebugContext::new(),
             current_source: None,
             gc: CycleCollector::new(),
+            pending_spawn: false,
         };
 
         // Register built-in functions
@@ -1875,6 +1879,12 @@ impl VM {
         // System info module
         self.globals.insert("System".to_string(), Value::NativeNamespace("System"));
 
+        // Process module (non-blocking process spawn and control)
+        self.globals.insert("Process".to_string(), Value::NativeNamespace("Process"));
+
+        // Signal module (signal handling)
+        self.globals.insert("Signal".to_string(), Value::NativeNamespace("Signal"));
+
         // Database module
         self.globals.insert("Db".to_string(), Value::NativeNamespace("Db"));
 
@@ -1894,6 +1904,15 @@ impl VM {
 
         // Cube module (OLAP cube for multi-dimensional analysis)
         self.globals.insert("Cube".to_string(), Value::NativeNamespace("Cube"));
+
+        // Set module for creating sets
+        self.globals.insert("Set".to_string(), Value::NativeNamespace("Set"));
+
+        // Test module for testing framework
+        self.globals.insert("Test".to_string(), Value::NativeNamespace("Test"));
+
+        // Ref module for weak references
+        self.globals.insert("Ref".to_string(), Value::NativeNamespace("Ref"));
     }
 
     /// Define a native function
@@ -2250,8 +2269,22 @@ impl VM {
             })
             .collect();
 
-        // Push the resume value (result of the await)
-        self.push(resume_value)?;
+        // Check if we're resuming from a spawn future
+        if self.pending_spawn {
+            self.pending_spawn = false;
+            // For spawn, the resume value is the closure to call
+            if let Value::Closure(closure) = resume_value {
+                // Call the spawned closure with no arguments
+                self.call_closure(closure, 0)?;
+                // Note: call_closure pushes a new frame and will push its result when done
+            } else {
+                // Not a closure - just push the value
+                self.push(resume_value)?;
+            }
+        } else {
+            // Push the resume value (result of the await)
+            self.push(resume_value)?;
+        }
 
         Ok(())
     }
@@ -3082,6 +3115,19 @@ impl VM {
                 self.push(Value::Map(Rc::new(RefCell::new(map))))?;
             }
 
+            OpCode::NewSet => {
+                let count = self.read_u16() as usize;
+                let mut set = std::collections::HashSet::new();
+                for _ in 0..count {
+                    let value = self.pop()?;
+                    let hashable = HashableValue::try_from(value.clone()).map_err(|_| {
+                        self.runtime_error(RuntimeErrorKind::UnhashableType(value.type_name()))
+                    })?;
+                    set.insert(hashable);
+                }
+                self.push(Value::Set(Rc::new(RefCell::new(set))))?;
+            }
+
             OpCode::NewStruct => {
                 let type_index = self.read_u16() as usize;
                 let field_count = self.read_u16() as usize;
@@ -3286,18 +3332,43 @@ impl VM {
                 match &future {
                     Value::Future(fut) => {
                         let fut_ref = fut.borrow();
+
+                        // Check if this is a spawn future - handle specially
+                        let is_spawn = fut_ref.kind() == Some("spawn");
+
                         match &fut_ref.status {
                             FutureStatus::Ready => {
                                 // Future is ready, push its result and continue
                                 let result = fut_ref.result.clone().unwrap_or(Value::Null);
                                 drop(fut_ref); // Release borrow
-                                self.push(result)?;
+
+                                // For spawn futures, the result is a closure that needs to be called
+                                if is_spawn {
+                                    if let Value::Closure(closure) = result {
+                                        // Call the spawned closure with no arguments
+                                        self.call_closure(closure, 0)?;
+                                        // Don't push result - call_closure handles it
+                                    } else {
+                                        self.push(result)?;
+                                    }
+                                } else {
+                                    self.push(result)?;
+                                }
                             }
                             FutureStatus::Pending => {
                                 // Future is pending - suspend execution
+                                let kind = fut_ref.kind().map(String::from);
                                 drop(fut_ref); // Release borrow before suspend
-                                let coroutine = self.suspend(future);
+
+                                // For spawn futures that are pending, we need to handle
+                                // the closure execution after the executor returns
+                                let coroutine = self.suspend(future.clone());
                                 self.suspended_coroutine = Some(coroutine);
+
+                                // Store spawn flag for post-resume handling
+                                if kind == Some("spawn".to_string()) {
+                                    self.pending_spawn = true;
+                                }
                                 // The execute loop will check this and return
                             }
                             FutureStatus::Failed(err) => {
@@ -3349,7 +3420,7 @@ impl VM {
                 // Try built-in struct methods
                 self.invoke_builtin_method(&receiver, &method_name, arg_count)
             }
-            Value::String(_) | Value::List(_) | Value::Map(_) | Value::NativeNamespace(_) | Value::DbConnection(_) | Value::DataFrame(_) | Value::Series(_) | Value::GroupedDataFrame(_) | Value::SqlContext(_) | Value::Cube(_) | Value::CubeBuilder(_) | Value::CubeQuery(_) => {
+            Value::String(_) | Value::List(_) | Value::Map(_) | Value::Set(_) | Value::NativeNamespace(_) | Value::DbConnection(_) | Value::DataFrame(_) | Value::Series(_) | Value::Rolling(_) | Value::GroupedDataFrame(_) | Value::SqlContext(_) | Value::Cube(_) | Value::CubeBuilder(_) | Value::CubeQuery(_) => {
                 self.invoke_builtin_method(&receiver, &method_name, arg_count)
             }
             _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -3381,9 +3452,15 @@ impl VM {
             Value::String(s) => self.string_method(s, method_name, &args)?,
             Value::List(l) => self.list_method(l, method_name, &args)?,
             Value::Map(m) => self.map_method(m, method_name, &args)?,
+            Value::Set(s) => self.set_method(s, method_name, &args)?,
             Value::NativeNamespace(ns) => {
-                natives::dispatch_namespace_method(ns, method_name, &args)
-                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+                // Special handling for Test.describe() and Test.it() which need closure execution
+                if *ns == "Test" && (method_name == "describe" || method_name == "it") {
+                    self.test_suite_method(method_name, &args)?
+                } else {
+                    natives::dispatch_namespace_method(ns, method_name, &args)
+                        .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+                }
             }
             Value::DbConnection(conn) => {
                 natives::db_connection_method(conn, method_name, &args)
@@ -3415,6 +3492,7 @@ impl VM {
             }
             Value::DataFrame(df) => self.dataframe_method(df, method_name, &args)?,
             Value::Series(s) => self.series_method(s, method_name, &args)?,
+            Value::Rolling(r) => self.rolling_method(r, method_name, &args)?,
             Value::GroupedDataFrame(gdf) => self.grouped_dataframe_method(gdf, method_name, &args)?,
             Value::SqlContext(ctx) => {
                 natives::sql_context_method(ctx, method_name, &args)
@@ -3423,6 +3501,19 @@ impl VM {
             Value::Cube(cube) => self.cube_method(cube, method_name, &args)?,
             Value::CubeBuilder(builder) => self.cubebuilder_method(builder, method_name, &args)?,
             Value::CubeQuery(query) => self.cubequery_method(query, method_name, &args)?,
+            Value::Expectation(exp) => self.expectation_method(exp, method_name, &args)?,
+            Value::XmlDocument(doc) => {
+                natives::xml_document_method(doc, method_name, &args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::Image(img) => {
+                natives::image_method(img, method_name, &args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::WeakRef(weak) => {
+                natives::weak_ref_method(method_name, &args, weak)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
             _ => {
                 return Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
                     type_name: receiver.type_name().to_string(),
@@ -3856,6 +3947,142 @@ impl VM {
                     }))
                 }
             }
+            // enumerate() - Return (index, value) pairs
+            "enumerate" => {
+                if !args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 0,
+                        got: args.len() as u8,
+                    }));
+                }
+                let enumerated: Vec<Value> = list
+                    .borrow()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| Value::list(vec![Value::Int(i as i64), v.clone()]))
+                    .collect();
+                Ok(Value::list(enumerated))
+            }
+            // chunk(size) - Split into chunks of given size
+            "chunk" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let size = match &args[0] {
+                    Value::Int(n) if *n > 0 => *n as usize,
+                    Value::Int(_) => {
+                        return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                            "chunk size must be positive".to_string(),
+                        )));
+                    }
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Int",
+                            got: args[0].type_name(),
+                            operation: "chunk",
+                        }));
+                    }
+                };
+                let chunks: Vec<Value> = list
+                    .borrow()
+                    .chunks(size)
+                    .map(|chunk| Value::list(chunk.to_vec()))
+                    .collect();
+                Ok(Value::list(chunks))
+            }
+            // window(size) - Sliding window of given size
+            "window" | "windows" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let size = match &args[0] {
+                    Value::Int(n) if *n > 0 => *n as usize,
+                    Value::Int(_) => {
+                        return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                            "window size must be positive".to_string(),
+                        )));
+                    }
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Int",
+                            got: args[0].type_name(),
+                            operation: "window",
+                        }));
+                    }
+                };
+                let borrowed = list.borrow();
+                if borrowed.len() < size {
+                    return Ok(Value::list(vec![]));
+                }
+                let windows: Vec<Value> = borrowed
+                    .windows(size)
+                    .map(|window| Value::list(window.to_vec()))
+                    .collect();
+                Ok(Value::list(windows))
+            }
+            // unique() - Remove duplicates preserving order (for hashable elements)
+            "unique" | "distinct" => {
+                if !args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 0,
+                        got: args.len() as u8,
+                    }));
+                }
+                let mut seen = std::collections::HashSet::new();
+                let mut result = Vec::new();
+                for item in list.borrow().iter() {
+                    // Try to convert to hashable - skip duplicates only for hashable values
+                    if let Ok(hashable) = HashableValue::try_from(item.clone()) {
+                        if seen.insert(hashable) {
+                            result.push(item.clone());
+                        }
+                    } else {
+                        // Non-hashable values are always included (can't dedupe)
+                        result.push(item.clone());
+                    }
+                }
+                Ok(Value::list(result))
+            }
+            // group_by(closure) - Group into Map by key returned from closure
+            "group_by" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let closure = match &args[0] {
+                    Value::Closure(c) => c.clone(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Function",
+                            got: args[0].type_name(),
+                            operation: "group_by",
+                        }));
+                    }
+                };
+                let mut groups: HashMap<HashableValue, Vec<Value>> = HashMap::new();
+                let input = list.borrow().clone();
+                for item in input {
+                    let key = self.call_closure_sync(closure.clone(), vec![item.clone()])?;
+                    let hashable_key = HashableValue::try_from(key.clone()).map_err(|_| {
+                        self.runtime_error(RuntimeErrorKind::UnhashableType(key.type_name()))
+                    })?;
+                    groups.entry(hashable_key).or_default().push(item);
+                }
+                // Convert to Map<HashableValue, Value::List>
+                let result: HashMap<HashableValue, Value> = groups
+                    .into_iter()
+                    .map(|(k, v)| (k, Value::list(v)))
+                    .collect();
+                Ok(Value::Map(Rc::new(RefCell::new(result))))
+            }
             _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
                 type_name: "List".to_string(),
                 field: method.to_string(),
@@ -3957,6 +4184,200 @@ impl VM {
         }
     }
 
+    fn set_method(
+        &mut self,
+        set: &Rc<RefCell<std::collections::HashSet<HashableValue>>>,
+        method: &str,
+        args: &[Value],
+    ) -> RuntimeResult<Value> {
+        match method {
+            "length" | "len" => Ok(Value::Int(set.borrow().len() as i64)),
+            "is_empty" => Ok(Value::Bool(set.borrow().is_empty())),
+            "contains" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let key = HashableValue::try_from(args[0].clone()).map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UnhashableType(args[0].type_name()))
+                })?;
+                Ok(Value::Bool(set.borrow().contains(&key)))
+            }
+            "add" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let value = HashableValue::try_from(args[0].clone()).map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UnhashableType(args[0].type_name()))
+                })?;
+                set.borrow_mut().insert(value);
+                // Return the set for method chaining
+                Ok(Value::Set(set.clone()))
+            }
+            "remove" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let key = HashableValue::try_from(args[0].clone()).map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UnhashableType(args[0].type_name()))
+                })?;
+                Ok(Value::Bool(set.borrow_mut().remove(&key)))
+            }
+            "is_subset" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Set(other) => {
+                        Ok(Value::Bool(set.borrow().is_subset(&other.borrow())))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Set",
+                        got: args[0].type_name(),
+                        operation: "is_subset",
+                    })),
+                }
+            }
+            "is_superset" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Set(other) => {
+                        Ok(Value::Bool(set.borrow().is_superset(&other.borrow())))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Set",
+                        got: args[0].type_name(),
+                        operation: "is_superset",
+                    })),
+                }
+            }
+            "union" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Set(other) => {
+                        let result: std::collections::HashSet<HashableValue> = set
+                            .borrow()
+                            .union(&other.borrow())
+                            .cloned()
+                            .collect();
+                        Ok(Value::set(result))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Set",
+                        got: args[0].type_name(),
+                        operation: "union",
+                    })),
+                }
+            }
+            "intersection" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Set(other) => {
+                        let result: std::collections::HashSet<HashableValue> = set
+                            .borrow()
+                            .intersection(&other.borrow())
+                            .cloned()
+                            .collect();
+                        Ok(Value::set(result))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Set",
+                        got: args[0].type_name(),
+                        operation: "intersection",
+                    })),
+                }
+            }
+            "difference" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Set(other) => {
+                        let result: std::collections::HashSet<HashableValue> = set
+                            .borrow()
+                            .difference(&other.borrow())
+                            .cloned()
+                            .collect();
+                        Ok(Value::set(result))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Set",
+                        got: args[0].type_name(),
+                        operation: "difference",
+                    })),
+                }
+            }
+            "symmetric_difference" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Set(other) => {
+                        let result: std::collections::HashSet<HashableValue> = set
+                            .borrow()
+                            .symmetric_difference(&other.borrow())
+                            .cloned()
+                            .collect();
+                        Ok(Value::set(result))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Set",
+                        got: args[0].type_name(),
+                        operation: "symmetric_difference",
+                    })),
+                }
+            }
+            "values" | "to_list" => {
+                let values: Vec<Value> = set
+                    .borrow()
+                    .iter()
+                    .map(|v| Value::from(v.clone()))
+                    .collect();
+                Ok(Value::list(values))
+            }
+            "clear" => {
+                set.borrow_mut().clear();
+                Ok(Value::Set(set.clone()))
+            }
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "Set".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
     fn dataframe_method(
         &mut self,
         df: &std::sync::Arc<DataFrame>,
@@ -3972,6 +4393,35 @@ impl VM {
             "rows" | "num_rows" | "len" => Ok(Value::Int(df.num_rows() as i64)),
             "num_columns" => Ok(Value::Int(df.num_columns() as i64)),
             "is_empty" => Ok(Value::Bool(df.is_empty())),
+            "memory_usage" => {
+                let stats = df.memory_usage();
+                let mut map = HashMap::new();
+                map.insert(
+                    HashableValue::String(Rc::new("num_rows".to_string())),
+                    Value::Int(stats.num_rows as i64),
+                );
+                map.insert(
+                    HashableValue::String(Rc::new("num_columns".to_string())),
+                    Value::Int(stats.num_columns as i64),
+                );
+                map.insert(
+                    HashableValue::String(Rc::new("data_bytes".to_string())),
+                    Value::Int(stats.data_bytes as i64),
+                );
+                map.insert(
+                    HashableValue::String(Rc::new("total_bytes".to_string())),
+                    Value::Int(stats.total_bytes as i64),
+                );
+                map.insert(
+                    HashableValue::String(Rc::new("bytes_per_row".to_string())),
+                    Value::Float(stats.bytes_per_row),
+                );
+                map.insert(
+                    HashableValue::String(Rc::new("total_formatted".to_string())),
+                    Value::string(stats.total_formatted()),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
             "schema" => {
                 // Return schema as a map of column name -> type string
                 let mut schema_map = HashMap::new();
@@ -4290,6 +4740,50 @@ impl VM {
                 }
             }
 
+            // Statistical methods
+            "describe" => {
+                let result = df.describe().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            "corr" | "correlation" => {
+                let result = df.corr().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            "cov" | "covariance" => {
+                let result = df.cov().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            "value_counts" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(column) => {
+                        let result = df.value_counts(column.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "value_counts",
+                    })),
+                }
+            }
+
             // File I/O - write methods
             "to_parquet" | "write_parquet" => {
                 if args.len() != 1 {
@@ -4389,6 +4883,626 @@ impl VM {
                 Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(builder)))))
             }
 
+            // Missing data handling
+            "dropna" => {
+                if args.is_empty() {
+                    // df.dropna() - drop rows with any nulls
+                    let result = df.dropna().map_err(|e| {
+                        self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                    })?;
+                    Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                } else {
+                    // df.dropna("col1", "col2", ...) - drop rows with nulls in specific columns
+                    let col_names: Result<Vec<String>, _> = args
+                        .iter()
+                        .map(|v| match v {
+                            Value::String(s) => Ok(s.to_string()),
+                            _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: v.type_name(),
+                                operation: "dropna",
+                            })),
+                        })
+                        .collect();
+                    let col_names = col_names?;
+                    let result = df.dropna_columns(&col_names).map_err(|e| {
+                        self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                    })?;
+                    Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                }
+            }
+
+            "fillna" => {
+                if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: 0,
+                    }));
+                }
+
+                // Check if first arg is a string (method name) or a value
+                match &args[0] {
+                    Value::String(s) if s.as_str() == "forward" || s.as_str() == "ffill" => {
+                        let result = df.fillna_forward().map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    Value::String(s) if s.as_str() == "backward" || s.as_str() == "bfill" => {
+                        let result = df.fillna_backward().map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    Value::Map(map) => {
+                        // Column-specific fill values: df.fillna({col: value, ...})
+                        let map_ref = map.borrow();
+                        let mut column_values = std::collections::HashMap::new();
+                        for (k, v) in map_ref.iter() {
+                            if let crate::bytecode::HashableValue::String(col_name) = k {
+                                column_values.insert(col_name.to_string(), v.clone());
+                            }
+                        }
+                        drop(map_ref);
+                        let result = df.fillna_map(&column_values).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    fill_value => {
+                        // Constant fill value: df.fillna(0) or df.fillna("N/A")
+                        let result = df.fillna(fill_value).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                }
+            }
+
+            // Reshape operations
+            "transpose" | "T" => {
+                let result = df.transpose().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            "explode" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(column) => {
+                        let result = df.explode(column.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "explode",
+                    })),
+                }
+            }
+
+            "melt" => {
+                // df.melt(id_vars...) or df.melt(id_vars, value_vars)
+                // Collect id_vars (strings), optionally followed by a list for value_vars
+                let mut id_vars: Vec<String> = Vec::new();
+                let mut value_vars: Vec<String> = Vec::new();
+
+                for arg in args {
+                    match arg {
+                        Value::String(s) => id_vars.push(s.to_string()),
+                        Value::List(list) => {
+                            // If we encounter a list, it's value_vars
+                            let borrowed = list.borrow();
+                            for v in borrowed.iter() {
+                                if let Value::String(s) = v {
+                                    value_vars.push(s.to_string());
+                                }
+                            }
+                        }
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String or List",
+                                got: arg.type_name(),
+                                operation: "melt",
+                            }));
+                        }
+                    }
+                }
+
+                let id_refs: Vec<&str> = id_vars.iter().map(String::as_str).collect();
+                let val_refs: Vec<&str> = value_vars.iter().map(String::as_str).collect();
+
+                let result = df.melt(&id_refs, &val_refs, None, None).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            "stack" => {
+                // df.stack() or df.stack("col1", "col2", ...)
+                let col_names: Result<Vec<&str>, _> = args
+                    .iter()
+                    .map(|v| match v {
+                        Value::String(s) => Ok(s.as_str()),
+                        _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: v.type_name(),
+                            operation: "stack",
+                        })),
+                    })
+                    .collect();
+                let col_names = col_names?;
+                let result = df.stack(&col_names).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            "unstack" => {
+                // df.unstack(index_col, column_col, value_col)
+                if args.len() != 3 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 3,
+                        got: args.len() as u8,
+                    }));
+                }
+                match (&args[0], &args[1], &args[2]) {
+                    (Value::String(index), Value::String(columns), Value::String(values)) => {
+                        let result = df.unstack(index.as_str(), columns.as_str(), values.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "unstack",
+                    })),
+                }
+            }
+
+            "pivot" => {
+                // df.pivot(index, columns, values)
+                if args.len() != 3 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 3,
+                        got: args.len() as u8,
+                    }));
+                }
+                match (&args[0], &args[1], &args[2]) {
+                    (Value::String(index), Value::String(columns), Value::String(values)) => {
+                        let result = df.pivot(index.as_str(), columns.as_str(), values.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "pivot",
+                    })),
+                }
+            }
+
+            "pivot_table" => {
+                // df.pivot_table(index, columns, values, aggfunc)
+                if args.len() != 4 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 4,
+                        got: args.len() as u8,
+                    }));
+                }
+                match (&args[0], &args[1], &args[2], &args[3]) {
+                    (Value::String(index), Value::String(columns), Value::String(values), Value::String(aggfunc)) => {
+                        let result = df.pivot_table(
+                            index.as_str(),
+                            columns.as_str(),
+                            values.as_str(),
+                            aggfunc.as_str()
+                        ).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "pivot_table",
+                    })),
+                }
+            }
+
+            // =========================================================
+            // Column Operations (11.5.1, 11.5.2)
+            // =========================================================
+
+            "add_column" => {
+                // df.add_column(name, values) or df.add_column(name, closure)
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+
+                let name = match &args[0] {
+                    Value::String(s) => s.to_string(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: args[0].type_name(),
+                            operation: "add_column",
+                        }));
+                    }
+                };
+
+                match &args[1] {
+                    // df.add_column("col", [1, 2, 3]) - values as list
+                    Value::List(list) => {
+                        let values = list.borrow().clone();
+                        let result = df.add_column_from_values(&name, &values).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    // df.add_column("col", series) - values as Series
+                    Value::Series(series) => {
+                        // Clone the series and rename it
+                        let cloned: Series = Series::clone(series);
+                        let renamed = cloned.rename(&name);
+                        let result = df.add_column(renamed).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    // df.add_column("col", |row| row["a"] + row["b"]) - computed column
+                    Value::Closure(closure) => {
+                        let mut values: Vec<Value> = Vec::with_capacity(df.num_rows());
+                        for row_result in df.iter_rows() {
+                            let row = row_result.map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                            })?;
+                            let result = self.call_closure_sync(closure.clone(), vec![row])?;
+                            values.push(result);
+                        }
+                        let result = df.add_column_from_values(&name, &values).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "List, Series, or Function",
+                        got: args[1].type_name(),
+                        operation: "add_column",
+                    })),
+                }
+            }
+
+            // =========================================================
+            // Apply/Transform (11.5.3, 11.5.4)
+            // =========================================================
+
+            "apply" => {
+                // df.apply(closure) - apply function to each row
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+
+                let closure = match &args[0] {
+                    Value::Closure(c) => c.clone(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Function",
+                            got: args[0].type_name(),
+                            operation: "apply",
+                        }));
+                    }
+                };
+
+                // Apply closure to each row, collect results
+                let mut results: Vec<Value> = Vec::with_capacity(df.num_rows());
+                for row_result in df.iter_rows() {
+                    let row = row_result.map_err(|e| {
+                        self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                    })?;
+                    let result = self.call_closure_sync(closure.clone(), vec![row])?;
+                    results.push(result);
+                }
+
+                // Return as a list (each element is the closure result for that row)
+                Ok(Value::list(results))
+            }
+
+            "transform" => {
+                // df.transform(column, closure) - transform a single column
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+
+                let col_name = match &args[0] {
+                    Value::String(s) => s.to_string(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: args[0].type_name(),
+                            operation: "transform",
+                        }));
+                    }
+                };
+
+                let closure = match &args[1] {
+                    Value::Closure(c) => c.clone(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Function",
+                            got: args[1].type_name(),
+                            operation: "transform",
+                        }));
+                    }
+                };
+
+                // Get the column to transform
+                let series = df.column(&col_name).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+
+                // Transform each value
+                let mut new_values: Vec<Value> = Vec::with_capacity(series.len());
+                for i in 0..series.len() {
+                    let val = series.get(i).map_err(|e| {
+                        self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                    })?;
+                    let transformed = self.call_closure_sync(closure.clone(), vec![val])?;
+                    new_values.push(transformed);
+                }
+
+                // Create new Series and replace in DataFrame
+                let new_series = Series::from_values(&col_name, &new_values).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+
+                // Build new DataFrame with transformed column
+                let mut columns: Vec<Series> = Vec::new();
+                for name in df.columns() {
+                    if name == col_name {
+                        columns.push(new_series.clone());
+                    } else {
+                        let col = df.column(&name).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        columns.push(col);
+                    }
+                }
+
+                let result = DataFrame::from_series(columns).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // =========================================================
+            // Append (11.5.6)
+            // =========================================================
+
+            "append" => {
+                // df.append(other_df)
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+
+                let other_df = match &args[0] {
+                    Value::DataFrame(df) => df.clone(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "DataFrame",
+                            got: args[0].type_name(),
+                            operation: "append",
+                        }));
+                    }
+                };
+
+                let result = df.append(&other_df).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // =========================================================
+            // Merge (11.5.7)
+            // =========================================================
+
+            "merge" => {
+                // df.merge(other, on_columns, how, [left_suffix], [right_suffix])
+                // Minimum 3 args: other, on, how
+                // Optional: left_suffix, right_suffix
+                if args.len() < 3 || args.len() > 5 {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "merge expects 3-5 arguments: other, on_columns, how, [left_suffix], [right_suffix]".to_string()
+                    )));
+                }
+
+                let other_df = match &args[0] {
+                    Value::DataFrame(df) => df.clone(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "DataFrame",
+                            got: args[0].type_name(),
+                            operation: "merge",
+                        }));
+                    }
+                };
+
+                // Parse on columns - can be a single string or list of strings
+                let on_columns: Vec<String> = match &args[1] {
+                    Value::String(s) => vec![s.to_string()],
+                    Value::List(list) => {
+                        let borrowed = list.borrow();
+                        borrowed.iter().filter_map(|v| {
+                            if let Value::String(s) = v {
+                                Some(s.to_string())
+                            } else {
+                                None
+                            }
+                        }).collect()
+                    }
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String or List",
+                            got: args[1].type_name(),
+                            operation: "merge",
+                        }));
+                    }
+                };
+
+                let how = match &args[2] {
+                    Value::String(s) => s.to_string(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: args[2].type_name(),
+                            operation: "merge",
+                        }));
+                    }
+                };
+
+                let left_suffix = if args.len() > 3 {
+                    match &args[3] {
+                        Value::String(s) => s.to_string(),
+                        _ => "_x".to_string(),
+                    }
+                } else {
+                    "_x".to_string()
+                };
+
+                let right_suffix = if args.len() > 4 {
+                    match &args[4] {
+                        Value::String(s) => s.to_string(),
+                        _ => "_y".to_string(),
+                    }
+                } else {
+                    "_y".to_string()
+                };
+
+                let on_refs: Vec<&str> = on_columns.iter().map(String::as_str).collect();
+                let result = df.merge(&other_df, &on_refs, &how, (&left_suffix, &right_suffix)).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // =========================================================
+            // Cross Join (11.5.8)
+            // =========================================================
+
+            "cross_join" => {
+                // df.cross_join(other_df)
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+
+                let other_df = match &args[0] {
+                    Value::DataFrame(df) => df.clone(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "DataFrame",
+                            got: args[0].type_name(),
+                            operation: "cross_join",
+                        }));
+                    }
+                };
+
+                let result = df.cross_join(&other_df).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // =========================================================
+            // Index Operations (11.5.9, 11.5.10)
+            // =========================================================
+
+            "reset_index" => {
+                // df.reset_index()
+                let result = df.reset_index().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            "set_index" => {
+                // df.set_index(column)
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+
+                let column = match &args[0] {
+                    Value::String(s) => s.to_string(),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: args[0].type_name(),
+                            operation: "set_index",
+                        }));
+                    }
+                };
+
+                let result = df.set_index(&column).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+
+            // Type conversion
+            "cast" => {
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+                match (&args[0], &args[1]) {
+                    (Value::String(column), Value::String(target_type)) => {
+                        let result = df.cast(column.as_str(), target_type.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::DataFrame(std::sync::Arc::new(result)))
+                    }
+                    (Value::String(_), _) => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[1].type_name(),
+                        operation: "cast",
+                    })),
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "cast",
+                    })),
+                }
+            }
+
             _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
                 type_name: "DataFrame".to_string(),
                 field: method.to_string(),
@@ -4453,6 +5567,31 @@ impl VM {
             "dtype" | "data_type" => Ok(Value::string(format!("{:?}", series.data_type()))),
             "null_count" => Ok(Value::Int(series.null_count() as i64)),
             "count" => Ok(Value::Int(series.count() as i64)),
+            "memory_usage" => {
+                let stats = series.memory_usage();
+                let mut map = HashMap::new();
+                map.insert(
+                    HashableValue::String(Rc::new("num_rows".to_string())),
+                    Value::Int(stats.num_rows as i64),
+                );
+                map.insert(
+                    HashableValue::String(Rc::new("data_bytes".to_string())),
+                    Value::Int(stats.data_bytes as i64),
+                );
+                map.insert(
+                    HashableValue::String(Rc::new("total_bytes".to_string())),
+                    Value::Int(stats.total_bytes as i64),
+                );
+                map.insert(
+                    HashableValue::String(Rc::new("bytes_per_row".to_string())),
+                    Value::Float(stats.bytes_per_row),
+                );
+                map.insert(
+                    HashableValue::String(Rc::new("total_formatted".to_string())),
+                    Value::string(stats.total_formatted()),
+                );
+                Ok(Value::Map(Rc::new(RefCell::new(map))))
+            }
 
             // Element access
             "get" => {
@@ -4505,6 +5644,68 @@ impl VM {
             "max" => series.max().map_err(|e| {
                 self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
             }),
+            "std" | "stddev" => series.std().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+            "var" | "variance" => series.var().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+            "median" => series.median().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+            "mode" => series.mode().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+            "skew" | "skewness" => series.skew().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+            "kurtosis" => series.kurtosis().map_err(|e| {
+                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+            }),
+            "quantile" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let q = match &args[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Float",
+                            got: args[0].type_name(),
+                            operation: "quantile",
+                        }));
+                    }
+                };
+                series.quantile(q).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })
+            }
+            "percentile" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let p = match &args[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Float",
+                            got: args[0].type_name(),
+                            operation: "percentile",
+                        }));
+                    }
+                };
+                series.percentile(p).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })
+            }
 
             // Conversion
             "to_list" | "to_values" => {
@@ -4730,8 +5931,442 @@ impl VM {
                 }
             }
 
+            "str_pad" | "pad" => {
+                if args.len() != 3 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 3,
+                        got: args.len() as u8,
+                    }));
+                }
+                match (&args[0], &args[1], &args[2]) {
+                    (Value::Int(width), Value::String(side), Value::String(pad_char)) => {
+                        let ch = pad_char.chars().next().unwrap_or(' ');
+                        let result = series
+                            .str_pad(*width as usize, side.as_str(), ch)
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                            })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int, String, String",
+                        got: args[0].type_name(),
+                        operation: "str_pad",
+                    })),
+                }
+            }
+
+            "str_extract" | "extract" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(pattern) => {
+                        let result = series.str_extract(pattern.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "str_extract",
+                    })),
+                }
+            }
+
+            "str_match" | "match_regex" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(pattern) => {
+                        let result = series.str_match(pattern.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "str_match",
+                    })),
+                }
+            }
+
+            "str_cat" | "cat" => {
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+                match (&args[0], &args[1]) {
+                    (Value::Series(other), Value::String(sep)) => {
+                        let result = series.str_cat(other.as_ref(), sep.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Series, String",
+                        got: args[0].type_name(),
+                        operation: "str_cat",
+                    })),
+                }
+            }
+
+            "str_slice" | "slice" => {
+                if args.is_empty() || args.len() > 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Int(start) => {
+                        let end = if args.len() == 2 {
+                            match &args[1] {
+                                Value::Int(e) => Some(*e),
+                                _ => {
+                                    return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                        expected: "Int",
+                                        got: args[1].type_name(),
+                                        operation: "str_slice",
+                                    }))
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        let result = series.str_slice(*start, end).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "str_slice",
+                    })),
+                }
+            }
+
+            // ===== Window Functions: Cumulative Operations =====
+            "cumsum" => {
+                let result = series.cumsum().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            "cummax" => {
+                let result = series.cummax().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            "cummin" => {
+                let result = series.cummin().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            "cumprod" => {
+                let result = series.cumprod().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            // ===== Window Functions: Lag/Lead Operations =====
+            "shift" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Int(n) => {
+                        let result = series.shift(*n).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "shift",
+                    })),
+                }
+            }
+            "lag" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Int(n) => {
+                        let result = series.lag(*n).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "lag",
+                    })),
+                }
+            }
+            "lead" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Int(n) => {
+                        let result = series.lead(*n).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "lead",
+                    })),
+                }
+            }
+            "diff" => {
+                let n = if args.is_empty() {
+                    1
+                } else {
+                    match &args[0] {
+                        Value::Int(v) => *v,
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "Int",
+                                got: args[0].type_name(),
+                                operation: "diff",
+                            }))
+                        }
+                    }
+                };
+                let result = series.diff(n).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            "pct_change" => {
+                let n = if args.is_empty() {
+                    1
+                } else {
+                    match &args[0] {
+                        Value::Int(v) => *v,
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "Int",
+                                got: args[0].type_name(),
+                                operation: "pct_change",
+                            }))
+                        }
+                    }
+                };
+                let result = series.pct_change(n).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            // ===== Window Functions: Rolling Operations =====
+            "rolling" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                match &args[0] {
+                    Value::Int(window_size) => {
+                        if *window_size < 1 {
+                            return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                                "window_size must be at least 1".to_string(),
+                            )));
+                        }
+                        let rolling = series.rolling(*window_size as usize);
+                        Ok(Value::Rolling(std::sync::Arc::new(rolling)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "rolling",
+                    })),
+                }
+            }
+
+            // ===== Missing Data Handling =====
+            "dropna" => {
+                let result = series.dropna().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "fillna" => {
+                if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: 0,
+                    }));
+                }
+                // Check if first arg is a string (method name) or a value
+                match &args[0] {
+                    Value::String(s) if s.as_str() == "forward" || s.as_str() == "ffill" => {
+                        let result = series.fillna_forward().map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    Value::String(s) if s.as_str() == "backward" || s.as_str() == "bfill" => {
+                        let result = series.fillna_backward().map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    fill_value => {
+                        let result = series.fillna(fill_value).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                }
+            }
+
+            "interpolate" => {
+                let result = series.interpolate().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            // ===== Type Conversion Methods =====
+            "to_int" | "to_integer" | "as_int" => {
+                let result = series.to_int().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "to_float" | "to_double" | "as_float" => {
+                let result = series.to_float().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "to_str" | "to_string" | "as_string" => {
+                let result = series.to_str().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "to_bool" | "to_boolean" | "as_bool" => {
+                let result = series.to_bool().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+
+            "to_datetime" | "to_date" | "parse_datetime" => {
+                if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: 0,
+                    }));
+                }
+                match &args[0] {
+                    Value::String(format) => {
+                        let result = series.to_datetime(format.as_str()).map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?;
+                        Ok(Value::Series(std::sync::Arc::new(result)))
+                    }
+                    _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "to_datetime",
+                    })),
+                }
+            }
+
             _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
                 type_name: "Series".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
+    fn rolling_method(
+        &self,
+        rolling: &std::sync::Arc<Rolling>,
+        method: &str,
+        _args: &[Value],
+    ) -> RuntimeResult<Value> {
+        match method {
+            // Rolling aggregation methods - all return Series
+            "sum" => {
+                let result = rolling.sum().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            "mean" | "avg" => {
+                let result = rolling.mean().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            "min" => {
+                let result = rolling.min().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            "max" => {
+                let result = rolling.max().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            "std" | "stddev" => {
+                let result = rolling.std().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            "var" | "variance" => {
+                let result = rolling.var().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::Series(std::sync::Arc::new(result)))
+            }
+            // Info methods
+            "window_size" => Ok(Value::Int(rolling.window_size() as i64)),
+
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "Rolling".to_string(),
                 field: method.to_string(),
             })),
         }
@@ -4814,6 +6449,41 @@ impl VM {
             "last" => {
                 let (column, output) = self.parse_simple_agg_args(args, "last")?;
                 let result = gdf.last(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "std" | "stddev" => {
+                let (column, output) = self.parse_simple_agg_args(args, "std")?;
+                let result = gdf.std(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "var" | "variance" => {
+                let (column, output) = self.parse_simple_agg_args(args, "var")?;
+                let result = gdf.var(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "median" => {
+                let (column, output) = self.parse_simple_agg_args(args, "median")?;
+                let result = gdf.median(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "mode" => {
+                let (column, output) = self.parse_simple_agg_args(args, "mode")?;
+                let result = gdf.mode(&column, output.as_deref()).map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(result)))
+            }
+            "count_distinct" | "nunique" => {
+                let (column, output) = self.parse_simple_agg_args(args, "count_distinct")?;
+                let result = gdf.count_distinct(&column, output.as_deref()).map_err(|e| {
                     self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
                 })?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
@@ -5412,6 +7082,509 @@ impl VM {
                 field: method.to_string(),
             })),
         }
+    }
+
+    // ============================================================================
+    // Expectation methods (Test.expect(value).to_be(), etc.)
+    // ============================================================================
+
+    fn expectation_method(
+        &self,
+        expectation: &Rc<RefCell<ExpectationState>>,
+        method: &str,
+        args: &[Value],
+    ) -> RuntimeResult<Value> {
+        let exp = expectation.borrow();
+        let actual = &*exp.actual;
+        let negated = exp.negated;
+
+        match method {
+            // Negation
+            "not" => {
+                if !args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 0,
+                        got: args.len() as u8,
+                    }));
+                }
+                // Return a new negated expectation
+                Ok(Value::negated_expectation(actual.clone()))
+            }
+
+            // Equality matchers
+            "to_be" | "toBe" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let expected = &args[0];
+                let passes = actual == expected;
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {:?} {}to be {:?}",
+                        actual, not_str, expected
+                    ))))
+                }
+            }
+
+            "to_equal" | "toEqual" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let expected = &args[0];
+                // Deep equality - use PartialEq which handles structural comparison
+                let passes = actual == expected;
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {:?} {}to equal {:?}",
+                        actual, not_str, expected
+                    ))))
+                }
+            }
+
+            // Truthiness matchers
+            "to_be_truthy" | "toBeTruthy" => {
+                if !args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 0,
+                        got: args.len() as u8,
+                    }));
+                }
+                let passes = actual.is_truthy();
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {:?} {}to be truthy",
+                        actual, not_str
+                    ))))
+                }
+            }
+
+            "to_be_falsy" | "toBeFalsy" => {
+                if !args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 0,
+                        got: args.len() as u8,
+                    }));
+                }
+                let passes = !actual.is_truthy();
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {:?} {}to be falsy",
+                        actual, not_str
+                    ))))
+                }
+            }
+
+            // Null matchers
+            "to_be_null" | "toBeNull" => {
+                if !args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 0,
+                        got: args.len() as u8,
+                    }));
+                }
+                let passes = matches!(actual, Value::Null);
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {:?} {}to be null",
+                        actual, not_str
+                    ))))
+                }
+            }
+
+            // Type matchers
+            "to_be_type" | "toBeType" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let expected_type = match &args[0] {
+                    Value::String(s) => s.as_str(),
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "to_be_type",
+                    })),
+                };
+                let actual_type = actual.type_name();
+                let passes = actual_type.eq_ignore_ascii_case(expected_type);
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {:?} {}to be type '{}', but was '{}'",
+                        actual, not_str, expected_type, actual_type
+                    ))))
+                }
+            }
+
+            // Numeric comparison matchers
+            "to_be_greater_than" | "toBeGreaterThan" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let (actual_num, expected_num) = self.get_comparable_numbers(actual, &args[0])?;
+                let passes = actual_num > expected_num;
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {} {}to be greater than {}",
+                        actual_num, not_str, expected_num
+                    ))))
+                }
+            }
+
+            "to_be_less_than" | "toBeLessThan" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let (actual_num, expected_num) = self.get_comparable_numbers(actual, &args[0])?;
+                let passes = actual_num < expected_num;
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {} {}to be less than {}",
+                        actual_num, not_str, expected_num
+                    ))))
+                }
+            }
+
+            "to_be_greater_than_or_equal" | "toBeGreaterThanOrEqual" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let (actual_num, expected_num) = self.get_comparable_numbers(actual, &args[0])?;
+                let passes = actual_num >= expected_num;
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {} {}to be greater than or equal to {}",
+                        actual_num, not_str, expected_num
+                    ))))
+                }
+            }
+
+            "to_be_less_than_or_equal" | "toBeLessThanOrEqual" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let (actual_num, expected_num) = self.get_comparable_numbers(actual, &args[0])?;
+                let passes = actual_num <= expected_num;
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {} {}to be less than or equal to {}",
+                        actual_num, not_str, expected_num
+                    ))))
+                }
+            }
+
+            // Contains matcher (for strings, lists, maps)
+            "to_contain" | "toContain" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let expected = &args[0];
+                let passes = match actual {
+                    Value::String(s) => match expected {
+                        Value::String(sub) => s.contains(sub.as_str()),
+                        _ => false,
+                    },
+                    Value::List(list) => list.borrow().contains(expected),
+                    Value::Map(map) => {
+                        if let Ok(key) = HashableValue::try_from(expected.clone()) {
+                            map.borrow().contains_key(&key)
+                        } else {
+                            false
+                        }
+                    }
+                    Value::Set(set) => {
+                        if let Ok(key) = HashableValue::try_from(expected.clone()) {
+                            set.borrow().contains(&key)
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
+                };
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {:?} {}to contain {:?}",
+                        actual, not_str, expected
+                    ))))
+                }
+            }
+
+            // Length matcher
+            "to_have_length" | "toHaveLength" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let expected_len = match &args[0] {
+                    Value::Int(n) => *n as usize,
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Int",
+                        got: args[0].type_name(),
+                        operation: "to_have_length",
+                    })),
+                };
+                let actual_len = match actual {
+                    Value::String(s) => s.len(),
+                    Value::List(list) => list.borrow().len(),
+                    Value::Map(map) => map.borrow().len(),
+                    Value::Set(set) => set.borrow().len(),
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String, List, Map, or Set",
+                        got: actual.type_name(),
+                        operation: "to_have_length",
+                    })),
+                };
+                let passes = actual_len == expected_len;
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected {:?} {}to have length {}, but had length {}",
+                        actual, not_str, expected_len, actual_len
+                    ))))
+                }
+            }
+
+            // Regex match
+            "to_match" | "toMatch" => {
+                if args.len() != 1 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 1,
+                        got: args.len() as u8,
+                    }));
+                }
+                let actual_str = match actual {
+                    Value::String(s) => s.as_str(),
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: actual.type_name(),
+                        operation: "to_match",
+                    })),
+                };
+                let passes = match &args[0] {
+                    Value::String(pattern) => {
+                        regex::Regex::new(pattern).map(|re| re.is_match(actual_str)).unwrap_or(false)
+                    }
+                    Value::Regex(re) => re.is_match(actual_str),
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String or Regex",
+                        got: args[0].type_name(),
+                        operation: "to_match",
+                    })),
+                };
+                let passes = if negated { !passes } else { passes };
+
+                if passes {
+                    Ok(Value::Null)
+                } else {
+                    let not_str = if negated { "not " } else { "" };
+                    Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "Expected '{}' {}to match pattern {:?}",
+                        actual_str, not_str, args[0]
+                    ))))
+                }
+            }
+
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "Expectation".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
+    // ============================================================================
+    // Test suite methods (Test.describe(), Test.it())
+    // ============================================================================
+
+    /// Handle Test.describe() and Test.it() which need closure execution
+    fn test_suite_method(&mut self, method: &str, args: &[Value]) -> RuntimeResult<Value> {
+        match method {
+            "describe" => {
+                // Test.describe(name, closure) - Execute a test suite
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+                let name = match &args[0] {
+                    Value::String(s) => s.clone(),
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "describe",
+                    })),
+                };
+                let closure = match &args[1] {
+                    Value::Closure(c) => c.clone(),
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Function",
+                        got: args[1].type_name(),
+                        operation: "describe",
+                    })),
+                };
+
+                // Print the describe block header
+                println!("\n  {}", name);
+
+                // Execute the closure (which should contain it() calls)
+                self.call_closure_sync(closure, vec![])?;
+
+                Ok(Value::Null)
+            }
+
+            "it" => {
+                // Test.it(name, closure) - Execute a single test case
+                if args.len() != 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
+                        expected: 2,
+                        got: args.len() as u8,
+                    }));
+                }
+                let name = match &args[0] {
+                    Value::String(s) => s.clone(),
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: args[0].type_name(),
+                        operation: "it",
+                    })),
+                };
+                let closure = match &args[1] {
+                    Value::Closure(c) => c.clone(),
+                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "Function",
+                        got: args[1].type_name(),
+                        operation: "it",
+                    })),
+                };
+
+                // Execute the test closure
+                let result = self.call_closure_sync(closure, vec![]);
+
+                match result {
+                    Ok(_) => {
+                        println!("    ✓ {}", name);
+                        Ok(Value::Null)
+                    }
+                    Err(e) => {
+                        println!("    ✗ {}", name);
+                        println!("      Error: {}", e);
+                        // Re-throw the error to fail the test
+                        Err(e)
+                    }
+                }
+            }
+
+            _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                type_name: "Test".to_string(),
+                field: method.to_string(),
+            })),
+        }
+    }
+
+    /// Helper to convert two values to comparable f64 numbers
+    fn get_comparable_numbers(&self, a: &Value, b: &Value) -> RuntimeResult<(f64, f64)> {
+        let a_num = match a {
+            Value::Int(n) => *n as f64,
+            Value::Float(n) => *n,
+            _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                expected: "Int or Float",
+                got: a.type_name(),
+                operation: "numeric comparison",
+            })),
+        };
+        let b_num = match b {
+            Value::Int(n) => *n as f64,
+            Value::Float(n) => *n,
+            _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                expected: "Int or Float",
+                got: b.type_name(),
+                operation: "numeric comparison",
+            })),
+        };
+        Ok((a_num, b_num))
     }
 
     // ===== Field access =====

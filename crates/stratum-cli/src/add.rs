@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
+use stratum_pkg::registry::GitHubPackage;
 use stratum_pkg::{Dependency, DependencySpec, Manifest, MANIFEST_FILE};
 
 /// Which section to add the dependency to.
@@ -18,7 +19,7 @@ pub enum DependencySection {
 /// Options for adding a dependency.
 #[derive(Debug)]
 pub struct AddOptions {
-    /// Package name (may include @version suffix).
+    /// Package name (may include @version suffix or github: prefix).
     pub package: String,
     /// Which dependency section to add to.
     pub section: DependencySection,
@@ -26,6 +27,8 @@ pub struct AddOptions {
     pub path: Option<String>,
     /// Git repository URL.
     pub git: Option<String>,
+    /// GitHub shorthand (user/repo).
+    pub github: Option<String>,
     /// Git branch name.
     pub branch: Option<String>,
     /// Git tag name.
@@ -67,10 +70,13 @@ fn parse_package_spec(spec: &str) -> (String, Option<String>) {
 fn build_dependency_spec(
     version: Option<String>,
     options: &AddOptions,
+    git_url: Option<String>,
 ) -> DependencySpec {
     // If only a version is specified with no other options, use simple format
     if options.path.is_none()
         && options.git.is_none()
+        && options.github.is_none()
+        && git_url.is_none()
         && options.features.is_empty()
         && !options.optional
         && !options.no_default_features
@@ -81,10 +87,13 @@ fn build_dependency_spec(
     }
 
     // Use detailed format
+    // Prefer explicit git URL, then github shorthand converted to URL
+    let effective_git = git_url.or_else(|| options.git.clone());
+
     DependencySpec::Detailed(Dependency {
         version,
         path: options.path.clone(),
-        git: options.git.clone(),
+        git: effective_git,
         branch: options.branch.clone(),
         tag: options.tag.clone(),
         rev: options.rev.clone(),
@@ -111,14 +120,34 @@ pub fn add_dependency(options: AddOptions) -> Result<()> {
     let mut manifest = Manifest::from_path(manifest_path)
         .context("Failed to read manifest")?;
 
-    // Parse package specification
-    let (name, version) = parse_package_spec(&options.package);
+    // Check for github: prefix in package spec or --github flag
+    let (name, version, git_url) = if options.package.starts_with("github:") {
+        // Parse GitHub package spec like "github:user/repo@v1.0.0"
+        let github_pkg = GitHubPackage::parse(&options.package)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let pkg_name = github_pkg.repo.clone();
+        let git_url = github_pkg.git_url();
+        // Use version as tag if specified
+        (pkg_name, None, Some(git_url))
+    } else if let Some(ref github_shorthand) = options.github {
+        // Handle --github user/repo flag
+        let spec = format!("github:{github_shorthand}");
+        let github_pkg = GitHubPackage::parse(&spec)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let (pkg_name, version) = parse_package_spec(&options.package);
+        let git_url = github_pkg.git_url();
+        (pkg_name, version, Some(git_url))
+    } else {
+        // Standard package spec
+        let (name, version) = parse_package_spec(&options.package);
+        (name, version, None)
+    };
 
     // Validate the package name
     validate_dependency_name(&name)?;
 
     // Build the dependency spec
-    let dep_spec = build_dependency_spec(version, &options);
+    let dep_spec = build_dependency_spec(version, &options, git_url);
 
     // Get the appropriate dependency map
     let deps = match options.section {
@@ -257,6 +286,7 @@ mod tests {
             section: DependencySection::Dependencies,
             path: None,
             git: None,
+            github: None,
             branch: None,
             tag: None,
             rev: None,
@@ -265,7 +295,7 @@ mod tests {
             no_default_features: false,
         };
 
-        let spec = build_dependency_spec(Some("1.0".to_string()), &options);
+        let spec = build_dependency_spec(Some("1.0".to_string()), &options, None);
         assert!(matches!(spec, DependencySpec::Simple(v) if v == "1.0"));
     }
 
@@ -276,6 +306,7 @@ mod tests {
             section: DependencySection::Dependencies,
             path: None,
             git: None,
+            github: None,
             branch: None,
             tag: None,
             rev: None,
@@ -284,7 +315,7 @@ mod tests {
             no_default_features: false,
         };
 
-        let spec = build_dependency_spec(Some("2.1".to_string()), &options);
+        let spec = build_dependency_spec(Some("2.1".to_string()), &options, None);
         match spec {
             DependencySpec::Detailed(dep) => {
                 assert_eq!(dep.version, Some("2.1".to_string()));
@@ -301,6 +332,7 @@ mod tests {
             section: DependencySection::Dependencies,
             path: Some("../local-lib".to_string()),
             git: None,
+            github: None,
             branch: None,
             tag: None,
             rev: None,
@@ -309,7 +341,7 @@ mod tests {
             no_default_features: false,
         };
 
-        let spec = build_dependency_spec(None, &options);
+        let spec = build_dependency_spec(None, &options, None);
         match spec {
             DependencySpec::Detailed(dep) => {
                 assert_eq!(dep.path, Some("../local-lib".to_string()));
@@ -326,6 +358,7 @@ mod tests {
             section: DependencySection::Dependencies,
             path: None,
             git: Some("https://github.com/example/lib".to_string()),
+            github: None,
             branch: Some("main".to_string()),
             tag: None,
             rev: None,
@@ -334,7 +367,7 @@ mod tests {
             no_default_features: false,
         };
 
-        let spec = build_dependency_spec(None, &options);
+        let spec = build_dependency_spec(None, &options, None);
         match spec {
             DependencySpec::Detailed(dep) => {
                 assert_eq!(dep.git, Some("https://github.com/example/lib".to_string()));

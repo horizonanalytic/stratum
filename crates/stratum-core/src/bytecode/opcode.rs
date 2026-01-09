@@ -186,6 +186,10 @@ pub enum OpCode {
     /// Operand: u16 entry count (key-value pairs on stack)
     NewMap,
 
+    /// Create a new set
+    /// Operand: u16 element count (elements are on stack)
+    NewSet,
+
     /// Create a new struct instance
     /// Operand 1: u16 constant index (struct type)
     /// Operand 2: u16 field count
@@ -333,6 +337,7 @@ impl OpCode {
             | OpCode::GetProperty
             | OpCode::NewList
             | OpCode::NewMap
+            | OpCode::NewSet
             | OpCode::NewStruct
             | OpCode::IterNext
             | OpCode::StringConcat
@@ -400,6 +405,7 @@ impl OpCode {
             OpCode::SetIndex => "SET_INDEX",
             OpCode::NewList => "NEW_LIST",
             OpCode::NewMap => "NEW_MAP",
+            OpCode::NewSet => "NEW_SET",
             OpCode::NewStruct => "NEW_STRUCT",
             OpCode::GetIter => "GET_ITER",
             OpCode::IterNext => "ITER_NEXT",
@@ -480,25 +486,26 @@ impl TryFrom<u8> for OpCode {
             42 => Ok(OpCode::SetIndex),
             43 => Ok(OpCode::NewList),
             44 => Ok(OpCode::NewMap),
-            45 => Ok(OpCode::NewStruct),
-            46 => Ok(OpCode::GetIter),
-            47 => Ok(OpCode::IterNext),
-            48 => Ok(OpCode::Throw),
-            49 => Ok(OpCode::PushHandler),
-            50 => Ok(OpCode::PopHandler),
-            51 => Ok(OpCode::StringConcat),
-            52 => Ok(OpCode::NewRange),
-            53 => Ok(OpCode::NewRangeInclusive),
-            54 => Ok(OpCode::IsNull),
-            55 => Ok(OpCode::IsInstance),
-            56 => Ok(OpCode::Invoke),
-            57 => Ok(OpCode::NewEnumVariant),
-            58 => Ok(OpCode::MatchVariant),
-            59 => Ok(OpCode::NullSafeGetField),
-            60 => Ok(OpCode::NullSafeGetIndex),
-            61 => Ok(OpCode::Await),
-            62 => Ok(OpCode::Breakpoint),
-            63 => Ok(OpCode::StateBinding),
+            45 => Ok(OpCode::NewSet),
+            46 => Ok(OpCode::NewStruct),
+            47 => Ok(OpCode::GetIter),
+            48 => Ok(OpCode::IterNext),
+            49 => Ok(OpCode::Throw),
+            50 => Ok(OpCode::PushHandler),
+            51 => Ok(OpCode::PopHandler),
+            52 => Ok(OpCode::StringConcat),
+            53 => Ok(OpCode::NewRange),
+            54 => Ok(OpCode::NewRangeInclusive),
+            55 => Ok(OpCode::IsNull),
+            56 => Ok(OpCode::IsInstance),
+            57 => Ok(OpCode::Invoke),
+            58 => Ok(OpCode::NewEnumVariant),
+            59 => Ok(OpCode::MatchVariant),
+            60 => Ok(OpCode::NullSafeGetField),
+            61 => Ok(OpCode::NullSafeGetIndex),
+            62 => Ok(OpCode::Await),
+            63 => Ok(OpCode::Breakpoint),
+            64 => Ok(OpCode::StateBinding),
             _ => Err(value),
         }
     }
@@ -511,7 +518,7 @@ mod tests {
     #[test]
     fn opcode_size_consistency() {
         // Every opcode should have a valid size >= 1
-        for i in 0..=63 {
+        for i in 0..=64 {
             if let Ok(op) = OpCode::try_from(i) {
                 assert!(op.size() >= 1, "OpCode {:?} has invalid size", op);
             }
@@ -521,7 +528,7 @@ mod tests {
     #[test]
     fn opcode_roundtrip() {
         // All opcodes should round-trip through u8
-        for i in 0..=63 {
+        for i in 0..=64 {
             if let Ok(op) = OpCode::try_from(i) {
                 assert_eq!(op as u8, i, "OpCode {:?} has wrong discriminant", op);
             }
