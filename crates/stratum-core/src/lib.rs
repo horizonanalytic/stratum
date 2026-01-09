@@ -55,6 +55,9 @@ pub mod doc;
 /// Garbage collection module - cycle detection and collection
 pub mod gc;
 
+/// Code coverage module - line and branch coverage tracking
+pub mod coverage;
+
 /// Test utilities - helpers for testing Stratum code
 pub mod testutil;
 
@@ -103,6 +106,12 @@ pub use data::{
     profiler_summary, record_allocation, record_deallocation,
     reset_profiler, set_profiler_gc_stats, detect_leaks,
     memory_categories, CategoryStats, LeakInfo, MemoryProfiler, MemoryStats,
+};
+
+/// Convenience re-export of coverage types
+pub use coverage::{
+    BranchInfo, CoverageCollector, CoverageFormat, CoverageSummary,
+    FileCoverage, FileCoverageSummary, FunctionCoverage, generate_report,
 };
 
 #[cfg(test)]

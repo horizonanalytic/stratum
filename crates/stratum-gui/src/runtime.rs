@@ -147,6 +147,26 @@ pub enum Message {
         dimension: String,
         value: String,
     },
+    /// Internal measure toggle (when no callback is registered)
+    /// Updates the element's internal selected_measures state
+    InternalMeasureToggle {
+        /// The measure name being toggled
+        measure: String,
+        /// Whether the measure is now selected
+        selected: bool,
+        /// Optional field path to update in state
+        field_path: Option<String>,
+    },
+    /// Internal dimension selection (when no callback is registered)
+    /// Updates the element's internal selection state
+    InternalDimensionSelect {
+        /// The dimension name
+        dimension: String,
+        /// The selected value (None = "All")
+        value: Option<String>,
+        /// Optional field path to update in state
+        field_path: Option<String>,
+    },
 
     // Theme events
     /// Set application theme by preset name
@@ -702,6 +722,7 @@ impl GuiRuntime {
                     key_release_callback: None,
                     context_menu: None,
                     root_element: root_element.clone(),
+                    selected_measures: Vec::new(),
                 };
 
                 (app, Task::none())
@@ -754,6 +775,8 @@ struct App {
     context_menu: Option<ContextMenuState>,
     /// Root GUI element tree to render (if provided)
     root_element: Option<Arc<GuiElement>>,
+    /// Internal state for selected measures (when no callback registered)
+    selected_measures: Vec<String>,
 }
 
 /// State for an active context menu
@@ -1284,6 +1307,52 @@ impl App {
             Message::HideContextMenu => {
                 self.context_menu = None;
             }
+
+            // Internal measure toggle - update internal state without callback
+            Message::InternalMeasureToggle {
+                measure,
+                selected,
+                field_path,
+            } => {
+                // Track the toggle in internal measure selection state
+                if selected {
+                    if !self.selected_measures.contains(&measure) {
+                        self.selected_measures.push(measure.clone());
+                    }
+                } else {
+                    self.selected_measures.retain(|m| m != &measure);
+                }
+
+                // If a field path is specified, also update that field in state
+                if let Some(field) = field_path {
+                    // Store as a list of strings in the state
+                    let measure_values: Vec<Value> = self
+                        .selected_measures
+                        .iter()
+                        .map(|m| Value::String(Rc::new(m.clone())))
+                        .collect();
+                    self.state
+                        .update_field(&field, Value::List(Rc::new(RefCell::new(measure_values))));
+                }
+            }
+
+            // Internal dimension selection - update internal state without callback
+            Message::InternalDimensionSelect {
+                dimension: _,
+                value,
+                field_path,
+            } => {
+                // If a field path is specified, update that field in state
+                if let Some(field) = field_path {
+                    let val = match value {
+                        Some(v) => Value::String(Rc::new(v)),
+                        None => Value::Null,
+                    };
+                    self.state.update_field(&field, val);
+                }
+                // Note: The actual selection state is maintained in the GuiElement's
+                // internal_selection Arc<RwLock<...>> which is updated directly in the closure
+            }
         }
         Task::none()
     }
@@ -1552,6 +1621,7 @@ mod tests {
             key_release_callback: None,
             context_menu: None,
             root_element: None,
+            selected_measures: Vec::new(),
         }
     }
 
@@ -1970,6 +2040,7 @@ mod tests {
             key_release_callback: None,
             context_menu: None,
             root_element: None,
+            selected_measures: Vec::new(),
         }
     }
 
@@ -2714,6 +2785,7 @@ mod tests {
             key_release_callback: None,
             context_menu: None,
             root_element: None,
+            selected_measures: Vec::new(),
         };
 
         // Initially no todos are completed

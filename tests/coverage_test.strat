@@ -1,0 +1,36 @@
+// Tests for coverage functionality
+
+#[test]
+fx test_arithmetic() {
+    let x = 1 + 2;
+    let y = x * 3;
+    assert(y == 9);
+}
+
+#[test]
+fx test_boolean_ops() {
+    let a = true;
+    let b = false;
+    assert(a);
+    assert(!b);
+}
+
+#[test]
+fx test_comparison() {
+    assert(5 > 3);
+    assert(3 < 5);
+    assert(4 == 4);
+}
+
+#[test]
+fx test_string_concat() {
+    let s = "hello" + " world";
+    assert(s == "hello world");
+}
+
+#[test]
+fx test_conditional() {
+    let x = 10;
+    let result = if x > 5 { "big" } else { "small" };
+    assert(result == "big");
+}

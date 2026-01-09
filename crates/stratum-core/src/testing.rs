@@ -5,6 +5,7 @@
 
 use crate::ast::{Function, Module};
 use crate::bytecode::Compiler;
+use crate::coverage::CoverageCollector;
 use crate::vm::VM;
 use std::time::{Duration, Instant};
 
@@ -62,6 +63,8 @@ pub struct TestSummary {
     pub duration: Duration,
     /// Individual test results
     pub results: Vec<TestResult>,
+    /// Aggregated coverage data (if coverage was enabled)
+    pub coverage: Option<CoverageCollector>,
 }
 
 impl TestSummary {
@@ -178,6 +181,8 @@ pub struct TestRunner {
     filter: Option<String>,
     /// Whether to show verbose output
     verbose: bool,
+    /// Whether to collect coverage data
+    coverage: bool,
 }
 
 impl TestRunner {
@@ -187,6 +192,7 @@ impl TestRunner {
         Self {
             filter: None,
             verbose: false,
+            coverage: false,
         }
     }
 
@@ -204,6 +210,13 @@ impl TestRunner {
         self
     }
 
+    /// Enable coverage collection
+    #[must_use]
+    pub fn with_coverage(mut self, coverage: bool) -> Self {
+        self.coverage = coverage;
+        self
+    }
+
     /// Run all tests in a module
     pub fn run_module(&self, module: &Module, source_name: &str) -> TestSummary {
         let tests = discover_tests(module);
@@ -214,6 +227,11 @@ impl TestRunner {
     /// Run a list of test cases
     pub fn run_tests(&self, tests: &[TestCase], source_name: &str) -> TestSummary {
         let mut summary = TestSummary::new();
+        let mut aggregated_coverage = if self.coverage {
+            Some(CoverageCollector::new())
+        } else {
+            None
+        };
 
         // First compile and run the module to register all functions
         // This is needed so test functions can call helper functions
@@ -221,10 +239,26 @@ impl TestRunner {
         for test in tests {
             // Create a fresh VM for each test
             let mut vm = VM::new();
+
+            // Enable coverage if requested
+            if self.coverage {
+                vm.enable_coverage();
+            }
+
             let result = run_test(test, source_name, &mut vm);
             summary.add(result);
+
+            // Collect coverage data from this test
+            if self.coverage {
+                if let Some(test_coverage) = vm.take_coverage() {
+                    if let Some(ref mut agg) = aggregated_coverage {
+                        agg.merge(&test_coverage);
+                    }
+                }
+            }
         }
 
+        summary.coverage = aggregated_coverage;
         summary
     }
 }

@@ -4022,4 +4022,284 @@ mod tests {
         let result = gui_set_corner_radius(&[]);
         assert!(result.is_err());
     }
+
+    // =========================================================================
+    // OLAP Cube Widget Tests
+    // =========================================================================
+
+    fn create_test_cube() -> Value {
+        use stratum_core::data::{DataFrame, Series, Cube, CubeAggFunc};
+        // Create a simple test DataFrame for the cube
+        let regions = Series::from_strings("region", vec!["North", "South", "North", "South"]);
+        let products = Series::from_strings("product", vec!["A", "A", "B", "B"]);
+        let revenue = Series::from_floats("revenue", vec![100.0, 150.0, 200.0, 250.0]);
+        let units = Series::from_ints("units", vec![10, 15, 20, 25]);
+
+        let df = DataFrame::from_series(vec![regions, products, revenue, units]).unwrap();
+
+        // Build a cube from the DataFrame
+        let cube = Cube::from_dataframe(&df)
+            .unwrap()
+            .dimension("region")
+            .unwrap()
+            .dimension("product")
+            .unwrap()
+            .measure("revenue", CubeAggFunc::Sum)
+            .unwrap()
+            .measure("units", CubeAggFunc::Sum)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        Value::Cube(Arc::new(cube))
+    }
+
+    #[test]
+    fn test_gui_cube_table_basic() {
+        let result = gui_cube_table(&[]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                assert!(matches!(gui_elem.kind, GuiElementKind::CubeTable(_)));
+            } else {
+                panic!("Failed to downcast to GuiElement");
+            }
+        } else {
+            panic!("Expected GuiElement");
+        }
+    }
+
+    #[test]
+    fn test_gui_cube_table_with_cube() {
+        let cube = create_test_cube();
+        let result = gui_cube_table(&[cube]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::CubeTable(config) = &gui_elem.kind {
+                    assert!(config.cube.is_some());
+                } else {
+                    panic!("Expected CubeTable element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_cube_chart_basic() {
+        let result = gui_cube_chart(&[]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                assert!(matches!(gui_elem.kind, GuiElementKind::CubeChart(_)));
+            } else {
+                panic!("Failed to downcast to GuiElement");
+            }
+        } else {
+            panic!("Expected GuiElement");
+        }
+    }
+
+    #[test]
+    fn test_gui_cube_chart_with_type() {
+        let cube = create_test_cube();
+        let result = gui_cube_chart(&[cube, Value::string("line")]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::CubeChart(config) = &gui_elem.kind {
+                    assert!(matches!(config.chart_type, crate::element::CubeChartType::Line));
+                } else {
+                    panic!("Expected CubeChart element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_dimension_filter_basic() {
+        let cube = create_test_cube();
+        let result = gui_dimension_filter(&[cube, Value::string("region")]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::DimensionFilter(config) = &gui_elem.kind {
+                    assert_eq!(config.dimension, "region");
+                    assert!(config.cube.is_some());
+                } else {
+                    panic!("Expected DimensionFilter element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_hierarchy_navigator_basic() {
+        let cube = create_test_cube();
+        let result = gui_hierarchy_navigator(&[cube, Value::string("time")]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::HierarchyNavigator(config) = &gui_elem.kind {
+                    assert_eq!(config.hierarchy, "time");
+                } else {
+                    panic!("Expected HierarchyNavigator element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_measure_selector_basic() {
+        let cube = create_test_cube();
+        let result = gui_measure_selector(&[cube]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::MeasureSelector(config) = &gui_elem.kind {
+                    assert!(config.cube.is_some());
+                } else {
+                    panic!("Expected MeasureSelector element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_set_cube() {
+        let elem = gui_cube_table(&[]).unwrap();
+        let cube = create_test_cube();
+        let result = gui_set_cube(&[elem, cube]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_set_row_dimensions() {
+        let cube = create_test_cube();
+        let elem = gui_cube_table(&[cube]).unwrap();
+        let dims = Value::list(vec![Value::string("region"), Value::string("product")]);
+        let result = gui_set_row_dimensions(&[elem, dims]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_set_measures_cube_table() {
+        let cube = create_test_cube();
+        let elem = gui_cube_table(&[cube]).unwrap();
+        let measures = Value::list(vec![Value::string("revenue"), Value::string("units")]);
+        let result = gui_set_measures(&[elem, measures]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_set_cube_chart_type() {
+        let cube = create_test_cube();
+        let elem = gui_cube_chart(&[cube]).unwrap();
+        let result = gui_set_cube_chart_type(&[elem, Value::string("pie")]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_set_x_dimension() {
+        let cube = create_test_cube();
+        let elem = gui_cube_chart(&[cube]).unwrap();
+        let result = gui_set_x_dimension(&[elem, Value::string("region")]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_set_y_measure() {
+        let cube = create_test_cube();
+        let elem = gui_cube_chart(&[cube]).unwrap();
+        let result = gui_set_y_measure(&[elem, Value::string("revenue")]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_set_series_dimension() {
+        let cube = create_test_cube();
+        let elem = gui_cube_chart(&[cube]).unwrap();
+        let result = gui_set_series_dimension(&[elem, Value::string("product")]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_set_filter_dimension() {
+        let cube = create_test_cube();
+        let elem = gui_dimension_filter(&[cube, Value::string("region")]).unwrap();
+        let result = gui_set_filter_dimension(&[elem, Value::string("product")]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_set_hierarchy() {
+        let cube = create_test_cube();
+        let elem = gui_hierarchy_navigator(&[cube, Value::string("time")]).unwrap();
+        let result = gui_set_hierarchy(&[elem, Value::string("location")]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_set_current_level() {
+        let cube = create_test_cube();
+        let elem = gui_hierarchy_navigator(&[cube, Value::string("time")]).unwrap();
+        let result = gui_set_current_level(&[elem, Value::string("quarter")]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_on_drill() {
+        let cube = create_test_cube();
+        let elem = gui_cube_table(&[cube]).unwrap();
+        let result = gui_on_drill(&[elem, Value::Int(1)]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_on_roll_up() {
+        let cube = create_test_cube();
+        let elem = gui_cube_table(&[cube]).unwrap();
+        let result = gui_on_roll_up(&[elem, Value::Int(1)]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gui_on_level_change() {
+        let cube = create_test_cube();
+        let elem = gui_hierarchy_navigator(&[cube, Value::string("time")]).unwrap();
+        let result = gui_on_level_change(&[elem, Value::Int(1)]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cube_widget_wrong_element_type() {
+        // Test that cube-specific functions fail on non-cube elements
+        let text_elem = gui_text(&[Value::string("Not a cube widget")]).unwrap();
+
+        let result = gui_set_row_dimensions(&[text_elem.clone(), Value::list(vec![])]);
+        assert!(result.is_err());
+
+        let result = gui_set_x_dimension(&[text_elem.clone(), Value::string("dim")]);
+        assert!(result.is_err());
+
+        let result = gui_set_filter_dimension(&[text_elem.clone(), Value::string("dim")]);
+        assert!(result.is_err());
+
+        let result = gui_set_hierarchy(&[text_elem, Value::string("hier")]);
+        assert!(result.is_err());
+    }
 }

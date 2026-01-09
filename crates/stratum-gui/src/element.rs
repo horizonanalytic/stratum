@@ -4,7 +4,7 @@
 //! that can be stored as a Stratum `Value` and rendered to iced widgets.
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use iced::widget::{button, canvas, checkbox, column, container, mouse_area, pick_list, progress_bar, radio, row, scrollable, slider, text, text_input, toggler, Image};
 use iced::{font, Color, ContentFit, Element, Fill, Font, Length, Point};
@@ -12,7 +12,7 @@ use iced::{font, Color, ContentFit, Element, Fill, Font, Length, Point};
 use crate::charts::{BarChartConfig, BarChartProgram, LineChartConfig, LineChartProgram, PieChartConfig, PieChartProgram, DataPoint, DataSeries};
 
 use stratum_core::bytecode::{GuiValue, Value};
-use stratum_core::data::DataFrame;
+use stratum_core::data::{DataFrame, CubeQuery};
 
 use crate::callback::{CallbackExecutor, CallbackId};
 use crate::layout::{Container, Grid, HAlign, HStack, ScrollDirection, ScrollView, Size, Spacer, VAlign, VStack, ZStack};
@@ -846,6 +846,8 @@ pub struct DimensionFilterConfig {
     pub label: Option<String>,
     /// Currently selected value (None = "All")
     pub selected_value: Option<String>,
+    /// Shared internal selection state (for runtime updates when no callback)
+    pub internal_selection: Arc<RwLock<Option<Option<String>>>>,
     /// Whether to show "All" option
     pub show_all_option: bool,
     /// Placeholder text when nothing is selected
@@ -863,6 +865,7 @@ impl Default for DimensionFilterConfig {
             dimension: String::new(),
             label: None,
             selected_value: None,
+            internal_selection: Arc::new(RwLock::new(None)),
             show_all_option: true,
             placeholder: Some("Select...".to_string()),
             field_path: None,
@@ -936,8 +939,10 @@ impl fmt::Debug for HierarchyNavigatorConfig {
 pub struct MeasureSelectorConfig {
     /// The Cube containing the measures
     pub cube: Option<Arc<stratum_core::data::Cube>>,
-    /// Currently selected measures
+    /// Currently selected measures (initial config)
     pub selected_measures: Vec<String>,
+    /// Shared internal selection state (for runtime updates when no callback)
+    pub internal_selection: Arc<RwLock<Option<Vec<String>>>>,
     /// Label to display
     pub label: Option<String>,
     /// State field path for binding selected measures
@@ -951,6 +956,7 @@ impl Default for MeasureSelectorConfig {
         Self {
             cube: None,
             selected_measures: Vec::new(),
+            internal_selection: Arc::new(RwLock::new(None)),
             label: None,
             field_path: None,
             on_change: None,
@@ -2782,8 +2788,9 @@ impl GuiElement {
         let on_roll_up = config.on_roll_up;
         let show_drill_controls = config.show_drill_controls;
         let current_page = config.current_page;
-        let page_size = config.page_size;
+        let page_size = config.page_size.unwrap_or(50);
         let on_page_change = config.on_page_change;
+        let on_cell_click = config.on_cell_click;
 
         // Get dimensions and measures to display (owned)
         let row_dims: Vec<String> = if config.row_dimensions.is_empty() {
@@ -2812,7 +2819,7 @@ impl GuiElement {
         // Build header row
         let mut header_cells: Vec<Element<'_, Message>> = Vec::new();
 
-        // Dimension headers with drill-down indicator - use indexed access
+        // Dimension headers with drill-down indicator
         for idx in 0..row_dims_len {
             let dim_name = row_dims[idx].clone();
             let header_text = if show_drill_controls {
@@ -2842,7 +2849,7 @@ impl GuiElement {
             header_cells.push(header_elem);
         }
 
-        // Measure headers - use indexed access
+        // Measure headers
         for idx in 0..measures_len {
             let measure_name = measures[idx].clone();
             let header_label = text(measure_name).font(Font {
@@ -2852,42 +2859,154 @@ impl GuiElement {
             header_cells.push(container(header_label).padding(8).into());
         }
 
-        // Build data rows - for now, show cube statistics as placeholder
-        // Full implementation would query cube data via to_dataframe()
         let mut all_cells: Vec<Element<'_, Message>> = header_cells;
 
-        // Add roll-up control row if enabled
-        if show_drill_controls && on_roll_up.is_some() {
-            let first_dim = if !row_dims.is_empty() { row_dims[0].clone() } else { String::new() };
-            let rollup_btn: Element<'_, Message> = if let Some(rollup_callback) = on_roll_up {
-                button(text("▲ Roll Up"))
-                    .on_press(Message::CubeRollUp {
-                        callback_id: rollup_callback,
-                        dimension: first_dim,
-                    })
-                    .padding([4, 8])
-                    .into()
-            } else {
-                iced::widget::Space::new().into()
-            };
-
-            // Span rollup button across all columns
-            all_cells.push(rollup_btn);
-            for _ in 1..num_columns {
-                all_cells.push(iced::widget::Space::new().into());
+        // Query actual data from the cube
+        let query_result = {
+            // Build select expressions: dimensions + measures
+            let mut select_exprs: Vec<String> = row_dims.iter().map(|d| format!("\"{}\"", d)).collect();
+            for m in &measures {
+                select_exprs.push(format!("SUM(\"{}\") as \"{}\"", m, m));
             }
-        }
 
-        // Show cube info row
-        let info_text = format!(
-            "{} rows, {} dimensions, {} measures",
-            cube.row_count(),
-            cube.dimension_names().len(),
-            cube.measure_names().len()
-        );
-        all_cells.push(container(text(info_text)).padding(8).into());
-        for _ in 1..num_columns {
-            all_cells.push(iced::widget::Space::new().into());
+            // Build group by: all dimensions
+            let group_by_cols: Vec<String> = row_dims.clone();
+
+            // Create query and execute
+            CubeQuery::new(cube)
+                .select(select_exprs)
+                .group_by(group_by_cols)
+                .limit(page_size * (current_page + 1))
+                .to_dataframe()
+        };
+
+        match query_result {
+            Ok(df) => {
+                // Calculate pagination
+                let total_rows = df.num_rows();
+                let start_row = current_page * page_size;
+                let end_row = (start_row + page_size).min(total_rows);
+
+                // Get data for current page
+                let page_df = if start_row > 0 {
+                    // Skip to current page - use tail after head
+                    df.head(end_row).and_then(|h| {
+                        if start_row >= h.num_rows() {
+                            Ok(DataFrame::empty(h.schema().clone()))
+                        } else {
+                            h.tail(h.num_rows() - start_row)
+                        }
+                    })
+                } else {
+                    df.head(page_size)
+                };
+
+                match page_df {
+                    Ok(page_data) => {
+                        let display_rows = page_data.num_rows();
+
+                        // Render actual data rows
+                        for row_idx in 0..display_rows {
+                            // Dimension cells
+                            for dim_idx in 0..row_dims_len {
+                                let dim_name = &row_dims[dim_idx];
+                                let cell_value = page_data
+                                    .column(dim_name)
+                                    .ok()
+                                    .and_then(|series| series.get(row_idx).ok())
+                                    .map(|v| format!("{}", v))
+                                    .unwrap_or_else(|| "-".to_string());
+
+                                let cell_text = text(cell_value.clone());
+                                let cell_elem: Element<'_, Message> = if let Some(drill_callback) = on_drill {
+                                    let dim = dim_name.clone();
+                                    button(cell_text)
+                                        .on_press(Message::CubeDrillDown {
+                                            callback_id: drill_callback,
+                                            dimension: dim,
+                                            value: Some(cell_value),
+                                        })
+                                        .padding([6, 8])
+                                        .into()
+                                } else if let Some(cell_callback) = on_cell_click {
+                                    let col = dim_name.clone();
+                                    button(cell_text)
+                                        .on_press(Message::DataTableCellClick {
+                                            callback_id: cell_callback,
+                                            row: row_idx,
+                                            column: col,
+                                        })
+                                        .padding([6, 8])
+                                        .into()
+                                } else {
+                                    container(cell_text).padding([6, 8]).into()
+                                };
+
+                                all_cells.push(cell_elem);
+                            }
+
+                            // Measure cells
+                            for measure_idx in 0..measures_len {
+                                let measure_name = &measures[measure_idx];
+                                let cell_value = page_data
+                                    .column(measure_name)
+                                    .ok()
+                                    .and_then(|series| series.get(row_idx).ok())
+                                    .map(|v| match v {
+                                        Value::Float(f) => format!("{:.2}", f),
+                                        Value::Int(i) => format!("{}", i),
+                                        other => format!("{}", other),
+                                    })
+                                    .unwrap_or_else(|| "-".to_string());
+
+                                let cell_text = text(cell_value);
+                                all_cells.push(container(cell_text).padding([6, 8]).into());
+                            }
+                        }
+
+                        // Add roll-up control row if enabled
+                        if show_drill_controls && on_roll_up.is_some() {
+                            let first_dim = if !row_dims.is_empty() { row_dims[0].clone() } else { String::new() };
+                            let rollup_btn: Element<'_, Message> = if let Some(rollup_callback) = on_roll_up {
+                                button(text("▲ Roll Up"))
+                                    .on_press(Message::CubeRollUp {
+                                        callback_id: rollup_callback,
+                                        dimension: first_dim,
+                                    })
+                                    .padding([4, 8])
+                                    .into()
+                            } else {
+                                iced::widget::Space::new().into()
+                            };
+
+                            all_cells.push(rollup_btn);
+                            for _ in 1..num_columns {
+                                all_cells.push(iced::widget::Space::new().into());
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Show error state
+                        all_cells.push(container(text("Error loading page data")).padding(8).into());
+                        for _ in 1..num_columns {
+                            all_cells.push(iced::widget::Space::new().into());
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // Query failed - show cube summary info as fallback
+                let info_text = format!(
+                    "{} rows, {} dimensions, {} measures",
+                    cube.row_count(),
+                    cube.dimension_names().len(),
+                    cube.measure_names().len()
+                );
+                all_cells.push(container(text(info_text)).padding(8).into());
+                for _ in 1..num_columns {
+                    all_cells.push(iced::widget::Space::new().into());
+                }
+            }
         }
 
         // Create grid layout
@@ -2906,9 +3025,38 @@ impl GuiElement {
         let grid_element = grid.render(all_cells);
 
         // Build pagination controls if needed
-        if page_size.is_some() && on_page_change.is_some() {
-            let page_info = text(format!("Page {}", current_page + 1));
-            let pagination_row = row![page_info].spacing(10).padding(8);
+        if on_page_change.is_some() {
+            let page_num = current_page + 1;
+            let page_info = text(format!("Page {} ({} per page)", page_num, page_size));
+
+            let prev_enabled = current_page > 0;
+            let prev_btn = if prev_enabled {
+                if let Some(callback_id) = on_page_change {
+                    button(text("◀ Prev"))
+                        .on_press(Message::DataTablePageChange {
+                            callback_id,
+                            page: current_page.saturating_sub(1),
+                        })
+                        .padding([4, 8])
+                } else {
+                    button(text("◀ Prev")).padding([4, 8])
+                }
+            } else {
+                button(text("◀ Prev")).padding([4, 8])
+            };
+
+            let next_btn = if let Some(callback_id) = on_page_change {
+                button(text("Next ▶"))
+                    .on_press(Message::DataTablePageChange {
+                        callback_id,
+                        page: current_page + 1,
+                    })
+                    .padding([4, 8])
+            } else {
+                button(text("Next ▶")).padding([4, 8])
+            };
+
+            let pagination_row = row![prev_btn, page_info, next_btn].spacing(10).padding(8);
 
             column![
                 scrollable(grid_element).height(Fill),
@@ -2937,6 +3085,8 @@ impl GuiElement {
         let series_dimension_opt = config.series_dimension.clone();
         let config_width = config.width;
         let config_height = config.height;
+        let show_legend = config.show_legend;
+        let show_grid = config.show_grid;
 
         // Get the dimension and measure names (owned)
         let x_dim = config.x_dimension.clone()
@@ -2946,67 +3096,262 @@ impl GuiElement {
             .or_else(|| cube.measure_names().first().cloned())
             .unwrap_or_else(|| "measure".to_string());
 
-        // Get cube stats (owned values)
-        let row_count = cube.row_count();
-        let dim_count = cube.dimension_names().len();
+        // Query cube data for the chart
+        let query_result = if series_dimension_opt.is_some() {
+            // Multi-series: group by x_dim and series_dim
+            let series_dim = series_dimension_opt.as_ref().unwrap();
+            let select_exprs = vec![
+                format!("\"{}\"", x_dim),
+                format!("\"{}\"", series_dim),
+                format!("SUM(\"{}\") as \"{}\"", y_measure, y_measure),
+            ];
+            let group_by_cols = vec![x_dim.clone(), series_dim.clone()];
 
-        // For now, render a placeholder that shows cube info
-        // Full implementation would query cube and generate chart data
-        let mut content_col = column![].spacing(8);
+            CubeQuery::new(cube)
+                .select(select_exprs)
+                .group_by(group_by_cols)
+                .to_dataframe()
+        } else {
+            // Single series: group by x_dim only
+            let select_exprs = vec![
+                format!("\"{}\"", x_dim),
+                format!("SUM(\"{}\") as \"{}\"", y_measure, y_measure),
+            ];
+            let group_by_cols = vec![x_dim.clone()];
 
-        // Title
-        if let Some(title) = title_opt {
-            content_col = content_col.push(
-                text(title).font(Font {
-                    weight: font::Weight::Bold,
-                    ..Font::default()
-                }).size(18)
-            );
-        }
-
-        // Chart type indicator
-        let chart_type_str = match chart_type {
-            CubeChartType::Bar => "Bar Chart",
-            CubeChartType::Line => "Line Chart",
-            CubeChartType::Pie => "Pie Chart",
+            CubeQuery::new(cube)
+                .select(select_exprs)
+                .group_by(group_by_cols)
+                .to_dataframe()
         };
 
-        content_col = content_col.push(
-            text(format!("{} - {} by {}", chart_type_str, y_measure, x_dim))
-        );
+        // Process query results and render chart
+        match query_result {
+            Ok(df) => {
+                match chart_type {
+                    CubeChartType::Bar => {
+                        // Create bar chart data
+                        let mut data_points: Vec<DataPoint> = Vec::new();
+                        let num_rows = df.num_rows();
 
-        // Cube info
-        content_col = content_col.push(
-            text(format!(
-                "Data: {} rows across {} dimensions",
-                row_count,
-                dim_count
-            )).size(12)
-        );
+                        if let (Ok(x_series), Ok(y_series)) = (df.column(&x_dim), df.column(&y_measure)) {
+                            for i in 0..num_rows {
+                                let label = x_series.get(i)
+                                    .map(|v| format!("{}", v))
+                                    .unwrap_or_else(|_| format!("Row {}", i));
+                                let value = y_series.get(i)
+                                    .map(|v| match v {
+                                        Value::Float(f) => f,
+                                        Value::Int(n) => n as f64,
+                                        _ => 0.0,
+                                    })
+                                    .unwrap_or(0.0);
+                                data_points.push(DataPoint::new(label, value));
+                            }
+                        }
 
-        // Series info if present
-        if let Some(series_dim) = series_dimension_opt {
-            content_col = content_col.push(
-                text(format!("Grouped by: {}", series_dim)).size(12)
-            );
-        }
+                        let bar_config = BarChartConfig {
+                            title: title_opt,
+                            data: data_points,
+                            width: config_width,
+                            height: config_height,
+                            show_legend,
+                            show_grid,
+                            show_values: true,
+                            bar_color: None,
+                            on_bar_click: None,
+                            x_label: Some(x_dim),
+                            y_label: Some(y_measure),
+                        };
 
-        let width = self.style.width
-            .map(|s| s.to_iced())
-            .unwrap_or(Length::Fixed(config_width));
-        let height = self.style.height
-            .map(|s| s.to_iced())
-            .unwrap_or(Length::Fixed(config_height));
+                        let program = BarChartProgram { config: bar_config };
+                        let width = self.style.width
+                            .map(|s| s.to_iced())
+                            .unwrap_or(Length::Fixed(config_width));
+                        let height = self.style.height
+                            .map(|s| s.to_iced())
+                            .unwrap_or(Length::Fixed(config_height));
 
-        let chart_container = container(content_col)
-            .width(width)
-            .height(height)
-            .padding(16);
+                        let chart = canvas(program)
+                            .width(width)
+                            .height(height);
 
-        if let Some(padding) = self.style.padding {
-            container(chart_container).padding(padding).into()
-        } else {
-            chart_container.into()
+                        if let Some(padding) = self.style.padding {
+                            container(chart).padding(padding).into()
+                        } else {
+                            chart.into()
+                        }
+                    }
+                    CubeChartType::Line => {
+                        // Create line chart data
+                        let num_rows = df.num_rows();
+                        let mut labels: Vec<String> = Vec::new();
+                        let mut series_data: Vec<DataSeries> = Vec::new();
+
+                        if let Some(ref series_dim) = series_dimension_opt {
+                            // Multi-series line chart
+                            // Get unique x values and series values
+                            let mut x_values: Vec<String> = Vec::new();
+                            let mut series_map: std::collections::HashMap<String, Vec<(String, f64)>> = std::collections::HashMap::new();
+
+                            if let (Ok(x_series), Ok(series_col), Ok(y_series)) =
+                                (df.column(&x_dim), df.column(series_dim), df.column(&y_measure)) {
+                                for i in 0..num_rows {
+                                    let x_val = x_series.get(i).map(|v| format!("{}", v)).unwrap_or_default();
+                                    let s_val = series_col.get(i).map(|v| format!("{}", v)).unwrap_or_default();
+                                    let y_val = y_series.get(i)
+                                        .map(|v| match v {
+                                            Value::Float(f) => f,
+                                            Value::Int(n) => n as f64,
+                                            _ => 0.0,
+                                        })
+                                        .unwrap_or(0.0);
+
+                                    if !x_values.contains(&x_val) {
+                                        x_values.push(x_val.clone());
+                                    }
+                                    series_map.entry(s_val).or_default().push((x_val, y_val));
+                                }
+                            }
+
+                            labels = x_values.clone();
+
+                            // Convert to DataSeries
+                            for (series_name, points) in series_map {
+                                let mut values: Vec<f64> = vec![0.0; labels.len()];
+                                for (x_val, y_val) in points {
+                                    if let Some(idx) = labels.iter().position(|l| l == &x_val) {
+                                        values[idx] = y_val;
+                                    }
+                                }
+                                series_data.push(DataSeries::new(series_name, values));
+                            }
+                        } else {
+                            // Single series line chart
+                            let mut values: Vec<f64> = Vec::new();
+                            if let (Ok(x_series), Ok(y_series)) = (df.column(&x_dim), df.column(&y_measure)) {
+                                for i in 0..num_rows {
+                                    let label = x_series.get(i).map(|v| format!("{}", v)).unwrap_or_default();
+                                    let value = y_series.get(i)
+                                        .map(|v| match v {
+                                            Value::Float(f) => f,
+                                            Value::Int(n) => n as f64,
+                                            _ => 0.0,
+                                        })
+                                        .unwrap_or(0.0);
+                                    labels.push(label);
+                                    values.push(value);
+                                }
+                            }
+                            series_data.push(DataSeries::new(y_measure.clone(), values));
+                        }
+
+                        let line_config = LineChartConfig {
+                            title: title_opt,
+                            labels,
+                            series: series_data,
+                            width: config_width,
+                            height: config_height,
+                            show_legend,
+                            show_grid,
+                            show_points: true,
+                            fill_area: false,
+                            series_colors: Vec::new(),
+                            on_point_click: None,
+                            x_label: Some(x_dim),
+                            y_label: Some(y_measure),
+                        };
+
+                        let program = LineChartProgram { config: line_config };
+                        let width = self.style.width
+                            .map(|s| s.to_iced())
+                            .unwrap_or(Length::Fixed(config_width));
+                        let height = self.style.height
+                            .map(|s| s.to_iced())
+                            .unwrap_or(Length::Fixed(config_height));
+
+                        let chart = canvas(program)
+                            .width(width)
+                            .height(height);
+
+                        if let Some(padding) = self.style.padding {
+                            container(chart).padding(padding).into()
+                        } else {
+                            chart.into()
+                        }
+                    }
+                    CubeChartType::Pie => {
+                        // Create pie chart data
+                        let mut data_points: Vec<DataPoint> = Vec::new();
+                        let num_rows = df.num_rows();
+
+                        if let (Ok(x_series), Ok(y_series)) = (df.column(&x_dim), df.column(&y_measure)) {
+                            for i in 0..num_rows {
+                                let label = x_series.get(i).map(|v| format!("{}", v)).unwrap_or_default();
+                                let value = y_series.get(i)
+                                    .map(|v| match v {
+                                        Value::Float(f) => f,
+                                        Value::Int(n) => n as f64,
+                                        _ => 0.0,
+                                    })
+                                    .unwrap_or(0.0);
+                                data_points.push(DataPoint::new(label, value));
+                            }
+                        }
+
+                        let pie_config = PieChartConfig {
+                            title: title_opt,
+                            data: data_points,
+                            width: config_width,
+                            height: config_height,
+                            show_legend,
+                            show_percentages: true,
+                            show_values: false,
+                            slice_colors: Vec::new(),
+                            on_slice_click: None,
+                            inner_radius_ratio: 0.0,
+                        };
+
+                        let program = PieChartProgram { config: pie_config };
+                        let width = self.style.width
+                            .map(|s| s.to_iced())
+                            .unwrap_or(Length::Fixed(config_width));
+                        let height = self.style.height
+                            .map(|s| s.to_iced())
+                            .unwrap_or(Length::Fixed(config_height));
+
+                        let chart = canvas(program)
+                            .width(width)
+                            .height(height);
+
+                        if let Some(padding) = self.style.padding {
+                            container(chart).padding(padding).into()
+                        } else {
+                            chart.into()
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // Query failed - show error message
+                let error_col = column![
+                    text("Error loading chart data").size(14),
+                    text(format!("{} by {}", y_measure, x_dim)).size(12)
+                ].spacing(8);
+
+                let width = self.style.width
+                    .map(|s| s.to_iced())
+                    .unwrap_or(Length::Fixed(config_width));
+                let height = self.style.height
+                    .map(|s| s.to_iced())
+                    .unwrap_or(Length::Fixed(config_height));
+
+                container(error_col)
+                    .width(width)
+                    .height(height)
+                    .padding(16)
+                    .into()
+            }
         }
     }
 
@@ -3016,10 +3361,10 @@ impl GuiElement {
         let label_opt = config.label.clone();
         let show_all_option = config.show_all_option;
         let dimension = config.dimension.clone();
-        let selected = config.selected_value.clone();
         let placeholder = config.placeholder.clone().unwrap_or_else(|| "Select...".to_string());
         let on_select = config.on_select;
         let field_path_opt = config.field_path.clone();
+        let internal_selection = config.internal_selection.clone();
 
         // Get dimension values from cube (owned)
         let mut options: Vec<String> = Vec::new();
@@ -3035,6 +3380,23 @@ impl GuiElement {
                 }
             }
         }
+
+        // Determine current selection: use internal state if available, otherwise config
+        let selected: Option<String> = {
+            let guard = internal_selection.read().unwrap();
+            if let Some(ref sel) = *guard {
+                // Internal state exists - convert Option<String> to display value
+                sel.clone().or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+            } else {
+                // Initialize from config
+                drop(guard);
+                let initial = config.selected_value.clone();
+                if let Ok(mut write_guard) = internal_selection.write() {
+                    *write_guard = Some(initial.clone());
+                }
+                initial.or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+            }
+        };
 
         let mut content_col = column![].spacing(4);
 
@@ -3060,17 +3422,38 @@ impl GuiElement {
                 }
             })
             .placeholder(placeholder)
-        } else if let Some(field) = field_path_opt {
+        } else if let Some(field) = field_path_opt.clone() {
+            let internal_sel_clone = internal_selection.clone();
+            let field_clone = field.clone();
             pick_list(options, selected, move |value: String| {
+                let actual_value = if value == "All" { None } else { Some(value.clone()) };
+                // Update internal selection state directly
+                if let Ok(mut guard) = internal_sel_clone.write() {
+                    *guard = Some(actual_value.clone());
+                }
                 Message::SetStringField {
-                    field: field.clone(),
+                    field: field_clone.clone(),
                     value,
                 }
             })
             .placeholder(placeholder)
         } else {
-            pick_list(options, selected, |_: String| Message::NoOp)
-                .placeholder(placeholder)
+            // No callback, no field_path - use internal state management
+            let dim_clone = dimension.clone();
+            let internal_sel_clone = internal_selection.clone();
+            pick_list(options, selected, move |value: String| {
+                let actual_value = if value == "All" { None } else { Some(value.clone()) };
+                // Update internal selection state directly
+                if let Ok(mut guard) = internal_sel_clone.write() {
+                    *guard = Some(actual_value.clone());
+                }
+                Message::InternalDimensionSelect {
+                    dimension: dim_clone.clone(),
+                    value: actual_value,
+                    field_path: None,
+                }
+            })
+            .placeholder(placeholder)
         };
 
         content_col = content_col.push(pl);
@@ -3208,13 +3591,34 @@ impl GuiElement {
         // Clone config values upfront to avoid lifetime issues
         let label_opt = config.label.clone();
         let on_change = config.on_change;
-        let selected_measures = config.selected_measures.clone();
+        let internal_selection = config.internal_selection.clone();
 
         // Get all measures from cube
         let all_measures: Vec<String> = if let Some(ref cube) = config.cube {
             cube.measure_names()
         } else {
             Vec::new()
+        };
+
+        // Determine current selection: use internal state if available, otherwise config
+        let current_selection: Vec<String> = {
+            let guard = internal_selection.read().unwrap();
+            if let Some(ref sel) = *guard {
+                sel.clone()
+            } else {
+                // Initialize from config, defaulting to all measures if empty
+                drop(guard);
+                let initial = if config.selected_measures.is_empty() {
+                    all_measures.clone()
+                } else {
+                    config.selected_measures.clone()
+                };
+                // Store the initial selection
+                if let Ok(mut write_guard) = internal_selection.write() {
+                    *write_guard = Some(initial.clone());
+                }
+                initial
+            }
         };
 
         let mut content_col = column![].spacing(4);
@@ -3237,11 +3641,11 @@ impl GuiElement {
             for idx in 0..measures_len {
                 let measure = all_measures[idx].clone();
                 let measure_label = measure.clone();
-                let is_selected = selected_measures.contains(&measure);
+                let is_selected = current_selection.contains(&measure);
 
                 let cb = if let Some(callback_id) = on_change {
                     let measure_name = measure.clone();
-                    let base_selection = selected_measures.clone();
+                    let base_selection = current_selection.clone();
 
                     checkbox(is_selected)
                         .label(measure_label)
@@ -3261,7 +3665,32 @@ impl GuiElement {
                             }
                         })
                 } else {
-                    checkbox(is_selected).label(measure_label)
+                    // Use internal state management when no callback registered
+                    let measure_name = measure.clone();
+                    let field_path_clone = config.field_path.clone();
+                    let internal_sel_clone = internal_selection.clone();
+
+                    checkbox(is_selected)
+                        .label(measure_label)
+                        .on_toggle(move |checked| {
+                            // Update internal selection state directly
+                            if let Ok(mut guard) = internal_sel_clone.write() {
+                                if let Some(ref mut sel) = *guard {
+                                    if checked {
+                                        if !sel.contains(&measure_name) {
+                                            sel.push(measure_name.clone());
+                                        }
+                                    } else {
+                                        sel.retain(|m| m != &measure_name);
+                                    }
+                                }
+                            }
+                            Message::InternalMeasureToggle {
+                                measure: measure_name.clone(),
+                                selected: checked,
+                                field_path: field_path_clone.clone(),
+                            }
+                        })
                 };
 
                 content_col = content_col.push(cb);

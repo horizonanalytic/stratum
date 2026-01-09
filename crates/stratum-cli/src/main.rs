@@ -167,6 +167,18 @@ enum Commands {
         /// Show verbose output
         #[arg(short, long)]
         verbose: bool,
+
+        /// Collect and report code coverage
+        #[arg(long)]
+        coverage: bool,
+
+        /// Coverage report format (summary, html, lcov)
+        #[arg(long, default_value = "summary")]
+        format: String,
+
+        /// Output directory for coverage reports (used with --format=html)
+        #[arg(long)]
+        coverage_dir: Option<PathBuf>,
     },
 
     /// Format Stratum source files
@@ -369,8 +381,11 @@ fn main() -> Result<()> {
             file,
             filter,
             verbose,
+            coverage,
+            format,
+            coverage_dir,
         }) => {
-            run_tests(&file, filter.as_deref(), verbose)?;
+            run_tests(&file, filter.as_deref(), verbose, coverage, &format, coverage_dir.as_deref())?;
         }
 
         Some(Commands::Fmt { files, check }) => {
@@ -528,7 +543,15 @@ fn run_file(
 }
 
 /// Run tests in a Stratum source file
-fn run_tests(path: &PathBuf, filter: Option<&str>, verbose: bool) -> Result<()> {
+fn run_tests(
+    path: &PathBuf,
+    filter: Option<&str>,
+    verbose: bool,
+    coverage: bool,
+    format: &str,
+    coverage_dir: Option<&std::path::Path>,
+) -> Result<()> {
+    use stratum_core::coverage::{generate_report, CoverageFormat};
     use stratum_core::testing::{self, TestRunner};
 
     let source = std::fs::read_to_string(path)
@@ -567,8 +590,8 @@ fn run_tests(path: &PathBuf, filter: Option<&str>, verbose: bool) -> Result<()> 
 
     println!("Running {} test(s)...\n", tests.len());
 
-    // Run tests
-    let runner = TestRunner::new().verbose(verbose);
+    // Run tests with coverage if enabled
+    let runner = TestRunner::new().verbose(verbose).with_coverage(coverage);
     let summary = runner.run_tests(&tests, &path.display().to_string());
 
     // Print results
@@ -598,6 +621,15 @@ fn run_tests(path: &PathBuf, filter: Option<&str>, verbose: bool) -> Result<()> 
         summary.total,
         summary.duration.as_secs_f64() * 1000.0
     );
+
+    // Print coverage report if enabled
+    if coverage {
+        if let Some(ref collector) = summary.coverage {
+            let cov_format = format.parse::<CoverageFormat>().unwrap_or_default();
+            let report = generate_report(collector, cov_format, coverage_dir);
+            println!("{}", report);
+        }
+    }
 
     if summary.all_passed() {
         Ok(())

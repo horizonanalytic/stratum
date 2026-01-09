@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::ast::ExecutionMode;
+use crate::coverage::CoverageCollector;
 use crate::gc::CycleCollector;
 use crate::bytecode::{
     Chunk, Closure, CoroutineState, EnumVariantInstance, ExpectationState, Function, FutureStatus,
@@ -134,6 +135,9 @@ pub struct VM {
 
     /// Flag indicating a spawn future is pending (for post-resume closure execution)
     pending_spawn: bool,
+
+    /// Coverage collector (if coverage tracking is enabled)
+    coverage: Option<CoverageCollector>,
 }
 
 impl Default for VM {
@@ -163,6 +167,7 @@ impl VM {
             current_source: None,
             gc: CycleCollector::new(),
             pending_spawn: false,
+            coverage: None,
         };
 
         // Register built-in functions
@@ -202,6 +207,33 @@ impl VM {
     #[must_use]
     pub fn get_hot_threshold(&self) -> usize {
         self.hot_threshold
+    }
+
+    /// Enable coverage tracking
+    pub fn enable_coverage(&mut self) {
+        self.coverage = Some(CoverageCollector::new());
+    }
+
+    /// Disable coverage tracking
+    pub fn disable_coverage(&mut self) {
+        self.coverage = None;
+    }
+
+    /// Check if coverage tracking is enabled
+    #[must_use]
+    pub fn is_coverage_enabled(&self) -> bool {
+        self.coverage.is_some()
+    }
+
+    /// Take the coverage collector (transferring ownership)
+    pub fn take_coverage(&mut self) -> Option<CoverageCollector> {
+        self.coverage.take()
+    }
+
+    /// Get a reference to the coverage collector
+    #[must_use]
+    pub fn coverage(&self) -> Option<&CoverageCollector> {
+        self.coverage.as_ref()
     }
 
     /// Get or create the JIT compiler (lazy initialization)
@@ -1945,7 +1977,12 @@ impl VM {
         self.stack.push(Value::Closure(closure.clone()));
 
         // Create the initial frame
-        self.frames.push(CallFrame::new(closure, 0));
+        self.frames.push(CallFrame::new(closure.clone(), 0));
+
+        // Track function coverage if enabled
+        if let Some(ref mut coverage) = self.coverage {
+            coverage.begin_function(&closure.function);
+        }
 
         // Run the main execution loop
         self.execute()
