@@ -1,0 +1,24 @@
+// Variables and Type Inference
+// Stratum infers types automatically - you rarely need to write them
+
+fx main() {
+    // Basic types - all inferred
+    let name = "Alice"              // String
+    let age = 30                    // Int
+    let height = 5.7                // Float
+    let is_student = false          // Bool
+
+    // Collections
+    let numbers = [1, 2, 3, 4, 5]           // List<Int>
+    let scores = {"math": 95, "science": 87} // Map<String, Int>
+
+    // String interpolation
+    print("Name: {name}, Age: {age}")
+    print("Numbers: {numbers}")
+    print("Math score: {scores["math"]}")
+
+    // Nullable types with ?
+    let middle_name: String? = null
+    let display_name = middle_name ?? "N/A"
+    print("Middle name: {display_name}")
+}

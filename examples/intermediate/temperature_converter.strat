@@ -1,0 +1,60 @@
+// Temperature Converter
+// Convert between Celsius, Fahrenheit, and Kelvin
+
+// Conversion functions
+fx celsius_to_fahrenheit(c: Float) -> Float {
+    c * 9.0 / 5.0 + 32.0
+}
+
+fx celsius_to_kelvin(c: Float) -> Float {
+    c + 273.15
+}
+
+fx fahrenheit_to_celsius(f: Float) -> Float {
+    (f - 32.0) * 5.0 / 9.0
+}
+
+fx fahrenheit_to_kelvin(f: Float) -> Float {
+    fahrenheit_to_celsius(f) + 273.15
+}
+
+fx kelvin_to_celsius(k: Float) -> Float {
+    k - 273.15
+}
+
+fx kelvin_to_fahrenheit(k: Float) -> Float {
+    celsius_to_fahrenheit(kelvin_to_celsius(k))
+}
+
+fx main() {
+    println("Temperature Converter Tests:");
+
+    // Test freezing point of water
+    let freezing_c = 0.0;
+    assert(celsius_to_fahrenheit(freezing_c) == 32.0);
+    assert(celsius_to_kelvin(freezing_c) == 273.15);
+
+    // Test boiling point of water
+    let boiling_c = 100.0;
+    assert(celsius_to_fahrenheit(boiling_c) == 212.0);
+    assert(celsius_to_kelvin(boiling_c) == 373.15);
+
+    // Test body temperature (Fahrenheit to Celsius)
+    let body_f = 98.6;
+    let body_c = fahrenheit_to_celsius(body_f);
+    assert(body_c > 36.9);
+    assert(body_c < 37.1);
+
+    // Test absolute zero
+    let abs_zero_k = 0.0;
+    let abs_zero_c = kelvin_to_celsius(abs_zero_k);
+    assert(abs_zero_c == -273.15);
+
+    // Test round-trip conversions
+    let temp = 25.0;
+    let round_trip = fahrenheit_to_celsius(celsius_to_fahrenheit(temp));
+    assert(round_trip > 24.99);
+    assert(round_trip < 25.01);
+
+    println("All temperature conversion tests passed!");
+}

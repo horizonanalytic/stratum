@@ -1,0 +1,40 @@
+// Fibonacci Sequence
+// Calculate Fibonacci numbers using different approaches
+
+// Recursive approach (simple but slow for large n)
+fx fib_recursive(n: Int) -> Int {
+    if n <= 1 { n } else { fib_recursive(n - 1) + fib_recursive(n - 2) }
+}
+
+// Iterative approach (efficient)
+fx fib_iterative(n: Int) -> Int {
+    if n <= 1 { n } else {
+        let a = 0;
+        let b = 1;
+        let i = 2;
+        let result = 0;
+        while i <= n {
+            result = a + b;
+            a = b;
+            b = result;
+            i = i + 1;
+        }
+        b
+    }
+}
+
+fx main() {
+    println("Fibonacci Tests:");
+
+    // Verify values using asserts
+    assert(fib_iterative(0) == 0);
+    assert(fib_iterative(1) == 1);
+    assert(fib_iterative(5) == 5);
+    assert(fib_iterative(10) == 55);
+
+    // Test recursive version (for small numbers)
+    assert(fib_recursive(6) == 8);
+    assert(fib_recursive(7) == 13);
+
+    println("All Fibonacci tests passed!");
+}

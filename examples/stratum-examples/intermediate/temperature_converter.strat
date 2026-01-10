@@ -1,0 +1,67 @@
+// Temperature Converter
+// Demonstrates enums, pattern matching, and user input
+
+enum Temperature {
+    Celsius(Float),
+    Fahrenheit(Float),
+    Kelvin(Float)
+}
+
+fx to_celsius(temp: Temperature) -> Float {
+    match temp {
+        Celsius(c) => c,
+        Fahrenheit(f) => (f - 32.0) * 5.0 / 9.0,
+        Kelvin(k) => k - 273.15
+    }
+}
+
+fx to_fahrenheit(temp: Temperature) -> Float {
+    match temp {
+        Celsius(c) => c * 9.0 / 5.0 + 32.0,
+        Fahrenheit(f) => f,
+        Kelvin(k) => (k - 273.15) * 9.0 / 5.0 + 32.0
+    }
+}
+
+fx to_kelvin(temp: Temperature) -> Float {
+    match temp {
+        Celsius(c) => c + 273.15,
+        Fahrenheit(f) => (f - 32.0) * 5.0 / 9.0 + 273.15,
+        Kelvin(k) => k
+    }
+}
+
+fx format_temp(temp: Temperature) -> String {
+    match temp {
+        Celsius(c) => "{c:.2}C",
+        Fahrenheit(f) => "{f:.2}F",
+        Kelvin(k) => "{k:.2}K"
+    }
+}
+
+fx convert_all(temp: Temperature) {
+    print("Converting {format_temp(temp)}:")
+    print("  Celsius:    {to_celsius(temp):.2}C")
+    print("  Fahrenheit: {to_fahrenheit(temp):.2}F")
+    print("  Kelvin:     {to_kelvin(temp):.2}K")
+    print("")
+}
+
+fx main() {
+    print("Temperature Converter")
+    print("=" * 40)
+    print("")
+
+    // Convert some common temperatures
+    let temperatures = [
+        Temperature.Celsius(0.0),      // Freezing point
+        Temperature.Celsius(100.0),    // Boiling point
+        Temperature.Fahrenheit(98.6),  // Body temperature
+        Temperature.Kelvin(0.0),       // Absolute zero
+        Temperature.Celsius(20.0),     // Room temperature
+    ]
+
+    for temp in temperatures {
+        convert_all(temp)
+    }
+}

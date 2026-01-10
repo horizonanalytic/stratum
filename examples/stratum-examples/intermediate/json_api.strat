@@ -1,0 +1,69 @@
+// JSON API Example - Fetch and process data from a public API
+// Uses JSONPlaceholder (https://jsonplaceholder.typicode.com)
+
+import http
+import json
+
+struct User {
+    id: Int,
+    name: String,
+    username: String,
+    email: String,
+    phone: String
+}
+
+struct Post {
+    userId: Int,
+    id: Int,
+    title: String,
+    body: String
+}
+
+async fx fetch_users() -> List<User> {
+    let response = await http.get("https://jsonplaceholder.typicode.com/users")
+    json.parse(response.text())
+}
+
+async fx fetch_posts() -> List<Post> {
+    let response = await http.get("https://jsonplaceholder.typicode.com/posts")
+    json.parse(response.text())
+}
+
+async fx main() {
+    print("Fetching data from JSONPlaceholder API...")
+    print("=" * 50)
+
+    // Fetch users and posts concurrently
+    let (users, posts) = await async.all(fetch_users(), fetch_posts())
+
+    print("\nUsers ({users.len()} total):")
+    print("-" * 50)
+    for user in users.take(5) {
+        print("  {user.name} (@{user.username})")
+        print("    Email: {user.email}")
+    }
+    print("  ... and {users.len() - 5} more")
+
+    // Count posts per user
+    print("\nPosts per user:")
+    print("-" * 50)
+
+    let posts_by_user = posts
+        |> group_by(.userId)
+        |> map((user_id, user_posts) => (user_id, user_posts.len()))
+
+    for (user_id, count) in posts_by_user {
+        let user = users.find(u => u.id == user_id)
+        let name = user?.name ?? "Unknown"
+        print("  {name}: {count} posts")
+    }
+
+    // Find longest post
+    let longest = posts
+        |> max_by(.body.len())
+
+    print("\nLongest post:")
+    print("-" * 50)
+    print("  Title: {longest.title}")
+    print("  Length: {longest.body.len()} characters")
+}

@@ -1,0 +1,33 @@
+// Web Scraper - Fetch data from APIs
+// Demonstrates HTTP requests and JSON parsing
+
+fx main() {
+    print("Web Data Fetcher");
+    print("================");
+
+    // Fetch a user from JSONPlaceholder
+    print("\nFetching user data...");
+    let response = Http.get("https://jsonplaceholder.typicode.com/users/1");
+    let user = Json.parse(response.body);
+
+    print("\nUser Info:");
+    let name = user.name;
+    let email = user.email;
+    let company = user.company.name;
+    print("  Name: {name}");
+    print("  Email: {email}");
+    print("  Company: {company}");
+
+    // Fetch posts for this user (limited to 3)
+    print("\nFetching posts...");
+    let posts_response = Http.get("https://jsonplaceholder.typicode.com/posts?userId=1&_limit=3");
+    let posts = Json.parse(posts_response.body);
+
+    print("\nUser's Posts:");
+    for post in posts {
+        let title = post.title;
+        print("  - {title}");
+    }
+
+    print("\nDone!");
+}

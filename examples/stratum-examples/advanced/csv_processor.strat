@@ -1,0 +1,116 @@
+// CSV Processor - Read, transform, and analyze CSV data
+// Demonstrates DataFrame operations with pipeline syntax
+
+#![compile]
+
+import data
+import io
+
+// Sample data embedded for demo purposes
+// In real usage, you'd read from a file: data.read_csv("sales.csv")
+fx create_sample_data() -> DataFrame {
+    data.from_rows(
+        columns: ["date", "region", "product", "quantity", "price", "salesperson"],
+        rows: [
+            ["2024-01-15", "North", "Widget A", 100, 29.99, "Alice"],
+            ["2024-01-15", "South", "Widget B", 75, 49.99, "Bob"],
+            ["2024-01-16", "North", "Widget A", 120, 29.99, "Alice"],
+            ["2024-01-16", "East", "Widget C", 50, 99.99, "Carol"],
+            ["2024-01-17", "South", "Widget A", 90, 29.99, "Bob"],
+            ["2024-01-17", "West", "Widget B", 110, 49.99, "David"],
+            ["2024-01-18", "North", "Widget C", 45, 99.99, "Alice"],
+            ["2024-01-18", "East", "Widget A", 85, 29.99, "Carol"],
+            ["2024-01-19", "South", "Widget B", 95, 49.99, "Bob"],
+            ["2024-01-19", "West", "Widget C", 60, 99.99, "David"],
+            ["2024-01-20", "North", "Widget A", 130, 29.99, "Alice"],
+            ["2024-01-20", "East", "Widget B", 70, 49.99, "Carol"],
+        ]
+    )
+}
+
+fx main() {
+    print("Sales Data Analysis")
+    print("=" * 60)
+
+    // Load or create sample data
+    let sales = create_sample_data()
+
+    // Add computed columns
+    let sales = sales
+        |> add_column("revenue", .quantity * .price)
+        |> add_column("date_parsed", date.parse(.date, "YYYY-MM-DD"))
+
+    print("\nRaw Data:")
+    print(sales)
+
+    // Total revenue by region
+    print("\n\nRevenue by Region:")
+    print("-" * 40)
+
+    let by_region = sales
+        |> group_by(.region)
+        |> aggregate(
+            total_revenue: sum(.revenue),
+            total_units: sum(.quantity),
+            order_count: count()
+        )
+        |> sort_by(.total_revenue, descending: true)
+
+    print(by_region)
+
+    // Top products by revenue
+    print("\n\nTop Products by Revenue:")
+    print("-" * 40)
+
+    let by_product = sales
+        |> group_by(.product)
+        |> aggregate(
+            revenue: sum(.revenue),
+            units_sold: sum(.quantity),
+            avg_price: mean(.price)
+        )
+        |> sort_by(.revenue, descending: true)
+
+    print(by_product)
+
+    // Salesperson performance
+    print("\n\nSalesperson Performance:")
+    print("-" * 40)
+
+    let by_salesperson = sales
+        |> group_by(.salesperson)
+        |> aggregate(
+            total_sales: sum(.revenue),
+            orders: count(),
+            avg_order_value: mean(.revenue)
+        )
+        |> sort_by(.total_sales, descending: true)
+
+    print(by_salesperson)
+
+    // Daily trends
+    print("\n\nDaily Revenue Trend:")
+    print("-" * 40)
+
+    let daily = sales
+        |> group_by(.date)
+        |> aggregate(
+            revenue: sum(.revenue),
+            orders: count()
+        )
+        |> sort_by(.date)
+
+    for row in daily.rows() {
+        let bar_len = (row.revenue / 500.0) as Int
+        let bar = "#" * bar_len
+        print("{row.date}: ${row.revenue:8.2} {bar}")
+    }
+
+    // Summary statistics
+    print("\n\nSummary:")
+    print("-" * 40)
+    print("Total Revenue: ${sales.column("revenue").sum():,.2}")
+    print("Total Units Sold: {sales.column("quantity").sum()}")
+    print("Average Order Value: ${sales.column("revenue").mean():,.2}")
+    print("Orders: {sales.row_count()}")
+}

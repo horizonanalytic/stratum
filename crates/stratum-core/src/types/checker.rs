@@ -2203,7 +2203,15 @@ impl TypeChecker {
             Type::List(elem) => *elem.clone(),
             Type::String => Type::String,
             Type::Map(key, _) => *key.clone(),
+            Type::Range => Type::Int,
             Type::Error => Type::Error,
+            // Type variables (from dynamic sources like Json.parse) - constrain to list
+            Type::TypeVar(_) => {
+                let elem_type = self.inference.fresh_var();
+                let list_type = Type::list(elem_type.clone());
+                self.inference.unify(&iter_type, &list_type, span);
+                elem_type
+            }
             _ => {
                 self.errors.push(TypeError::new(
                     TypeErrorKind::TypeMismatch {

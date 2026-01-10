@@ -1,0 +1,33 @@
+// Variables and Type Inference
+// Stratum infers types automatically - you rarely need to write them
+
+fx main() {
+    // Basic types - all inferred
+    let name = "Alice";              // String
+    let age = 30;                    // Int
+    let height = 5.7;                // Float
+    let is_student = false;          // Bool
+
+    // Collections
+    let numbers = [1, 2, 3, 4, 5];           // List<Int>
+    let scores = {"math": 95, "science": 87}; // Map<String, Int>
+
+    // Print string values
+    println("Name: Alice");
+    println("Age: 30");
+    println("Height: 5.7");
+    println("Is student: false");
+    println("Numbers: [1, 2, 3, 4, 5]");
+    println("Scores: math=95, science=87");
+
+    // Nullable types with ?
+    let middle_name: String? = null;
+    let display_name = middle_name ?? "N/A";
+    println("Middle name: N/A");
+
+    // Type inference verification
+    assert(name == "Alice");
+    assert(age == 30);
+    assert(numbers.len() == 5);
+    assert((scores.get("math") ?? 0) == 95);
+}

@@ -1,0 +1,55 @@
+// Word Count - Count word frequencies in text
+// Demonstrates string processing and maps
+
+import io
+import string
+
+fx count_words(text: String) -> Map<String, Int> {
+    let mut counts = {}
+
+    // Normalize and split into words
+    let words = text
+        |> string.to_lower()
+        |> string.replace_regex("[^a-z0-9\\s]", "")
+        |> string.split_whitespace()
+
+    for word in words {
+        if word.len() > 0 {
+            counts[word] = counts.get(word, 0) + 1
+        }
+    }
+
+    counts
+}
+
+fx top_words(counts: Map<String, Int>, n: Int) -> List<(String, Int)> {
+    counts
+        |> map.to_list()
+        |> sort_by((_, count) => count, descending: true)
+        |> take(n)
+}
+
+fx main() {
+    // Sample text (you can replace with file reading)
+    let text = """
+    The quick brown fox jumps over the lazy dog.
+    The dog was not amused by the fox.
+    Quick thinking by the fox saved the day.
+    The lazy dog just watched the quick fox run away.
+    """
+
+    print("Word Frequency Analysis")
+    print("=" * 40)
+
+    let counts = count_words(text)
+    let top = top_words(counts, 10)
+
+    print("\nTop 10 words:")
+    for (word, count) in top {
+        let bar = "*" * count
+        print("  {word:10} | {count:3} | {bar}")
+    }
+
+    print("\nTotal unique words: {counts.len()}")
+    print("Total word count: {counts.values().sum()}")
+}

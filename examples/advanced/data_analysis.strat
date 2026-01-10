@@ -1,0 +1,27 @@
+// Data Analysis - Basic statistical operations
+// Demonstrates working with numeric data
+
+fx main() {
+    print("Data Analysis Demo");
+    print("==================");
+
+    // Sample data
+    let values = [4.5, 3.2, 5.1, 4.8, 3.9, 5.5, 4.1];
+
+    print("\nValues:");
+    for v in values {
+        print("  {v}");
+    }
+
+    // Calculate sum using a second loop
+    let sum = 0.0;
+    for v in values {
+        sum = sum + v;
+    }
+    print("\nSum: {sum}");
+
+    // Calculate average
+    let count = 7;
+    let avg = sum / count;
+    print("Average: {avg}")
+}

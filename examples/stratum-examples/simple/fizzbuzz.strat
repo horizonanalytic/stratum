@@ -1,0 +1,17 @@
+// FizzBuzz - A classic programming challenge
+// Print numbers 1-100, but:
+//   - Print "Fizz" for multiples of 3
+//   - Print "Buzz" for multiples of 5
+//   - Print "FizzBuzz" for multiples of both
+
+fx main() {
+    for i in 1..=100 {
+        let result = match (i % 3, i % 5) {
+            (0, 0) => "FizzBuzz",
+            (0, _) => "Fizz",
+            (_, 0) => "Buzz",
+            _ => "{i}"
+        }
+        print(result)
+    }
+}

@@ -1,0 +1,17 @@
+// JSON API Example - Fetching data from a public API
+// Uses JSONPlaceholder for testing
+
+fx main() {
+    print("Fetching data from JSONPlaceholder API...");
+
+    let response = Http.get("https://jsonplaceholder.typicode.com/users/1");
+    print("Response received!");
+
+    // Parse JSON response
+    let user = Json.parse(response.body);
+    let name = user.name;
+    let email = user.email;
+
+    print("User: {name}");
+    print("Email: {email}")
+}

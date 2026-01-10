@@ -1,0 +1,90 @@
+// Data Analysis - Analyze a public dataset
+// Uses the Iris dataset (classic ML dataset)
+// Download: https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv
+
+#![compile]  // Compile for better performance on large data
+
+import data
+import http
+import math
+
+// Fetch the Iris dataset from GitHub
+async fx load_iris_data() -> DataFrame {
+    let url = "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv"
+    let response = await http.get(url)
+    data.read_csv_string(response.text())
+}
+
+// Calculate basic statistics for a numeric column
+fx describe_column(df: DataFrame, column: String) -> Map<String, Float> {
+    let values = df.column(column)
+    {
+        "count": values.len() as Float,
+        "mean": values.mean(),
+        "std": values.std(),
+        "min": values.min(),
+        "max": values.max(),
+        "median": values.median()
+    }
+}
+
+async fx main() {
+    print("Iris Dataset Analysis")
+    print("=" * 60)
+
+    // Load the data
+    print("\nLoading Iris dataset...")
+    let iris = await load_iris_data()
+
+    print("Loaded {iris.row_count()} rows, {iris.column_count()} columns")
+    print("Columns: {iris.column_names()}")
+
+    // Preview the data
+    print("\nFirst 5 rows:")
+    print(iris.head(5))
+
+    // Summary statistics for numeric columns
+    print("\nSummary Statistics:")
+    print("-" * 60)
+
+    let numeric_cols = ["sepal_length", "sepal_width", "petal_length", "petal_width"]
+    for col in numeric_cols {
+        let stats = describe_column(iris, col)
+        print("\n{col}:")
+        print("  Mean: {stats["mean"]:.3}  Std: {stats["std"]:.3}")
+        print("  Min: {stats["min"]:.3}  Max: {stats["max"]:.3}")
+    }
+
+    // Group by species
+    print("\n\nAnalysis by Species:")
+    print("-" * 60)
+
+    let by_species = iris
+        |> group_by(.species)
+        |> aggregate(
+            count: count(),
+            avg_sepal_length: mean(.sepal_length),
+            avg_sepal_width: mean(.sepal_width),
+            avg_petal_length: mean(.petal_length),
+            avg_petal_width: mean(.petal_width)
+        )
+
+    print(by_species)
+
+    // Find correlations
+    print("\n\nCorrelation: Petal Length vs Petal Width")
+    let correlation = iris
+        |> select(.petal_length, .petal_width)
+        |> correlation()
+
+    print("Pearson correlation coefficient: {correlation:.4}")
+
+    // Filter to find large flowers
+    print("\n\nLarge Flowers (petal_length > 5):")
+    let large_flowers = iris
+        |> filter(.petal_length > 5.0)
+        |> group_by(.species)
+        |> aggregate(count: count())
+
+    print(large_flowers)
+}

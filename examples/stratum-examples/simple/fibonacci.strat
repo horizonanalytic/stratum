@@ -1,0 +1,41 @@
+// Fibonacci Sequence
+// Calculate Fibonacci numbers using different approaches
+
+// Recursive approach (simple but slow for large n)
+fx fib_recursive(n: Int) -> Int {
+    match n {
+        0 => 0,
+        1 => 1,
+        _ => fib_recursive(n - 1) + fib_recursive(n - 2)
+    }
+}
+
+// Iterative approach (efficient)
+fx fib_iterative(n: Int) -> Int {
+    if n <= 1 { return n }
+
+    let mut a = 0
+    let mut b = 1
+
+    for _ in 2..=n {
+        let temp = a + b
+        a = b
+        b = temp
+    }
+
+    b
+}
+
+// Generate first n Fibonacci numbers
+fx fib_sequence(count: Int) -> List<Int> {
+    [fib_iterative(i) for i in 0..count]
+}
+
+fx main() {
+    print("Fibonacci sequence (first 15 numbers):")
+    let sequence = fib_sequence(15)
+    print(sequence)
+
+    print("\nFibonacci(10) = {fib_iterative(10)}")
+    print("Fibonacci(20) = {fib_iterative(20)}")
+}

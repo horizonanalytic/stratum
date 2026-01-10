@@ -7,6 +7,13 @@
 - [Installation](installation.md)
 - [Troubleshooting](troubleshooting.md)
 
+# Examples
+
+- [Overview](examples/index.md)
+- [Simple Examples](examples/simple.md)
+- [Intermediate Examples](examples/intermediate.md)
+- [Advanced Examples](examples/advanced.md)
+
 # Standard Library
 
 - [Overview](stdlib/index.md)

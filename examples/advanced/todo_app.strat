@@ -1,0 +1,17 @@
+// Todo Application - Simple console version
+// Demonstrates basic state management
+
+fx main() {
+    print("Todo App Demo");
+    print("=============");
+
+    // Simple todo list stored as strings
+    let todos = ["Buy groceries", "Write code", "Read book"];
+
+    print("\nMy Todos:");
+    let i = 1;
+    for todo in todos {
+        print("  {i}. {todo}");
+        i = i + 1;
+    }
+}

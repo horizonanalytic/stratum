@@ -1,0 +1,37 @@
+// Factorial Calculator
+// Demonstrates recursion and iteration in Stratum
+
+// Recursive factorial
+fx factorial_recursive(n: Int) -> Int {
+    if n <= 1 { 1 } else { n * factorial_recursive(n - 1) }
+}
+
+// Iterative factorial
+fx factorial_iterative(n: Int) -> Int {
+    let mut result = 1
+    for i in 2..=n {
+        result = result * i
+    }
+    result
+}
+
+// Using reduce (functional style)
+fx factorial_functional(n: Int) -> Int {
+    (1..=n).reduce(1, (acc, x) => acc * x)
+}
+
+fx main() {
+    print("Factorial calculations:")
+
+    for n in [0, 1, 5, 10, 12] {
+        let result = factorial_iterative(n)
+        print("{n}! = {result}")
+    }
+
+    // Verify all methods produce same results
+    let test_n = 7
+    print("\nVerifying {test_n}!:")
+    print("  Recursive:  {factorial_recursive(test_n)}")
+    print("  Iterative:  {factorial_iterative(test_n)}")
+    print("  Functional: {factorial_functional(test_n)}")
+}

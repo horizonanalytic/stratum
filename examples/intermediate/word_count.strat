@@ -1,0 +1,38 @@
+// Word Count - Count word frequencies in text
+// Demonstrates string processing and maps
+
+fx main() {
+    print("Word Frequency Analysis");
+    print("=======================");
+
+    // Sample text
+    let text = "The quick brown fox jumps over the lazy dog. The dog was not amused by the fox. Quick thinking by the fox saved the day.";
+    print("\nText: {text}");
+
+    // Normalize and split
+    let lower = text.to_lower();
+    let normalized = lower.replace(".", "").replace(",", "");
+    let words = normalized.split(" ");
+
+    // Count words
+    let counts = {"_init_": 0};
+    for word in words {
+        if word.len() > 0 {
+            let current = counts.get(word) ?? 0;
+            counts[word] = current + 1;
+        }
+    }
+
+    // Print results
+    print("\nWord frequencies:");
+    let total = 0;
+    for word in words {
+        if word.len() > 0 {
+            total = total + 1;
+        }
+    }
+    print("Total words: {total}");
+
+    let unique = counts.len();
+    print("Unique words: {unique}")
+}

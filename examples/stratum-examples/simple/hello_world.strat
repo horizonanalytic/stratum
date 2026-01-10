@@ -1,0 +1,6 @@
+// Hello World - The simplest Stratum program
+// Run with: stratum run hello_world.strat
+
+fx main() {
+    print("Hello, Stratum!")
+}

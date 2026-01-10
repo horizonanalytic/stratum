@@ -1,0 +1,146 @@
+// Web Scraper - Fetch and analyze data from multiple sources
+// Demonstrates async/await, concurrent operations, and data processing
+
+#![compile(hot)]  // JIT compile hot paths
+
+import http
+import json
+import time
+import data
+
+struct GithubRepo {
+    name: String,
+    full_name: String,
+    description: String?,
+    stars: Int,
+    forks: Int,
+    language: String?,
+    updated_at: String
+}
+
+struct HackerNewsStory {
+    id: Int,
+    title: String,
+    url: String?,
+    score: Int,
+    by: String,
+    time: Int
+}
+
+// Fetch top GitHub repos for a language
+async fx fetch_github_repos(language: String, count: Int) -> List<GithubRepo> {
+    let url = "https://api.github.com/search/repositories?q=language:{language}&sort=stars&per_page={count}"
+
+    let response = await http.get(url, headers: {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "Stratum-Example"
+    })
+
+    let data = json.parse(response.text())
+    data["items"]
+        |> map(item => GithubRepo {
+            name: item["name"],
+            full_name: item["full_name"],
+            description: item["description"],
+            stars: item["stargazers_count"],
+            forks: item["forks_count"],
+            language: item["language"],
+            updated_at: item["updated_at"]
+        })
+}
+
+// Fetch top Hacker News stories
+async fx fetch_hackernews_top(count: Int) -> List<HackerNewsStory> {
+    // Get top story IDs
+    let ids_response = await http.get("https://hacker-news.firebaseio.com/v0/topstories.json")
+    let story_ids: List<Int> = json.parse(ids_response.text())
+    let top_ids = story_ids.take(count)
+
+    // Fetch stories concurrently (in batches to avoid rate limiting)
+    let stories = await async.all(
+        top_ids.map(id =>
+            http.get("https://hacker-news.firebaseio.com/v0/item/{id}.json")
+        )
+    )
+
+    stories
+        |> map(response => json.parse(response.text()))
+        |> map(item => HackerNewsStory {
+            id: item["id"],
+            title: item["title"],
+            url: item.get("url"),
+            score: item["score"],
+            by: item["by"],
+            time: item["time"]
+        })
+}
+
+async fx main() {
+    print("Tech News & Trends Aggregator")
+    print("=" * 60)
+    print("")
+
+    let start = time.now()
+
+    // Fetch data from multiple sources concurrently
+    print("Fetching data from GitHub and Hacker News...")
+
+    let (rust_repos, python_repos, hn_stories) = await async.all(
+        fetch_github_repos("rust", 10),
+        fetch_github_repos("python", 10),
+        fetch_hackernews_top(15)
+    )
+
+    let elapsed = time.since(start)
+    print("Fetched data in {elapsed.as_millis()}ms\n")
+
+    // Display GitHub trending repos
+    print("Top Rust Repositories on GitHub:")
+    print("-" * 60)
+    for (i, repo) in rust_repos.enumerate() {
+        print("{i + 1:2}. {repo.full_name}")
+        print("    {repo.stars:,} stars | {repo.forks:,} forks")
+        if let Some(desc) = repo.description {
+            print("    {desc.truncate(60)}...")
+        }
+        print("")
+    }
+
+    print("\nTop Python Repositories on GitHub:")
+    print("-" * 60)
+    for (i, repo) in python_repos.enumerate() {
+        print("{i + 1:2}. {repo.full_name} - {repo.stars:,} stars")
+    }
+
+    // Display Hacker News stories
+    print("\n\nTop Hacker News Stories:")
+    print("-" * 60)
+    for (i, story) in hn_stories.enumerate() {
+        print("{i + 1:2}. {story.title}")
+        print("    {story.score} points by {story.by}")
+        print("")
+    }
+
+    // Create a summary DataFrame
+    print("\n\nSummary Statistics:")
+    print("-" * 60)
+
+    let all_repos = rust_repos + python_repos
+    let repo_df = data.from_records(all_repos)
+
+    let by_language = repo_df
+        |> group_by(.language)
+        |> aggregate(
+            repos: count(),
+            total_stars: sum(.stars),
+            avg_stars: mean(.stars),
+            total_forks: sum(.forks)
+        )
+
+    print(by_language)
+
+    print("\nHacker News Stats:")
+    print("  Average score: {hn_stories.map(s => s.score).mean():.1}")
+    print("  Highest score: {hn_stories.map(s => s.score).max()}")
+    print("  Stories with URLs: {hn_stories.filter(s => s.url.is_some()).len()}")
+}

@@ -1,0 +1,29 @@
+// CSV Processor - Data processing demo
+
+fx main() {
+    print("Data Processing Example");
+    print("=======================");
+
+    // Create simple list data
+    let regions = ["North", "South", "East", "West"];
+    let sales = [100, 75, 120, 50];
+
+    print("\nRegions:");
+    for r in regions {
+        print("  - {r}");
+    }
+
+    print("\nSales:");
+    for s in sales {
+        print("  {s}");
+    }
+
+    // Calculate total
+    let total = 0;
+    for s in sales {
+        total = total + s;
+    }
+    print("\nTotal sales: {total}");
+
+    print("\nDone!")
+}

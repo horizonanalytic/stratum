@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+#
+# Deploy docs to GitHub Pages
+# Creates/updates the gh-pages branch with built documentation
+#
+# Usage:
+#   ./scripts/deploy-docs.sh
+#
+# Prerequisites:
+#   - mdbook installed (cargo install mdbook)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DOCS_DIR="$PROJECT_ROOT/docs"
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+BOOK_DIR="$DOCS_DIR/book"
+
+# Build the docs if source files exist
+if [[ -f "$DOCS_DIR/SUMMARY.md" ]]; then
+    log_info "Building documentation with mdbook..."
+    cd "$DOCS_DIR"
+    mdbook build
+elif [[ -d "$BOOK_DIR" ]]; then
+    log_info "Using pre-built documentation (no source files found)"
+else
+    log_error "No documentation found - neither source files nor built book"
+    exit 1
+fi
+
+# Get remote URL
+cd "$PROJECT_ROOT"
+REMOTE_URL=$(git remote get-url origin)
+
+# Create a temporary directory and clone fresh
+TEMP_DIR=$(mktemp -d)
+log_info "Working in temporary directory: $TEMP_DIR"
+
+cd "$TEMP_DIR"
+
+# Initialize a new repo and set up gh-pages branch
+git init
+git remote add origin "$REMOTE_URL"
+
+# Try to fetch existing gh-pages, or start fresh
+if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+    log_info "Fetching existing gh-pages branch..."
+    git fetch origin gh-pages
+    git checkout -b gh-pages origin/gh-pages
+    # Clean everything
+    git rm -rf . 2>/dev/null || true
+else
+    log_info "Creating new gh-pages branch..."
+    git checkout --orphan gh-pages
+fi
+
+# Copy the built docs
+log_info "Copying documentation..."
+cp -r "$BOOK_DIR"/* .
+
+# Add .nojekyll to prevent Jekyll processing
+touch .nojekyll
+
+# Commit and push
+git add -A
+git commit -m "Deploy docs $(date +%Y-%m-%d)" || { log_info "No changes to commit"; exit 0; }
+
+log_info "Pushing to origin/gh-pages..."
+git push origin gh-pages --force
+
+# Cleanup
+cd "$PROJECT_ROOT"
+rm -rf "$TEMP_DIR"
+
+log_success "Documentation deployed to gh-pages branch!"
+log_info "Configure GitHub Pages at your repo Settings -> Pages"
+log_info "Set source to 'Deploy from a branch' -> 'gh-pages' -> '/ (root)'"

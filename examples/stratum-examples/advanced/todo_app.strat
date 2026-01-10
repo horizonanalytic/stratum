@@ -1,0 +1,208 @@
+// Todo Application - A complete GUI application
+// Demonstrates Stratum's GUI framework
+
+#![compile]  // Compile for distribution
+
+import gui
+import time
+import json
+import io
+
+struct TodoItem {
+    id: Int,
+    text: String,
+    done: Bool,
+    created_at: DateTime,
+    priority: Priority
+}
+
+enum Priority {
+    Low,
+    Medium,
+    High
+}
+
+struct AppState {
+    todos: List<TodoItem>,
+    input_text: String,
+    filter: Filter,
+    next_id: Int,
+    selected_priority: Priority
+}
+
+enum Filter {
+    All,
+    Active,
+    Completed
+}
+
+impl AppState {
+    fx new() -> AppState {
+        AppState {
+            todos: [],
+            input_text: "",
+            filter: Filter.All,
+            next_id: 1,
+            selected_priority: Priority.Medium
+        }
+    }
+
+    fx add_todo(mut self) {
+        if self.input_text.trim().is_empty() {
+            return
+        }
+
+        self.todos.push(TodoItem {
+            id: self.next_id,
+            text: self.input_text.trim(),
+            done: false,
+            created_at: time.now(),
+            priority: self.selected_priority
+        })
+
+        self.next_id = self.next_id + 1
+        self.input_text = ""
+    }
+
+    fx toggle_todo(mut self, id: Int) {
+        for todo in &mut self.todos {
+            if todo.id == id {
+                todo.done = !todo.done
+            }
+        }
+    }
+
+    fx delete_todo(mut self, id: Int) {
+        self.todos = self.todos
+            |> filter(t => t.id != id)
+    }
+
+    fx filtered_todos(self) -> List<TodoItem> {
+        match self.filter {
+            Filter.All => self.todos,
+            Filter.Active => self.todos |> filter(t => !t.done),
+            Filter.Completed => self.todos |> filter(t => t.done)
+        }
+    }
+
+    fx active_count(self) -> Int {
+        self.todos |> filter(t => !t.done) |> count()
+    }
+
+    fx clear_completed(mut self) {
+        self.todos = self.todos |> filter(t => !t.done)
+    }
+}
+
+fx priority_color(priority: Priority) -> Color {
+    match priority {
+        Priority.Low => Color.gray(0.6),
+        Priority.Medium => Color.blue(0.7),
+        Priority.High => Color.red(0.7)
+    }
+}
+
+fx main() {
+    let state = AppState.new()
+
+    gui.app("Todo List", state) { state =>
+        Window(title: "Stratum Todo", size: (500, 700)) {
+            VStack(padding: 20, spacing: 16) {
+                // Header
+                Text("My Todos")
+                    .font_size(28)
+                    .font_weight(.bold)
+
+                // Input area
+                HStack(spacing: 8) {
+                    TextField(&state.input_text, placeholder: "What needs to be done?")
+                        .on_submit { state.add_todo() }
+
+                    Dropdown(
+                        options: [Priority.Low, Priority.Medium, Priority.High],
+                        selected: &state.selected_priority,
+                        display: p => match p {
+                            Priority.Low => "Low",
+                            Priority.Medium => "Medium",
+                            Priority.High => "High"
+                        }
+                    )
+                    .width(100)
+
+                    Button("Add") { state.add_todo() }
+                        .style(.primary)
+                }
+
+                // Filter tabs
+                HStack(spacing: 4) {
+                    FilterButton("All", Filter.All, &state.filter)
+                    FilterButton("Active", Filter.Active, &state.filter)
+                    FilterButton("Completed", Filter.Completed, &state.filter)
+
+                    Spacer()
+
+                    Text("{state.active_count()} items left")
+                        .color(.secondary)
+                }
+
+                // Todo list
+                ScrollView {
+                    VStack(spacing: 8) {
+                        for todo in state.filtered_todos() {
+                            TodoRow(todo, state)
+                        }
+
+                        if state.filtered_todos().is_empty() {
+                            Text("No todos to show")
+                                .color(.secondary)
+                                .padding(40)
+                        }
+                    }
+                }
+
+                // Footer
+                if state.todos.any(t => t.done) {
+                    Button("Clear Completed") { state.clear_completed() }
+                        .style(.secondary)
+                }
+            }
+        }
+    }
+}
+
+// Reusable filter button component
+fx FilterButton(label: String, filter: Filter, selected: &Filter) -> Widget {
+    let is_selected = *selected == filter
+
+    Button(label) { *selected = filter }
+        .style(if is_selected { .primary } else { .text })
+}
+
+// Todo item row component
+fx TodoRow(todo: TodoItem, state: &mut AppState) -> Widget {
+    HStack(spacing: 12) {
+        Checkbox(&todo.done)
+            .on_change { state.toggle_todo(todo.id) }
+
+        Circle()
+            .size(8)
+            .fill(priority_color(todo.priority))
+
+        Text(todo.text)
+            .strikethrough(if: todo.done)
+            .color(if todo.done { .secondary } else { .primary })
+
+        Spacer()
+
+        Text(time.format(todo.created_at, "MMM d"))
+            .font_size(12)
+            .color(.secondary)
+
+        Button("x") { state.delete_todo(todo.id) }
+            .style(.text)
+            .color(.red)
+    }
+    .padding(12)
+    .background(Color.gray(0.05))
+    .corner_radius(8)
+}

@@ -719,6 +719,14 @@ impl Compiler {
             self.patch_jump(jump);
         }
 
+        // Remove the loop variable from locals before end_scope.
+        // We already handle its cleanup with the explicit Pop inside the loop (line 704).
+        // When IterNext jumps (iterator exhausted), no value was pushed for the loop var,
+        // so end_scope should NOT try to pop it.
+        if self.current.locals.len() > iter_slot + 1 {
+            self.current.locals.pop();
+        }
+
         self.end_scope(line);
     }
 
