@@ -1,0 +1,1127 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Math - Stratum Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Reference documentation for the Stratum programming language standard library">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-b2c90539.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-22706313.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Stratum Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/cachemcclure/stratum" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/cachemcclure/stratum/edit/main/docs/./stdlib/math.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="math"><a class="header" href="#math">Math</a></h1>
+<p>Mathematical constants and functions for numeric operations.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The <code>Math</code> namespace provides fundamental mathematical operations including trigonometry, exponentials, logarithms, rounding, and utility functions. All functions accept both <code>Int</code> and <code>Float</code> arguments where numeric input is expected.</p>
+<p>Constants are accessed as properties (e.g., <code>Math.PI</code>), while functions are called with parentheses (e.g., <code>Math.sqrt(16)</code>).</p>
+<hr>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="mathpi"><a class="header" href="#mathpi"><code>Math.PI</code></a></h3>
+<p>The mathematical constant π (pi), the ratio of a circle’s circumference to its diameter.</p>
+<p><strong>Type:</strong> <code>Float</code></p>
+<p><strong>Value:</strong> <code>3.141592653589793</code></p>
+<hr>
+<h3 id="mathe"><a class="header" href="#mathe"><code>Math.E</code></a></h3>
+<p>Euler’s number <em>e</em>, the base of natural logarithms.</p>
+<p><strong>Type:</strong> <code>Float</code></p>
+<p><strong>Value:</strong> <code>2.718281828459045</code></p>
+<hr>
+<h3 id="mathtau"><a class="header" href="#mathtau"><code>Math.TAU</code></a></h3>
+<p>The mathematical constant τ (tau), equal to 2π. Represents a full turn in radians.</p>
+<p><strong>Type:</strong> <code>Float</code></p>
+<p><strong>Value:</strong> <code>6.283185307179586</code></p>
+<hr>
+<h3 id="mathinfinity"><a class="header" href="#mathinfinity"><code>Math.INFINITY</code></a></h3>
+<p>Positive infinity. Result of operations like <code>1.0 / 0.0</code>.</p>
+<p><strong>Type:</strong> <code>Float</code></p>
+<p><strong>Value:</strong> <code>inf</code></p>
+<hr>
+<h3 id="mathneg_infinity"><a class="header" href="#mathneg_infinity"><code>Math.NEG_INFINITY</code></a></h3>
+<p>Negative infinity. Result of operations like <code>-1.0 / 0.0</code>.</p>
+<p><strong>Type:</strong> <code>Float</code></p>
+<p><strong>Value:</strong> <code>-inf</code></p>
+<hr>
+<h3 id="mathnan"><a class="header" href="#mathnan"><code>Math.NAN</code></a></h3>
+<p>Not a Number. Result of undefined operations like <code>0.0 / 0.0</code>.</p>
+<p><strong>Type:</strong> <code>Float</code></p>
+<p><strong>Value:</strong> <code>nan</code></p>
+<p><strong>Note:</strong> <code>NaN</code> is not equal to itself. Use <code>Math.is_nan()</code> to check for NaN values.</p>
+<hr>
+<h2 id="basic-functions"><a class="header" href="#basic-functions">Basic Functions</a></h2>
+<h3 id="mathabsx"><a class="header" href="#mathabsx"><code>Math.abs(x)</code></a></h3>
+<p>Returns the absolute value of a number.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Int | Float</code> - The absolute value (same type as input)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.abs(-5)      // 5
+Math.abs(3.14)    // 3.14
+Math.abs(-2.5)    // 2.5
+Math.abs(0)       // 0
+</code></pre>
+<hr>
+<h3 id="mathfloorx"><a class="header" href="#mathfloorx"><code>Math.floor(x)</code></a></h3>
+<p>Returns the largest integer less than or equal to a number (rounds toward negative infinity).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Int</code> - The floor value</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.floor(3.7)   // 3
+Math.floor(3.2)   // 3
+Math.floor(-2.3)  // -3 (toward negative infinity)
+Math.floor(5)     // 5
+</code></pre>
+<hr>
+<h3 id="mathceilx"><a class="header" href="#mathceilx"><code>Math.ceil(x)</code></a></h3>
+<p>Returns the smallest integer greater than or equal to a number (rounds toward positive infinity).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Int</code> - The ceiling value</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.ceil(3.2)    // 4
+Math.ceil(3.7)    // 4
+Math.ceil(-2.7)   // -2 (toward positive infinity)
+Math.ceil(5)      // 5
+</code></pre>
+<hr>
+<h3 id="mathroundx"><a class="header" href="#mathroundx"><code>Math.round(x)</code></a></h3>
+<p>Rounds a number to the nearest integer. Ties round away from zero.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Int</code> - The rounded value</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.round(3.4)   // 3
+Math.round(3.5)   // 4
+Math.round(3.6)   // 4
+Math.round(-2.5)  // -3 (away from zero)
+</code></pre>
+<hr>
+<h3 id="mathtruncx"><a class="header" href="#mathtruncx"><code>Math.trunc(x)</code></a></h3>
+<p>Truncates a number by removing its fractional part (rounds toward zero).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Int</code> - The truncated value</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.trunc(3.7)   // 3
+Math.trunc(-2.7)  // -2 (toward zero, unlike floor)
+Math.trunc(5.9)   // 5
+</code></pre>
+<hr>
+<h3 id="mathsignx"><a class="header" href="#mathsignx"><code>Math.sign(x)</code></a></h3>
+<p>Returns the sign of a number: -1, 0, or 1.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Int</code> - The sign (-1, 0, or 1); returns <code>NaN</code> if input is <code>NaN</code></p>
+<p><strong>Aliases:</strong> <code>Math.signum(x)</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.sign(-42)    // -1
+Math.sign(0)      // 0
+Math.sign(100)    // 1
+Math.sign(-3.14)  // -1
+</code></pre>
+<hr>
+<h3 id="mathfractx"><a class="header" href="#mathfractx"><code>Math.fract(x)</code></a></h3>
+<p>Returns the fractional part of a number (the part after the decimal point).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The fractional part</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.fract(3.75)   // 0.75
+Math.fract(-2.25)  // -0.25
+Math.fract(5)      // 0.0
+Math.fract(1.5)    // 0.5
+</code></pre>
+<hr>
+<h2 id="trigonometric-functions"><a class="header" href="#trigonometric-functions">Trigonometric Functions</a></h2>
+<p>All trigonometric functions work with radians. Use <code>Math.to_radians()</code> to convert degrees to radians.</p>
+<h3 id="mathsinx"><a class="header" href="#mathsinx"><code>Math.sin(x)</code></a></h3>
+<p>Returns the sine of an angle in radians.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>Angle in radians</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The sine value (range: -1 to 1)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.sin(0)              // 0.0
+Math.sin(Math.PI / 2)    // 1.0
+Math.sin(Math.PI)        // ~0.0 (very small due to floating point)
+</code></pre>
+<hr>
+<h3 id="mathcosx"><a class="header" href="#mathcosx"><code>Math.cos(x)</code></a></h3>
+<p>Returns the cosine of an angle in radians.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>Angle in radians</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The cosine value (range: -1 to 1)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.cos(0)              // 1.0
+Math.cos(Math.PI / 2)    // ~0.0
+Math.cos(Math.PI)        // -1.0
+</code></pre>
+<hr>
+<h3 id="mathtanx"><a class="header" href="#mathtanx"><code>Math.tan(x)</code></a></h3>
+<p>Returns the tangent of an angle in radians.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>Angle in radians</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The tangent value</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.tan(0)              // 0.0
+Math.tan(Math.PI / 4)    // ~1.0
+</code></pre>
+<hr>
+<h3 id="mathasinx"><a class="header" href="#mathasinx"><code>Math.asin(x)</code></a></h3>
+<p>Returns the arcsine (inverse sine) of a value.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>Value in range -1 to 1</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - Angle in radians (range: -π/2 to π/2)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.asin(0)    // 0.0
+Math.asin(1)    // ~1.5707963 (π/2)
+Math.asin(0.5)  // ~0.5235987 (π/6)
+</code></pre>
+<hr>
+<h3 id="mathacosx"><a class="header" href="#mathacosx"><code>Math.acos(x)</code></a></h3>
+<p>Returns the arccosine (inverse cosine) of a value.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>Value in range -1 to 1</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - Angle in radians (range: 0 to π)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.acos(1)    // 0.0
+Math.acos(0)    // ~1.5707963 (π/2)
+Math.acos(-1)   // ~3.1415926 (π)
+</code></pre>
+<hr>
+<h3 id="mathatanx"><a class="header" href="#mathatanx"><code>Math.atan(x)</code></a></h3>
+<p>Returns the arctangent (inverse tangent) of a value.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>Any numeric value</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - Angle in radians (range: -π/2 to π/2)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.atan(0)    // 0.0
+Math.atan(1)    // ~0.7853981 (π/4)
+Math.atan(-1)   // ~-0.7853981
+</code></pre>
+<hr>
+<h3 id="mathatan2y-x"><a class="header" href="#mathatan2y-x"><code>Math.atan2(y, x)</code></a></h3>
+<p>Returns the arctangent of the quotient y/x, using the signs of both arguments to determine the quadrant. This is the angle in radians between the positive x-axis and the point (x, y).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>y</code></td><td><code>Int | Float</code></td><td>The y coordinate</td></tr>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The x coordinate</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - Angle in radians (range: -π to π)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.atan2(1, 1)    // ~0.7853981 (π/4, first quadrant)
+Math.atan2(1, -1)   // ~2.3561944 (3π/4, second quadrant)
+Math.atan2(-1, -1)  // ~-2.3561944 (-3π/4, third quadrant)
+Math.atan2(-1, 1)   // ~-0.7853981 (-π/4, fourth quadrant)
+</code></pre>
+<hr>
+<h3 id="mathsinhx"><a class="header" href="#mathsinhx"><code>Math.sinh(x)</code></a></h3>
+<p>Returns the hyperbolic sine of a value.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input value</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The hyperbolic sine</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.sinh(0)    // 0.0
+Math.sinh(1)    // ~1.1752011
+</code></pre>
+<hr>
+<h3 id="mathcoshx"><a class="header" href="#mathcoshx"><code>Math.cosh(x)</code></a></h3>
+<p>Returns the hyperbolic cosine of a value.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input value</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The hyperbolic cosine</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.cosh(0)    // 1.0
+Math.cosh(1)    // ~1.5430806
+</code></pre>
+<hr>
+<h3 id="mathtanhx"><a class="header" href="#mathtanhx"><code>Math.tanh(x)</code></a></h3>
+<p>Returns the hyperbolic tangent of a value.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The input value</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The hyperbolic tangent (range: -1 to 1)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.tanh(0)    // 0.0
+Math.tanh(1)    // ~0.7615941
+</code></pre>
+<hr>
+<h2 id="exponential-and-logarithmic-functions"><a class="header" href="#exponential-and-logarithmic-functions">Exponential and Logarithmic Functions</a></h2>
+<h3 id="mathexpx"><a class="header" href="#mathexpx"><code>Math.exp(x)</code></a></h3>
+<p>Returns <em>e</em> raised to the power of x (e^x).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The exponent</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - e^x</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.exp(0)    // 1.0
+Math.exp(1)    // ~2.7182818 (e)
+Math.exp(2)    // ~7.3890560
+</code></pre>
+<hr>
+<h3 id="mathexp2x"><a class="header" href="#mathexp2x"><code>Math.exp2(x)</code></a></h3>
+<p>Returns 2 raised to the power of x (2^x).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The exponent</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - 2^x</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.exp2(0)    // 1.0
+Math.exp2(3)    // 8.0
+Math.exp2(10)   // 1024.0
+</code></pre>
+<hr>
+<h3 id="mathlnx"><a class="header" href="#mathlnx"><code>Math.ln(x)</code></a></h3>
+<p>Returns the natural logarithm (base <em>e</em>) of a number.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>A positive number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The natural logarithm</p>
+<p><strong>Aliases:</strong> <code>Math.log(x)</code></p>
+<p><strong>Note:</strong> Returns <code>-inf</code> for 0, <code>NaN</code> for negative numbers.</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.ln(1)          // 0.0
+Math.ln(Math.E)     // 1.0
+Math.ln(10)         // ~2.3025850
+</code></pre>
+<hr>
+<h3 id="mathlog2x"><a class="header" href="#mathlog2x"><code>Math.log2(x)</code></a></h3>
+<p>Returns the base-2 logarithm of a number.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>A positive number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The base-2 logarithm</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.log2(1)      // 0.0
+Math.log2(2)      // 1.0
+Math.log2(8)      // 3.0
+Math.log2(1024)   // 10.0
+</code></pre>
+<hr>
+<h3 id="mathlog10x"><a class="header" href="#mathlog10x"><code>Math.log10(x)</code></a></h3>
+<p>Returns the base-10 logarithm of a number.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>A positive number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The base-10 logarithm</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.log10(1)      // 0.0
+Math.log10(10)     // 1.0
+Math.log10(100)    // 2.0
+Math.log10(1000)   // 3.0
+</code></pre>
+<hr>
+<h3 id="mathpowbase-exp"><a class="header" href="#mathpowbase-exp"><code>Math.pow(base, exp)</code></a></h3>
+<p>Returns base raised to the power of exp.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>base</code></td><td><code>Int | Float</code></td><td>The base number</td></tr>
+<tr><td><code>exp</code></td><td><code>Int | Float</code></td><td>The exponent</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - base^exp</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.pow(2, 3)      // 8.0
+Math.pow(2, 0.5)    // ~1.4142135 (square root of 2)
+Math.pow(10, -2)    // 0.01
+Math.pow(4, 0.5)    // 2.0
+</code></pre>
+<hr>
+<h3 id="mathsqrtx"><a class="header" href="#mathsqrtx"><code>Math.sqrt(x)</code></a></h3>
+<p>Returns the square root of a number.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>A non-negative number</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The square root</p>
+<p><strong>Note:</strong> Returns <code>NaN</code> for negative numbers.</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.sqrt(4)     // 2.0
+Math.sqrt(16)    // 4.0
+Math.sqrt(2)     // ~1.4142135
+Math.sqrt(0)     // 0.0
+</code></pre>
+<hr>
+<h3 id="mathcbrtx"><a class="header" href="#mathcbrtx"><code>Math.cbrt(x)</code></a></h3>
+<p>Returns the cube root of a number.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>Any number (including negative)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The cube root</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.cbrt(8)     // 2.0
+Math.cbrt(27)    // 3.0
+Math.cbrt(-8)    // -2.0
+Math.cbrt(1000)  // 10.0
+</code></pre>
+<hr>
+<h2 id="utility-functions"><a class="header" href="#utility-functions">Utility Functions</a></h2>
+<h3 id="mathmina-b-"><a class="header" href="#mathmina-b-"><code>Math.min(a, b, ...)</code></a></h3>
+<p>Returns the smallest of the given values.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>a, b, ...</code></td><td><code>Int | Float</code></td><td>One or more numbers to compare</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Int | Float</code> - The minimum value (preserves Int type when possible)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.min(3, 1, 4)       // 1
+Math.min(-5, 0, 5)      // -5
+Math.min(3.14, 2.71)    // 2.71
+Math.min(10)            // 10
+</code></pre>
+<hr>
+<h3 id="mathmaxa-b-"><a class="header" href="#mathmaxa-b-"><code>Math.max(a, b, ...)</code></a></h3>
+<p>Returns the largest of the given values.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>a, b, ...</code></td><td><code>Int | Float</code></td><td>One or more numbers to compare</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Int | Float</code> - The maximum value (preserves Int type when possible)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.max(3, 1, 4)       // 4
+Math.max(-5, 0, 5)      // 5
+Math.max(3.14, 2.71)    // 3.14
+Math.max(10)            // 10
+</code></pre>
+<hr>
+<h3 id="mathclampvalue-min-max"><a class="header" href="#mathclampvalue-min-max"><code>Math.clamp(value, min, max)</code></a></h3>
+<p>Constrains a value to lie within a specified range.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>value</code></td><td><code>Int | Float</code></td><td>The value to clamp</td></tr>
+<tr><td><code>min</code></td><td><code>Int | Float</code></td><td>The minimum bound</td></tr>
+<tr><td><code>max</code></td><td><code>Int | Float</code></td><td>The maximum bound</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Int | Float</code> - The clamped value</p>
+<p><strong>Throws:</strong> Error if <code>min &gt; max</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.clamp(5, 0, 10)    // 5 (within range)
+Math.clamp(-5, 0, 10)   // 0 (below min)
+Math.clamp(15, 0, 10)   // 10 (above max)
+Math.clamp(0.5, 0, 1)   // 0.5
+</code></pre>
+<hr>
+<h3 id="mathhypotx-y"><a class="header" href="#mathhypotx-y"><code>Math.hypot(x, y)</code></a></h3>
+<p>Returns the hypotenuse of a right triangle, equivalent to <code>sqrt(x² + y²)</code>. This is computed in a way that avoids overflow for large values.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>First side length</td></tr>
+<tr><td><code>y</code></td><td><code>Int | Float</code></td><td>Second side length</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The hypotenuse</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.hypot(3, 4)    // 5.0
+Math.hypot(5, 12)   // 13.0
+Math.hypot(1, 1)    // ~1.4142135
+</code></pre>
+<hr>
+<h2 id="angle-conversion-functions"><a class="header" href="#angle-conversion-functions">Angle Conversion Functions</a></h2>
+<h3 id="mathto_degreesradians"><a class="header" href="#mathto_degreesradians"><code>Math.to_degrees(radians)</code></a></h3>
+<p>Converts an angle from radians to degrees.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>radians</code></td><td><code>Int | Float</code></td><td>Angle in radians</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - Angle in degrees</p>
+<p><strong>Aliases:</strong> <code>Math.degrees(radians)</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.to_degrees(Math.PI)        // 180.0
+Math.to_degrees(Math.PI / 2)    // 90.0
+Math.to_degrees(Math.TAU)       // 360.0
+</code></pre>
+<hr>
+<h3 id="mathto_radiansdegrees"><a class="header" href="#mathto_radiansdegrees"><code>Math.to_radians(degrees)</code></a></h3>
+<p>Converts an angle from degrees to radians.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>degrees</code></td><td><code>Int | Float</code></td><td>Angle in degrees</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - Angle in radians</p>
+<p><strong>Aliases:</strong> <code>Math.radians(degrees)</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.to_radians(180)    // ~3.1415926 (π)
+Math.to_radians(90)     // ~1.5707963 (π/2)
+Math.to_radians(360)    // ~6.2831853 (τ)
+</code></pre>
+<hr>
+<h2 id="statistical-functions"><a class="header" href="#statistical-functions">Statistical Functions</a></h2>
+<p>These functions operate on lists of numbers for statistical calculations.</p>
+<h3 id="mathsumlist"><a class="header" href="#mathsumlist"><code>Math.sum(list)</code></a></h3>
+<p>Returns the sum of all numbers in a list.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>list</code></td><td><code>List&lt;Int | Float&gt;</code></td><td>List of numbers</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - Sum of all values</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.sum([1, 2, 3, 4, 5])      // 15.0
+Math.sum([1.5, 2.5, 3.0])      // 7.0
+Math.sum([])                    // 0.0
+</code></pre>
+<hr>
+<h3 id="mathmeanlist"><a class="header" href="#mathmeanlist"><code>Math.mean(list)</code></a></h3>
+<p>Returns the arithmetic mean (average) of numbers in a list.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>list</code></td><td><code>List&lt;Int | Float&gt;</code></td><td>List of numbers</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The mean value</p>
+<p><strong>Throws:</strong> Error if the list is empty</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.mean([1, 2, 3, 4, 5])     // 3.0
+Math.mean([10, 20, 30])        // 20.0
+Math.mean([2.5, 3.5])          // 3.0
+</code></pre>
+<hr>
+<h3 id="mathmedianlist"><a class="header" href="#mathmedianlist"><code>Math.median(list)</code></a></h3>
+<p>Returns the median (middle value) of numbers in a list.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>list</code></td><td><code>List&lt;Int | Float&gt;</code></td><td>List of numbers</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The median value (average of two middle values if even count)</p>
+<p><strong>Throws:</strong> Error if the list is empty</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.median([1, 2, 3, 4, 5])   // 3.0
+Math.median([1, 2, 3, 4])      // 2.5 (average of 2 and 3)
+Math.median([5, 1, 3])         // 3.0 (sorted: 1, 3, 5)
+</code></pre>
+<hr>
+<h3 id="mathstdlist"><a class="header" href="#mathstdlist"><code>Math.std(list)</code></a></h3>
+<p>Returns the standard deviation of numbers in a list (population standard deviation).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>list</code></td><td><code>List&lt;Int | Float&gt;</code></td><td>List of numbers</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The standard deviation</p>
+<p><strong>Throws:</strong> Error if the list is empty</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.std([2, 4, 4, 4, 5, 5, 7, 9])  // ~2.0
+Math.std([1, 1, 1, 1])              // 0.0 (no variance)
+</code></pre>
+<hr>
+<h3 id="mathvariancelist"><a class="header" href="#mathvariancelist"><code>Math.variance(list)</code></a></h3>
+<p>Returns the variance of numbers in a list (population variance).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>list</code></td><td><code>List&lt;Int | Float&gt;</code></td><td>List of numbers</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The variance</p>
+<p><strong>Throws:</strong> Error if the list is empty</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.variance([2, 4, 4, 4, 5, 5, 7, 9])  // 4.0
+Math.variance([1, 1, 1, 1])              // 0.0
+</code></pre>
+<hr>
+<h3 id="mathround_tox-decimals"><a class="header" href="#mathround_tox-decimals"><code>Math.round_to(x, decimals)</code></a></h3>
+<p>Rounds a number to the specified number of decimal places.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The number to round</td></tr>
+<tr><td><code>decimals</code></td><td><code>Int</code></td><td>Number of decimal places</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The rounded value</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.round_to(3.14159, 2)   // 3.14
+Math.round_to(3.14159, 4)   // 3.1416
+Math.round_to(123.456, 0)   // 123.0
+Math.round_to(123.456, 1)   // 123.5
+</code></pre>
+<hr>
+<h2 id="validation-functions"><a class="header" href="#validation-functions">Validation Functions</a></h2>
+<h3 id="mathis_nanx"><a class="header" href="#mathis_nanx"><code>Math.is_nan(x)</code></a></h3>
+<p>Checks if a value is NaN (Not a Number).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The value to check</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Bool</code> - <code>true</code> if the value is NaN, <code>false</code> otherwise</p>
+<p><strong>Note:</strong> Integers are never NaN; this always returns <code>false</code> for Int values.</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.is_nan(Math.NAN)         // true
+Math.is_nan(0.0 / 0.0)        // true
+Math.is_nan(Math.sqrt(-1))    // true
+Math.is_nan(42)               // false
+Math.is_nan(3.14)             // false
+</code></pre>
+<hr>
+<h3 id="mathis_infinitex"><a class="header" href="#mathis_infinitex"><code>Math.is_infinite(x)</code></a></h3>
+<p>Checks if a value is positive or negative infinity.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The value to check</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Bool</code> - <code>true</code> if the value is infinite, <code>false</code> otherwise</p>
+<p><strong>Note:</strong> Integers are never infinite; this always returns <code>false</code> for Int values.</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.is_infinite(Math.INFINITY)       // true
+Math.is_infinite(Math.NEG_INFINITY)   // true
+Math.is_infinite(1.0 / 0.0)           // true
+Math.is_infinite(42)                  // false
+Math.is_infinite(3.14)                // false
+</code></pre>
+<hr>
+<h3 id="mathis_finitex"><a class="header" href="#mathis_finitex"><code>Math.is_finite(x)</code></a></h3>
+<p>Checks if a value is finite (not infinity and not NaN).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x</code></td><td><code>Int | Float</code></td><td>The value to check</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Bool</code> - <code>true</code> if the value is finite, <code>false</code> otherwise</p>
+<p><strong>Note:</strong> Integers are always finite; this always returns <code>true</code> for Int values.</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">Math.is_finite(42)              // true
+Math.is_finite(3.14)            // true
+Math.is_finite(Math.INFINITY)   // false
+Math.is_finite(Math.NAN)        // false
+</code></pre>
+<hr>
+<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
+<ul>
+<li><a href="globals.html">Global Functions</a> - Type conversions like <code>int()</code> and <code>float()</code></li>
+<li><a href="random.html">Random</a> - Random number generation</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../stdlib/globals.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../stdlib/random.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../stdlib/globals.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../stdlib/random.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,652 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Troubleshooting - Stratum Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Reference documentation for the Stratum programming language standard library">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-2459343d.css">
+        <link rel="stylesheet" href="css/chrome-ae938929.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-b2c90539.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-22706313.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Stratum Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/cachemcclure/stratum" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/cachemcclure/stratum/edit/main/docs/./troubleshooting.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h1>
+<p>This guide covers common issues encountered when installing, upgrading, or running Stratum.</p>
+<h2 id="installation-issues"><a class="header" href="#installation-issues">Installation Issues</a></h2>
+<h3 id="permission-denied-errors"><a class="header" href="#permission-denied-errors">Permission Denied Errors</a></h3>
+<p><strong>Symptom:</strong> Installation fails with “Permission denied” or “EACCES” errors.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Use a user-writable location</strong> (recommended):</p>
+<pre><code class="language-bash">curl -fsSL https://get.stratum-lang.dev | sh -s -- --prefix=$HOME/.stratum
+</code></pre>
+</li>
+<li>
+<p><strong>Fix directory permissions:</strong></p>
+<pre><code class="language-bash"># If using /usr/local/stratum
+sudo chown -R $(whoami) /usr/local/stratum
+</code></pre>
+</li>
+<li>
+<p><strong>Use sudo for system-wide installation:</strong></p>
+<pre><code class="language-bash">curl -fsSL https://get.stratum-lang.dev | sudo sh
+</code></pre>
+</li>
+</ol>
+<h3 id="path-not-updated"><a class="header" href="#path-not-updated">PATH Not Updated</a></h3>
+<p><strong>Symptom:</strong> After installation, <code>stratum: command not found</code>.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Restart your terminal</strong> or source your shell configuration:</p>
+<pre><code class="language-bash"># Bash
+source ~/.bashrc
+
+# Zsh
+source ~/.zshrc
+
+# Fish
+source ~/.config/fish/config.fish
+</code></pre>
+</li>
+<li>
+<p><strong>Manually add to PATH:</strong></p>
+<pre><code class="language-bash"># For ~/.stratum installation, add to your shell config:
+export PATH="$HOME/.stratum/bin:$PATH"
+
+# For /usr/local/stratum:
+export PATH="/usr/local/stratum/bin:$PATH"
+</code></pre>
+</li>
+<li>
+<p><strong>Check installation location:</strong></p>
+<pre><code class="language-bash"># Find where stratum is installed
+find / -name "stratum" -type f 2&gt;/dev/null
+</code></pre>
+</li>
+</ol>
+<h3 id="shell-completions-not-working"><a class="header" href="#shell-completions-not-working">Shell Completions Not Working</a></h3>
+<p><strong>Symptom:</strong> Tab completion doesn’t work for <code>stratum</code> commands.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Regenerate completions:</strong></p>
+<pre><code class="language-bash"># Bash
+stratum completions bash &gt; ~/.local/share/bash-completion/completions/stratum
+
+# Zsh
+stratum completions zsh &gt; ~/.zfunc/_stratum
+
+# Fish
+stratum completions fish &gt; ~/.config/fish/completions/stratum.fish
+</code></pre>
+</li>
+<li>
+<p><strong>Zsh: Ensure fpath is configured:</strong></p>
+<pre><code class="language-zsh"># Add to ~/.zshrc
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit &amp;&amp; compinit
+</code></pre>
+</li>
+<li>
+<p><strong>Bash: Ensure bash-completion is installed:</strong></p>
+<pre><code class="language-bash"># macOS
+brew install bash-completion@2
+
+# Ubuntu/Debian
+sudo apt install bash-completion
+</code></pre>
+</li>
+</ol>
+<h3 id="version-conflicts"><a class="header" href="#version-conflicts">Version Conflicts</a></h3>
+<p><strong>Symptom:</strong> Multiple versions installed, wrong version being used.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check which version is active:</strong></p>
+<pre><code class="language-bash">stratum --version
+which stratum
+</code></pre>
+</li>
+<li>
+<p><strong>List installed versions:</strong></p>
+<pre><code class="language-bash">stratum self list
+</code></pre>
+</li>
+<li>
+<p><strong>Switch to specific version:</strong></p>
+<pre><code class="language-bash">stratum self use 1.2.0
+</code></pre>
+</li>
+<li>
+<p><strong>Check for conflicting installations:</strong></p>
+<pre><code class="language-bash"># Look for stratum in common locations
+ls -la /usr/local/bin/stratum
+ls -la /usr/bin/stratum
+ls -la ~/.stratum/bin/stratum
+ls -la ~/.cargo/bin/stratum  # If installed via cargo
+</code></pre>
+</li>
+</ol>
+<h3 id="download-or-checksum-failures"><a class="header" href="#download-or-checksum-failures">Download or Checksum Failures</a></h3>
+<p><strong>Symptom:</strong> Installation fails during download or with checksum mismatch.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check network connectivity:</strong></p>
+<pre><code class="language-bash">curl -I https://github.com/horizon-analytic/stratum/releases
+</code></pre>
+</li>
+<li>
+<p><strong>Try a different mirror or direct download:</strong></p>
+<pre><code class="language-bash"># Download manually
+wget https://github.com/horizon-analytic/stratum/releases/latest/download/stratum-macos-universal-VERSION.tar.gz
+
+# Verify checksum
+sha256sum stratum-macos-universal-VERSION.tar.gz
+</code></pre>
+</li>
+<li>
+<p><strong>Clear cached downloads:</strong></p>
+<pre><code class="language-bash">rm -rf /tmp/stratum-install-*
+</code></pre>
+</li>
+</ol>
+<hr>
+<h2 id="platform-specific-issues"><a class="header" href="#platform-specific-issues">Platform-Specific Issues</a></h2>
+<h3 id="macos-gatekeeper-warnings"><a class="header" href="#macos-gatekeeper-warnings">macOS: Gatekeeper Warnings</a></h3>
+<p><strong>Symptom:</strong> “stratum cannot be opened because it is from an unidentified developer” or “stratum is damaged and can’t be opened.”</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Allow in System Preferences:</strong></p>
+<ul>
+<li>Go to System Preferences &gt; Security &amp; Privacy &gt; General</li>
+<li>Click “Open Anyway” next to the blocked application message</li>
+</ul>
+</li>
+<li>
+<p><strong>Remove quarantine attribute:</strong></p>
+<pre><code class="language-bash">xattr -d com.apple.quarantine /path/to/stratum
+</code></pre>
+</li>
+<li>
+<p><strong>For Homebrew installations,</strong> this shouldn’t occur as bottles are signed and notarized.</p>
+</li>
+</ol>
+<h3 id="macos-rosetta-2-required-apple-silicon"><a class="header" href="#macos-rosetta-2-required-apple-silicon">macOS: Rosetta 2 Required (Apple Silicon)</a></h3>
+<p><strong>Symptom:</strong> On M1/M2/M3 Mac, “Bad CPU type in executable” error.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Use native ARM64 binary:</strong> The installer should auto-detect and use the correct binary. If not:</p>
+<pre><code class="language-bash">curl -fsSL https://get.stratum-lang.dev | sh -s -- --arch=aarch64
+</code></pre>
+</li>
+<li>
+<p><strong>Install Rosetta 2</strong> (for x86_64 binaries):</p>
+<pre><code class="language-bash">softwareupdate --install-rosetta
+</code></pre>
+</li>
+</ol>
+<h3 id="linux-missing-dependencies"><a class="header" href="#linux-missing-dependencies">Linux: Missing Dependencies</a></h3>
+<p><strong>Symptom:</strong> “error while loading shared libraries” or similar.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check glibc version:</strong></p>
+<pre><code class="language-bash">ldd --version
+# Requires glibc 2.17 or newer
+</code></pre>
+</li>
+<li>
+<p><strong>Install required libraries:</strong></p>
+<pre><code class="language-bash"># Ubuntu/Debian
+sudo apt install libc6 libssl3 ca-certificates
+
+# Fedora/RHEL
+sudo dnf install glibc openssl ca-certificates
+</code></pre>
+</li>
+<li>
+<p><strong>Use musl build for Alpine:</strong></p>
+<pre><code class="language-bash">curl -fsSL https://get.stratum-lang.dev | sh -s -- --musl
+</code></pre>
+</li>
+</ol>
+<h3 id="linux-apparmorselinux-blocking-execution"><a class="header" href="#linux-apparmorselinux-blocking-execution">Linux: AppArmor/SELinux Blocking Execution</a></h3>
+<p><strong>Symptom:</strong> Permission denied even with correct file permissions.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check SELinux status:</strong></p>
+<pre><code class="language-bash">getenforce
+</code></pre>
+</li>
+<li>
+<p><strong>Allow execution:</strong></p>
+<pre><code class="language-bash"># SELinux
+sudo chcon -t bin_t /path/to/stratum
+
+# Or set permissive for troubleshooting
+sudo setenforce 0
+</code></pre>
+</li>
+</ol>
+<h3 id="container-environment-detection"><a class="header" href="#container-environment-detection">Container Environment Detection</a></h3>
+<p><strong>Symptom:</strong> Interactive installer hangs or behaves unexpectedly in containers.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Use non-interactive mode:</strong></p>
+<pre><code class="language-bash">curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes --tier=data
+</code></pre>
+</li>
+<li>
+<p><strong>In Dockerfile:</strong></p>
+<pre><code class="language-dockerfile">FROM debian:bookworm-slim
+RUN apt-get update &amp;&amp; apt-get install -y curl ca-certificates \
+    &amp;&amp; curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes --quiet \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*
+</code></pre>
+</li>
+<li>
+<p><strong>Or use official Docker image:</strong></p>
+<pre><code class="language-dockerfile">FROM ghcr.io/horizon-analytic/stratum:data
+</code></pre>
+</li>
+</ol>
+<hr>
+<h2 id="runtime-issues"><a class="header" href="#runtime-issues">Runtime Issues</a></h2>
+<h3 id="repl-not-starting"><a class="header" href="#repl-not-starting">REPL Not Starting</a></h3>
+<p><strong>Symptom:</strong> <code>stratum repl</code> exits immediately or shows error.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check terminal supports interactive input:</strong></p>
+<pre><code class="language-bash"># Verify TTY
+tty
+</code></pre>
+</li>
+<li>
+<p><strong>Check for corrupt history:</strong></p>
+<pre><code class="language-bash">rm ~/.stratum/history
+</code></pre>
+</li>
+<li>
+<p><strong>Run with verbose output:</strong></p>
+<pre><code class="language-bash">STRATUM_LOG=debug stratum repl
+</code></pre>
+</li>
+</ol>
+<h3 id="workshop-ide-not-launching"><a class="header" href="#workshop-ide-not-launching">Workshop IDE Not Launching</a></h3>
+<p><strong>Symptom:</strong> <code>stratum workshop</code> fails to open.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Verify GUI tier is installed:</strong></p>
+<pre><code class="language-bash">stratum self info
+# Should show "gui" or "full" tier
+</code></pre>
+</li>
+<li>
+<p><strong>Upgrade to GUI tier:</strong></p>
+<pre><code class="language-bash">stratum self update --tier=gui
+</code></pre>
+</li>
+<li>
+<p><strong>Check display server (Linux):</strong></p>
+<pre><code class="language-bash">echo $DISPLAY  # X11
+echo $WAYLAND_DISPLAY  # Wayland
+</code></pre>
+</li>
+<li>
+<p><strong>macOS: Grant accessibility permissions:</strong></p>
+<ul>
+<li>System Preferences &gt; Security &amp; Privacy &gt; Privacy &gt; Accessibility</li>
+<li>Add Stratum Workshop or Terminal</li>
+</ul>
+</li>
+</ol>
+<h3 id="lsp-not-connecting-to-editor"><a class="header" href="#lsp-not-connecting-to-editor">LSP Not Connecting to Editor</a></h3>
+<p><strong>Symptom:</strong> No IntelliSense or diagnostics in VS Code/editor.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Verify LSP is installed:</strong></p>
+<pre><code class="language-bash">which stratum-lsp
+stratum-lsp --version
+</code></pre>
+</li>
+<li>
+<p><strong>Check VS Code extension is installed:</strong></p>
+<pre><code class="language-bash">stratum extension list
+</code></pre>
+</li>
+<li>
+<p><strong>Reinstall extension:</strong></p>
+<pre><code class="language-bash">stratum extension uninstall
+stratum extension install
+</code></pre>
+</li>
+<li>
+<p><strong>Check Output panel</strong> in VS Code for Stratum Language Server logs.</p>
+</li>
+</ol>
+<hr>
+<h2 id="uninstallation"><a class="header" href="#uninstallation">Uninstallation</a></h2>
+<h3 id="what-gets-removed"><a class="header" href="#what-gets-removed">What Gets Removed</a></h3>
+<p>When uninstalling Stratum, the following are removed by default:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Component</th><th>Location</th><th>Removed</th></tr>
+</thead>
+<tbody>
+<tr><td>Binaries</td><td><code>/usr/local/stratum/bin/</code> or <code>~/.stratum/bin/</code></td><td>Yes</td></tr>
+<tr><td>Standard Library</td><td><code>&lt;install&gt;/lib/</code></td><td>Yes</td></tr>
+<tr><td>Shell Completions</td><td>Various (see below)</td><td>Yes</td></tr>
+<tr><td>PATH entries</td><td>Shell config files</td><td>Yes</td></tr>
+<tr><td><strong>User Configuration</strong></td><td><code>~/.stratum/config.toml</code></td><td>Only with <code>--purge</code></td></tr>
+<tr><td><strong>Installed Packages</strong></td><td><code>~/.stratum/packages/</code></td><td>Only with <code>--purge</code></td></tr>
+<tr><td><strong>REPL History</strong></td><td><code>~/.stratum/history</code></td><td>Only with <code>--purge</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="shell-completion-locations"><a class="header" href="#shell-completion-locations">Shell Completion Locations</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Shell</th><th>Completion File</th></tr>
+</thead>
+<tbody>
+<tr><td>Bash</td><td><code>~/.local/share/bash-completion/completions/stratum</code></td></tr>
+<tr><td>Zsh</td><td><code>~/.zfunc/_stratum</code></td></tr>
+<tr><td>Fish</td><td><code>~/.config/fish/completions/stratum.fish</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="manual-cleanup"><a class="header" href="#manual-cleanup">Manual Cleanup</a></h3>
+<p>If automatic uninstall doesn’t work:</p>
+<pre><code class="language-bash"># Remove binaries
+rm -rf ~/.stratum
+rm -rf /usr/local/stratum
+
+# Remove shell completions
+rm ~/.local/share/bash-completion/completions/stratum
+rm ~/.zfunc/_stratum
+rm ~/.config/fish/completions/stratum.fish
+
+# Remove PATH entries from shell configs
+# Edit ~/.bashrc, ~/.zshrc, ~/.config/fish/config.fish
+# Remove lines containing STRATUM_HOME or stratum/bin
+
+# macOS: Remove .pkg receipt
+sudo pkgutil --forget dev.stratum-lang.stratum
+</code></pre>
+<h3 id="orphaned-files-after-failed-install"><a class="header" href="#orphaned-files-after-failed-install">Orphaned Files After Failed Install</a></h3>
+<p>If installation failed partway:</p>
+<pre><code class="language-bash"># Find stratum-related files
+find ~ -name "*stratum*" -type f 2&gt;/dev/null
+find /usr/local -name "*stratum*" 2&gt;/dev/null
+find /tmp -name "*stratum*" 2&gt;/dev/null
+
+# Clean up
+rm -rf /tmp/stratum-install-*
+</code></pre>
+<hr>
+<h2 id="getting-help"><a class="header" href="#getting-help">Getting Help</a></h2>
+<p>If these solutions don’t resolve your issue:</p>
+<ol>
+<li>
+<p><strong>Check existing issues:</strong> <a href="https://github.com/horizon-analytic/stratum/issues">GitHub Issues</a></p>
+</li>
+<li>
+<p><strong>Open a new issue</strong> with:</p>
+<ul>
+<li>Your OS and version (<code>uname -a</code>)</li>
+<li>Stratum version (<code>stratum --version</code>)</li>
+<li>Full error message</li>
+<li>Steps to reproduce</li>
+</ul>
+</li>
+<li>
+<p><strong>Enable debug logging:</strong></p>
+<pre><code class="language-bash">STRATUM_LOG=debug stratum &lt;command&gt;
+</code></pre>
+</li>
+<li>
+<p><strong>Generate diagnostic report:</strong></p>
+<pre><code class="language-bash">stratum self diagnose &gt; stratum-diagnostics.txt
+</code></pre>
+</li>
+</ol>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="installation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="stdlib/index.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="installation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="stdlib/index.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

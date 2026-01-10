@@ -1,0 +1,1990 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Data (DataFrame) - Stratum Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Reference documentation for the Stratum programming language standard library">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-b2c90539.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-22706313.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Stratum Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/cachemcclure/stratum" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/cachemcclure/stratum/edit/main/docs/./stdlib/data.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="data"><a class="header" href="#data">Data</a></h1>
+<p>High-performance columnar data operations with Arrow-backed DataFrames and Series.</p>
+<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
+<p>The <code>Data</code> namespace provides Stratum’s data analysis capabilities built on Apache Arrow for SIMD-accelerated columnar operations. DataFrames store tabular data with typed columns, while Series represent single columns of homogeneous data.</p>
+<p>Key features include:</p>
+<ul>
+<li><strong>Lazy evaluation</strong> with query optimization</li>
+<li><strong>Pipeline operator</strong> (<code>|&gt;</code>) integration for fluent data transformations</li>
+<li><strong>Built-in SQL</strong> support for familiar query syntax</li>
+<li><strong>Parquet, CSV, and JSON</strong> file I/O</li>
+<li><strong>Database integration</strong> via <code>from_query()</code></li>
+</ul>
+<p>DataFrames are immutable—transformation methods return new DataFrames rather than modifying in place.</p>
+<hr>
+<h2 id="dataframe-creation"><a class="header" href="#dataframe-creation">DataFrame Creation</a></h2>
+<h3 id="dataframerows"><a class="header" href="#dataframerows"><code>Data.frame(rows)</code></a></h3>
+<p>Creates a DataFrame from a list of row objects.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>rows</code></td><td><code>List&lt;Map&gt;</code></td><td>List of maps where keys are column names</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - A new DataFrame with inferred column types</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {name: "Alice", age: 30, city: "NYC"},
+    {name: "Bob", age: 25, city: "LA"},
+    {name: "Carol", age: 35, city: "NYC"}
+])
+
+println(df.columns())  // ["name", "age", "city"]
+println(df.rows())     // 3
+</code></pre>
+<hr>
+<h3 id="dataseriesname-values"><a class="header" href="#dataseriesname-values"><code>Data.series(name, values)</code></a></h3>
+<p>Creates a named Series from a list of values.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td><code>String</code></td><td>The column name</td></tr>
+<tr><td><code>values</code></td><td><code>List</code></td><td>List of values (type is inferred)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series</code> - A new Series with the given name and values</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let ages = Data.series("age", [30, 25, 35, 28])
+println(ages.name())   // "age"
+println(ages.len())    // 4
+println(ages.mean())   // 29.5
+</code></pre>
+<hr>
+<h3 id="datafrom_columnsname1-values1-name2-values2-"><a class="header" href="#datafrom_columnsname1-values1-name2-values2-"><code>Data.from_columns(name1, values1, name2, values2, ...)</code></a></h3>
+<p>Creates a DataFrame from alternating column names and value lists.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name1</code></td><td><code>String</code></td><td>First column name</td></tr>
+<tr><td><code>values1</code></td><td><code>List</code></td><td>First column values</td></tr>
+<tr><td><code>...</code></td><td><code>String, List</code></td><td>Additional name/values pairs</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - A new DataFrame with the specified columns</p>
+<p><strong>Throws:</strong> Error if column lengths don’t match</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.from_columns(
+    "name", ["Alice", "Bob", "Carol"],
+    "age", [30, 25, 35],
+    "active", [true, true, false]
+)
+</code></pre>
+<hr>
+<h2 id="file-io"><a class="header" href="#file-io">File I/O</a></h2>
+<h3 id="dataread_parquetpath"><a class="header" href="#dataread_parquetpath"><code>Data.read_parquet(path)</code></a></h3>
+<p>Reads a Parquet file into a DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Path to the Parquet file</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame containing the file data</p>
+<p><strong>Throws:</strong> Error if file doesn’t exist or is invalid</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.read_parquet("data/sales.parquet")
+println(df.schema())
+</code></pre>
+<hr>
+<h3 id="dataread_csvpath-has_header-delimiter"><a class="header" href="#dataread_csvpath-has_header-delimiter"><code>Data.read_csv(path, has_header?, delimiter?)</code></a></h3>
+<p>Reads a CSV file into a DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Path to the CSV file</td></tr>
+<tr><td><code>has_header</code></td><td><code>Bool?</code></td><td>Whether first row is header (default: <code>true</code>)</td></tr>
+<tr><td><code>delimiter</code></td><td><code>String?</code></td><td>Field delimiter (default: <code>","</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame containing the file data</p>
+<p><strong>Throws:</strong> Error if file doesn’t exist or is malformed</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">// Standard CSV with header
+let df = Data.read_csv("data/users.csv")
+
+// Tab-separated without header
+let tsv = Data.read_csv("data/raw.tsv", false, "\t")
+</code></pre>
+<hr>
+<h3 id="dataread_jsonpath"><a class="header" href="#dataread_jsonpath"><code>Data.read_json(path)</code></a></h3>
+<p>Reads a JSON file into a DataFrame. Expects an array of objects.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Path to the JSON file</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame containing the file data</p>
+<p><strong>Throws:</strong> Error if file doesn’t exist or isn’t valid JSON array</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">// File: [{"name": "Alice", "score": 95}, {"name": "Bob", "score": 87}]
+let df = Data.read_json("data/scores.json")
+</code></pre>
+<hr>
+<h3 id="datawrite_parquetdf-path"><a class="header" href="#datawrite_parquetdf-path"><code>Data.write_parquet(df, path)</code></a></h3>
+<p>Writes a DataFrame to a Parquet file.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>df</code></td><td><code>DataFrame</code></td><td>The DataFrame to write</td></tr>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Output file path</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Null</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([{x: 1, y: 2}, {x: 3, y: 4}])
+Data.write_parquet(df, "output/data.parquet")
+</code></pre>
+<hr>
+<h3 id="datawrite_csvdf-path"><a class="header" href="#datawrite_csvdf-path"><code>Data.write_csv(df, path)</code></a></h3>
+<p>Writes a DataFrame to a CSV file.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>df</code></td><td><code>DataFrame</code></td><td>The DataFrame to write</td></tr>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Output file path</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Null</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">df.to_csv("output/data.csv")  // Method form
+Data.write_csv(df, "output/data.csv")  // Function form
+</code></pre>
+<hr>
+<h3 id="datawrite_jsondf-path"><a class="header" href="#datawrite_jsondf-path"><code>Data.write_json(df, path)</code></a></h3>
+<p>Writes a DataFrame to a JSON file as an array of objects.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>df</code></td><td><code>DataFrame</code></td><td>The DataFrame to write</td></tr>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Output file path</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Null</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">df.to_json("output/data.json")
+</code></pre>
+<hr>
+<h2 id="sql-operations"><a class="header" href="#sql-operations">SQL Operations</a></h2>
+<h3 id="datasqldf-query"><a class="header" href="#datasqldf-query"><code>Data.sql(df, query)</code></a></h3>
+<p>Executes a SQL query against a single DataFrame. The DataFrame is available as <code>df</code> in the query.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>df</code></td><td><code>DataFrame</code></td><td>The DataFrame to query</td></tr>
+<tr><td><code>query</code></td><td><code>String</code></td><td>SQL query string</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Query result as a new DataFrame</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let sales = Data.read_csv("sales.csv")
+
+// Filter and aggregate with SQL
+let result = Data.sql(sales, "
+    SELECT region, SUM(amount) as total
+    FROM df
+    WHERE year = 2024
+    GROUP BY region
+    ORDER BY total DESC
+")
+</code></pre>
+<hr>
+<h3 id="datasql_context"><a class="header" href="#datasql_context"><code>Data.sql_context()</code></a></h3>
+<p>Creates a SQL context for multi-table queries. Use <code>register()</code> to add tables and <code>query()</code> to execute.</p>
+<p><strong>Returns:</strong> <code>SqlContext</code> - A new SQL context builder</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let users = Data.read_csv("users.csv")
+let orders = Data.read_csv("orders.csv")
+
+let result = Data.sql_context()
+    |&gt; .register("users", users)
+    |&gt; .register("orders", orders)
+    |&gt; .query("
+        SELECT u.name, COUNT(o.id) as order_count
+        FROM users u
+        LEFT JOIN orders o ON u.id = o.user_id
+        GROUP BY u.name
+    ")
+</code></pre>
+<hr>
+<h3 id="datafrom_querydb-sql-params"><a class="header" href="#datafrom_querydb-sql-params"><code>Data.from_query(db, sql, params?)</code></a></h3>
+<p>Executes a SQL query against a database connection and returns the result as a DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>db</code></td><td><code>DbConnection</code></td><td>Database connection from <code>Db.connect()</code></td></tr>
+<tr><td><code>sql</code></td><td><code>String</code></td><td>SQL query string</td></tr>
+<tr><td><code>params</code></td><td><code>List?</code></td><td>Optional query parameters</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Query result as a DataFrame</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let db = Db.connect("postgresql://localhost/mydb")
+let df = Data.from_query(db, "SELECT * FROM users WHERE active = $1", [true])
+</code></pre>
+<hr>
+<h2 id="dataframe-methods"><a class="header" href="#dataframe-methods">DataFrame Methods</a></h2>
+<h3 id="inspection"><a class="header" href="#inspection">Inspection</a></h3>
+<h4 id="dfcolumns"><a class="header" href="#dfcolumns"><code>df.columns()</code></a></h4>
+<p>Returns the list of column names.</p>
+<p><strong>Returns:</strong> <code>List&lt;String&gt;</code> - Column names in order</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let cols = df.columns()  // ["name", "age", "city"]
+</code></pre>
+<hr>
+<h4 id="dfrows"><a class="header" href="#dfrows"><code>df.rows()</code></a></h4>
+<p>Returns the number of rows in the DataFrame.</p>
+<p><strong>Returns:</strong> <code>Int</code> - Row count</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let count = df.rows()  // 1000
+</code></pre>
+<hr>
+<h4 id="dfschema"><a class="header" href="#dfschema"><code>df.schema()</code></a></h4>
+<p>Returns schema information about the DataFrame’s columns and types.</p>
+<p><strong>Returns:</strong> <code>Map</code> - Column names mapped to type information</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let schema = df.schema()
+// {name: "String", age: "Int64", active: "Bool"}
+</code></pre>
+<hr>
+<h3 id="row-access"><a class="header" href="#row-access">Row Access</a></h3>
+<h4 id="dfheadn"><a class="header" href="#dfheadn"><code>df.head(n?)</code></a></h4>
+<p>Returns the first n rows of the DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>n</code></td><td><code>Int?</code></td><td>Number of rows (default: 5)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - First n rows</p>
+<p><strong>Aliases:</strong> <code>df.take(n)</code>, <code>df.limit(n)</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let top5 = df.head()
+let top10 = df.head(10)
+</code></pre>
+<hr>
+<h4 id="dftailn"><a class="header" href="#dftailn"><code>df.tail(n?)</code></a></h4>
+<p>Returns the last n rows of the DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>n</code></td><td><code>Int?</code></td><td>Number of rows (default: 5)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Last n rows</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let bottom5 = df.tail()
+</code></pre>
+<hr>
+<h4 id="dfsamplen"><a class="header" href="#dfsamplen"><code>df.sample(n)</code></a></h4>
+<p>Returns n randomly sampled rows from the DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>n</code></td><td><code>Int</code></td><td>Number of rows to sample</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Random sample of rows</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let sample = df.sample(100)
+</code></pre>
+<hr>
+<h3 id="transformation"><a class="header" href="#transformation">Transformation</a></h3>
+<h4 id="dfselectcolumns"><a class="header" href="#dfselectcolumns"><code>df.select(columns...)</code></a></h4>
+<p>Selects specific columns from the DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>columns</code></td><td><code>String...</code></td><td>Column names to select</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with only the specified columns</p>
+<p><strong>Aliases:</strong> <code>df.map(columns...)</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let subset = df.select("name", "age")
+
+// With pipeline operator
+df |&gt; .select("name", "email")
+</code></pre>
+<hr>
+<h4 id="dffilterpredicate"><a class="header" href="#dffilterpredicate"><code>df.filter(predicate)</code></a></h4>
+<p>Filters rows based on a predicate function.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>predicate</code></td><td><code>Function</code></td><td>Function that takes a row and returns Bool</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame containing only rows where predicate is true</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let adults = df.filter(|row| row.age &gt;= 18)
+
+let nyc_users = df.filter(|row| row.city == "NYC")
+
+// Pipeline style
+df |&gt; .filter(|row| row.active)
+</code></pre>
+<hr>
+<h4 id="dfrenameold_name-new_name"><a class="header" href="#dfrenameold_name-new_name"><code>df.rename(old_name, new_name)</code></a></h4>
+<p>Renames a column.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>old_name</code></td><td><code>String</code></td><td>Current column name</td></tr>
+<tr><td><code>new_name</code></td><td><code>String</code></td><td>New column name</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with the renamed column</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let renamed = df.rename("user_id", "id")
+</code></pre>
+<hr>
+<h4 id="dfdropcolumn"><a class="header" href="#dfdropcolumn"><code>df.drop(column)</code></a></h4>
+<p>Removes a column from the DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>column</code></td><td><code>String</code></td><td>Column name to remove</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame without the specified column</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let cleaned = df.drop("internal_id")
+</code></pre>
+<hr>
+<h4 id="dfsort_bycolumns"><a class="header" href="#dfsort_bycolumns"><code>df.sort_by(columns...)</code></a></h4>
+<p>Sorts the DataFrame by one or more columns. Prefix column name with <code>-</code> for descending order.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>columns</code></td><td><code>String...</code></td><td>Column names (prefix with <code>-</code> for DESC)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Sorted DataFrame</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">// Ascending by name
+let sorted = df.sort_by("name")
+
+// Descending by age, then ascending by name
+let multi = df.sort_by("-age", "name")
+</code></pre>
+<hr>
+<h4 id="dfdistinct"><a class="header" href="#dfdistinct"><code>df.distinct()</code></a></h4>
+<p>Returns unique rows (removes duplicates).</p>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with duplicate rows removed</p>
+<p><strong>Aliases:</strong> <code>df.unique()</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let unique_cities = df.select("city").distinct()
+</code></pre>
+<hr>
+<h3 id="aggregation"><a class="header" href="#aggregation">Aggregation</a></h3>
+<h4 id="dfgroup_bycolumns"><a class="header" href="#dfgroup_bycolumns"><code>df.group_by(columns...)</code></a></h4>
+<p>Groups the DataFrame by one or more columns. Returns a GroupedDataFrame that supports aggregation.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>columns</code></td><td><code>String...</code></td><td>Columns to group by</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>GroupedDataFrame</code> - Grouped data ready for aggregation</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let by_city = df.group_by("city")
+    |&gt; .aggregate(Agg.count(), Agg.mean("age", "avg_age"))
+</code></pre>
+<hr>
+<h4 id="groupedaggregatespecs"><a class="header" href="#groupedaggregatespecs"><code>grouped.aggregate(specs...)</code></a></h4>
+<p>Applies aggregation functions to a grouped DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>specs</code></td><td><code>AggSpec...</code></td><td>Aggregation specifications from <code>Agg</code> namespace</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Aggregated result</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let stats = df.group_by("department")
+    |&gt; .aggregate(
+        Agg.count("employee_count"),
+        Agg.sum("salary", "total_salary"),
+        Agg.mean("salary", "avg_salary"),
+        Agg.max("salary", "max_salary")
+    )
+</code></pre>
+<hr>
+<h4 id="direct-aggregations"><a class="header" href="#direct-aggregations">Direct Aggregations</a></h4>
+<p>DataFrames also support direct aggregation methods that operate on all numeric columns:</p>
+<pre><code class="language-stratum">df.sum()      // Sum of each numeric column
+df.mean()     // Mean of each numeric column
+df.min()      // Minimum of each column
+df.max()      // Maximum of each column
+df.count()    // Row count
+df.first()    // First row
+df.last()     // Last row
+</code></pre>
+<hr>
+<h3 id="joins"><a class="header" href="#joins">Joins</a></h3>
+<h4 id="dfjoinother-spec"><a class="header" href="#dfjoinother-spec"><code>df.join(other, spec)</code></a></h4>
+<p>Joins two DataFrames based on a join specification.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>other</code></td><td><code>DataFrame</code></td><td>DataFrame to join with</td></tr>
+<tr><td><code>spec</code></td><td><code>JoinSpec</code></td><td>Join specification from <code>Join</code> namespace</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Joined DataFrame</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let users = Data.read_csv("users.csv")
+let orders = Data.read_csv("orders.csv")
+
+// Inner join on same column name
+let joined = users.join(orders, Join.on("user_id"))
+
+// Left join with different column names
+let result = users.join(orders, Join.left_cols("id", "user_id"))
+</code></pre>
+<p>See <a href="join.html">Join</a> namespace for all join types and options.</p>
+<hr>
+<h3 id="conversion"><a class="header" href="#conversion">Conversion</a></h3>
+<h4 id="dfto_parquetpath"><a class="header" href="#dfto_parquetpath"><code>df.to_parquet(path)</code></a></h4>
+<p>Writes the DataFrame to a Parquet file.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Output file path</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Null</code></p>
+<hr>
+<h4 id="dfto_csvpath"><a class="header" href="#dfto_csvpath"><code>df.to_csv(path)</code></a></h4>
+<p>Writes the DataFrame to a CSV file.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Output file path</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Null</code></p>
+<hr>
+<h4 id="dfto_jsonpath"><a class="header" href="#dfto_jsonpath"><code>df.to_json(path)</code></a></h4>
+<p>Writes the DataFrame to a JSON file.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Output file path</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Null</code></p>
+<hr>
+<h4 id="dfto_cubename"><a class="header" href="#dfto_cubename"><code>df.to_cube(name?)</code></a></h4>
+<p>Converts the DataFrame to a CubeBuilder for OLAP operations.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td><code>String?</code></td><td>Optional cube name</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>CubeBuilder</code> - Builder for constructing an OLAP cube</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let cube = sales_df.to_cube("sales")
+    |&gt; .dimension("region", "product", "year")
+    |&gt; .measure("revenue", "sum")
+    |&gt; .build()
+</code></pre>
+<p>See <a href="cube.html">Cube</a> namespace for OLAP operations.</p>
+<hr>
+<h2 id="series-methods"><a class="header" href="#series-methods">Series Methods</a></h2>
+<p>Series represent a single column of typed data. They support element access, aggregations, and string operations.</p>
+<h3 id="information"><a class="header" href="#information">Information</a></h3>
+<h4 id="seriesname"><a class="header" href="#seriesname"><code>series.name()</code></a></h4>
+<p>Returns the series name.</p>
+<p><strong>Returns:</strong> <code>String</code> - The column name</p>
+<hr>
+<h4 id="serieslen"><a class="header" href="#serieslen"><code>series.len()</code></a></h4>
+<p>Returns the number of elements.</p>
+<p><strong>Returns:</strong> <code>Int</code> - Element count</p>
+<p><strong>Aliases:</strong> <code>series.length()</code></p>
+<hr>
+<h4 id="seriesdtype"><a class="header" href="#seriesdtype"><code>series.dtype()</code></a></h4>
+<p>Returns the data type of the series.</p>
+<p><strong>Returns:</strong> <code>String</code> - Type name (e.g., “Int64”, “Utf8”, “Float64”)</p>
+<hr>
+<h4 id="seriesnull_count"><a class="header" href="#seriesnull_count"><code>series.null_count()</code></a></h4>
+<p>Returns the count of null values.</p>
+<p><strong>Returns:</strong> <code>Int</code> - Number of nulls</p>
+<hr>
+<h4 id="seriesis_empty"><a class="header" href="#seriesis_empty"><code>series.is_empty()</code></a></h4>
+<p>Checks if the series has no elements.</p>
+<p><strong>Returns:</strong> <code>Bool</code> - True if length is 0</p>
+<hr>
+<h3 id="access"><a class="header" href="#access">Access</a></h3>
+<h4 id="seriesgetindex"><a class="header" href="#seriesgetindex"><code>series.get(index)</code></a></h4>
+<p>Gets the element at the specified index.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>index</code></td><td><code>Int</code></td><td>Zero-based index</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Value?</code> - The value at the index, or null if out of bounds</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let first = ages.get(0)
+let last = ages.get(ages.len() - 1)
+</code></pre>
+<hr>
+<h4 id="seriesis_nullindex"><a class="header" href="#seriesis_nullindex"><code>series.is_null(index)</code></a></h4>
+<p>Checks if the value at an index is null.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>index</code></td><td><code>Int</code></td><td>Zero-based index</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Bool</code> - True if the value is null</p>
+<hr>
+<h3 id="aggregation-1"><a class="header" href="#aggregation-1">Aggregation</a></h3>
+<p>All aggregation methods return a single value computed over the entire series.</p>
+<pre><code class="language-stratum">series.sum()      // Sum of all values
+series.mean()     // Arithmetic mean
+series.min()      // Minimum value
+series.max()      // Maximum value
+series.std()      // Standard deviation
+series.var()      // Variance
+series.median()   // Median value
+series.mode()     // Most frequent value
+series.count()    // Count of non-null values
+</code></pre>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let prices = Data.series("price", [10.5, 20.0, 15.5, 30.0, 25.0])
+
+println(prices.sum())     // 101.0
+println(prices.mean())    // 20.2
+println(prices.min())     // 10.5
+println(prices.max())     // 30.0
+println(prices.median())  // 20.0
+</code></pre>
+<hr>
+<h4 id="seriesmode"><a class="header" href="#seriesmode"><code>series.mode()</code></a></h4>
+<p>Returns the most frequent value in the series. For ties, returns the first value encountered.</p>
+<p><strong>Returns:</strong> <code>Value</code> - The most frequent value, or <code>null</code> if empty</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let grades = Data.series("grade", ["A", "B", "A", "C", "A", "B"])
+println(grades.mode())  // "A"
+</code></pre>
+<hr>
+<h4 id="seriesquantileq"><a class="header" href="#seriesquantileq"><code>series.quantile(q)</code></a></h4>
+<p>Returns the value at the given quantile.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>q</code></td><td><code>Float</code></td><td>Quantile between 0.0 and 1.0</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The value at the specified quantile</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+println(values.quantile(0.25))  // 3.25 (25th percentile)
+println(values.quantile(0.5))   // 5.5 (median)
+println(values.quantile(0.75))  // 7.75 (75th percentile)
+</code></pre>
+<hr>
+<h4 id="seriespercentilep"><a class="header" href="#seriespercentilep"><code>series.percentile(p)</code></a></h4>
+<p>Returns the value at the given percentile.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>p</code></td><td><code>Float</code></td><td>Percentile between 0 and 100</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Float</code> - The value at the specified percentile</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+println(values.percentile(25))  // 3.25
+println(values.percentile(50))  // 5.5
+println(values.percentile(90))  // 9.1
+</code></pre>
+<hr>
+<h4 id="seriesskew"><a class="header" href="#seriesskew"><code>series.skew()</code></a></h4>
+<p>Calculates the skewness of numeric values. Skewness measures the asymmetry of the distribution.</p>
+<p><strong>Returns:</strong> <code>Float</code> - Skewness value (positive = right tail, negative = left tail, zero = symmetric)</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1, 2, 2, 3, 3, 3, 4, 4, 5])
+println(values.skew())  // Measures distribution asymmetry
+</code></pre>
+<hr>
+<h4 id="serieskurtosis"><a class="header" href="#serieskurtosis"><code>series.kurtosis()</code></a></h4>
+<p>Calculates the kurtosis of numeric values. Kurtosis measures the “tailedness” of the distribution. Returns excess kurtosis (normal distribution = 0).</p>
+<p><strong>Returns:</strong> <code>Float</code> - Excess kurtosis value</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1, 2, 3, 4, 5, 6, 7, 8, 9])
+println(values.kurtosis())  // Measures tail heaviness
+</code></pre>
+<hr>
+<h3 id="window-functions"><a class="header" href="#window-functions">Window Functions</a></h3>
+<p>Window functions compute values over a sliding window or cumulative range.</p>
+<h4 id="rolling-windows"><a class="header" href="#rolling-windows">Rolling Windows</a></h4>
+<h5 id="seriesrollingwindow_size"><a class="header" href="#seriesrollingwindow_size"><code>series.rolling(window_size)</code></a></h5>
+<p>Creates a rolling window object for computing rolling statistics.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>window_size</code></td><td><code>Int</code></td><td>Number of elements in the window</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Rolling</code> - Rolling window object</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let prices = Data.series("price", [10, 20, 30, 40, 50])
+
+// Rolling 3-period mean
+let rolling_avg = prices.rolling(3).mean()
+// [null, null, 20.0, 30.0, 40.0]
+
+// Rolling 3-period sum
+let rolling_sum = prices.rolling(3).sum()
+// [null, null, 60.0, 90.0, 120.0]
+</code></pre>
+<h5 id="rolling-methods"><a class="header" href="#rolling-methods">Rolling Methods</a></h5>
+<p>After calling <code>.rolling(n)</code>, you can call these aggregation methods:</p>
+<pre><code class="language-stratum">rolling.sum()     // Rolling sum
+rolling.mean()    // Rolling average
+rolling.min()     // Rolling minimum
+rolling.max()     // Rolling maximum
+rolling.std()     // Rolling standard deviation
+rolling.var()     // Rolling variance
+</code></pre>
+<hr>
+<h4 id="cumulative-operations"><a class="header" href="#cumulative-operations">Cumulative Operations</a></h4>
+<h5 id="seriescumsum"><a class="header" href="#seriescumsum"><code>series.cumsum()</code></a></h5>
+<p>Computes the cumulative sum.</p>
+<p><strong>Returns:</strong> <code>Series</code> - Cumulative sum at each position</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1, 2, 3, 4, 5])
+let cumulative = values.cumsum()
+// [1, 3, 6, 10, 15]
+</code></pre>
+<hr>
+<h5 id="seriescummax"><a class="header" href="#seriescummax"><code>series.cummax()</code></a></h5>
+<p>Computes the cumulative maximum.</p>
+<p><strong>Returns:</strong> <code>Series</code> - Running maximum at each position</p>
+<hr>
+<h5 id="seriescummin"><a class="header" href="#seriescummin"><code>series.cummin()</code></a></h5>
+<p>Computes the cumulative minimum.</p>
+<p><strong>Returns:</strong> <code>Series</code> - Running minimum at each position</p>
+<hr>
+<h5 id="seriescumprod"><a class="header" href="#seriescumprod"><code>series.cumprod()</code></a></h5>
+<p>Computes the cumulative product.</p>
+<p><strong>Returns:</strong> <code>Series</code> - Running product at each position</p>
+<hr>
+<h4 id="laglead-operations"><a class="header" href="#laglead-operations">Lag/Lead Operations</a></h4>
+<h5 id="seriesshiftn--serieslagn"><a class="header" href="#seriesshiftn--serieslagn"><code>series.shift(n)</code> / <code>series.lag(n)</code></a></h5>
+<p>Shifts values by n positions. Positive n shifts forward (introduces nulls at start).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>n</code></td><td><code>Int</code></td><td>Number of positions to shift</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series</code> - Shifted series with nulls filling gaps</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1, 2, 3, 4, 5])
+let shifted = values.shift(1)
+// [null, 1, 2, 3, 4]
+
+let lagged = values.lag(2)
+// [null, null, 1, 2, 3]
+</code></pre>
+<hr>
+<h5 id="seriesleadn"><a class="header" href="#seriesleadn"><code>series.lead(n)</code></a></h5>
+<p>Shifts values backward by n positions (opposite of lag).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>n</code></td><td><code>Int</code></td><td>Number of positions to lead</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series</code> - Series with values shifted backward</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1, 2, 3, 4, 5])
+let lead_values = values.lead(1)
+// [2, 3, 4, 5, null]
+</code></pre>
+<hr>
+<h5 id="seriesdiffn"><a class="header" href="#seriesdiffn"><code>series.diff(n?)</code></a></h5>
+<p>Computes the difference from n periods ago.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>n</code></td><td><code>Int?</code></td><td>Number of periods (default: 1)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series</code> - Differences from n periods ago</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [10, 15, 13, 20, 18])
+let changes = values.diff()
+// [null, 5, -2, 7, -2]
+</code></pre>
+<hr>
+<h5 id="seriespct_changen"><a class="header" href="#seriespct_changen"><code>series.pct_change(n?)</code></a></h5>
+<p>Computes the percentage change from n periods ago.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>n</code></td><td><code>Int?</code></td><td>Number of periods (default: 1)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series</code> - Percentage changes as decimals</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let prices = Data.series("price", [100, 110, 105, 120])
+let returns = prices.pct_change()
+// [null, 0.1, -0.0454..., 0.1428...]
+</code></pre>
+<hr>
+<h3 id="missing-data-handling"><a class="header" href="#missing-data-handling">Missing Data Handling</a></h3>
+<h4 id="seriesdropna"><a class="header" href="#seriesdropna"><code>series.dropna()</code></a></h4>
+<p>Removes null values from the series.</p>
+<p><strong>Returns:</strong> <code>Series</code> - Series without null values</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1, null, 3, null, 5])
+let clean = values.dropna()
+// [1, 3, 5]
+</code></pre>
+<hr>
+<h4 id="seriesfillnavalue"><a class="header" href="#seriesfillnavalue"><code>series.fillna(value)</code></a></h4>
+<p>Fills null values with a constant or using a method.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>value</code></td><td><code>Value | String</code></td><td>Fill value or method (“forward”, “backward”)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series</code> - Series with nulls filled</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1, null, null, 4, null])
+
+// Fill with constant
+values.fillna(0)  // [1, 0, 0, 4, 0]
+
+// Forward fill (last known value)
+values.fillna("forward")  // [1, 1, 1, 4, 4]
+
+// Backward fill (next known value)
+values.fillna("backward")  // [1, 4, 4, 4, null]
+</code></pre>
+<hr>
+<h4 id="seriesinterpolate"><a class="header" href="#seriesinterpolate"><code>series.interpolate()</code></a></h4>
+<p>Linearly interpolates missing values.</p>
+<p><strong>Returns:</strong> <code>Series</code> - Series with interpolated values</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let values = Data.series("x", [1.0, null, null, 4.0, null])
+let interpolated = values.interpolate()
+// [1.0, 2.0, 3.0, 4.0, null]
+</code></pre>
+<hr>
+<h3 id="type-conversion"><a class="header" href="#type-conversion">Type Conversion</a></h3>
+<h4 id="seriesto_int"><a class="header" href="#seriesto_int"><code>series.to_int()</code></a></h4>
+<p>Converts series values to integers.</p>
+<p><strong>Returns:</strong> <code>Series&lt;Int&gt;</code> - Integer series</p>
+<p><strong>Aliases:</strong> <code>to_integer()</code>, <code>as_int()</code></p>
+<hr>
+<h4 id="seriesto_float"><a class="header" href="#seriesto_float"><code>series.to_float()</code></a></h4>
+<p>Converts series values to floats.</p>
+<p><strong>Returns:</strong> <code>Series&lt;Float&gt;</code> - Float series</p>
+<p><strong>Aliases:</strong> <code>to_double()</code>, <code>as_float()</code></p>
+<hr>
+<h4 id="seriesto_string"><a class="header" href="#seriesto_string"><code>series.to_string()</code></a></h4>
+<p>Converts series values to strings.</p>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - String series</p>
+<p><strong>Aliases:</strong> <code>to_str()</code>, <code>as_string()</code></p>
+<hr>
+<h4 id="seriesto_datetimeformat"><a class="header" href="#seriesto_datetimeformat"><code>series.to_datetime(format)</code></a></h4>
+<p>Parses string values to datetime using the specified format.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>format</code></td><td><code>String</code></td><td>Date format string (e.g., “%Y-%m-%d”)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;DateTime&gt;</code> - DateTime series</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let dates = Data.series("date", ["2024-01-15", "2024-02-20", "2024-03-25"])
+let parsed = dates.to_datetime("%Y-%m-%d")
+</code></pre>
+<hr>
+<h3 id="string-operations"><a class="header" href="#string-operations">String Operations</a></h3>
+<p>For String-typed series, additional string methods are available:</p>
+<h4 id="seriesstr_len"><a class="header" href="#seriesstr_len"><code>series.str_len()</code></a></h4>
+<p>Returns a new series with the length of each string.</p>
+<p><strong>Returns:</strong> <code>Series&lt;Int&gt;</code> - String lengths</p>
+<hr>
+<h4 id="seriesstr_containspattern"><a class="header" href="#seriesstr_containspattern"><code>series.str_contains(pattern)</code></a></h4>
+<p>Returns a boolean series indicating pattern matches.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>pattern</code></td><td><code>String</code></td><td>Substring to search for</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;Bool&gt;</code> - True where pattern is found</p>
+<hr>
+<h4 id="seriesstr_starts_withprefix"><a class="header" href="#seriesstr_starts_withprefix"><code>series.str_starts_with(prefix)</code></a></h4>
+<p>Checks if strings start with the given prefix.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>prefix</code></td><td><code>String</code></td><td>Prefix to check</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;Bool&gt;</code> - True where prefix matches</p>
+<hr>
+<h4 id="seriesstr_ends_withsuffix"><a class="header" href="#seriesstr_ends_withsuffix"><code>series.str_ends_with(suffix)</code></a></h4>
+<p>Checks if strings end with the given suffix.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>suffix</code></td><td><code>String</code></td><td>Suffix to check</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;Bool&gt;</code> - True where suffix matches</p>
+<hr>
+<h4 id="seriesstr_to_uppercase--seriesupper"><a class="header" href="#seriesstr_to_uppercase--seriesupper"><code>series.str_to_uppercase()</code> / <code>series.upper()</code></a></h4>
+<p>Converts all strings to uppercase.</p>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - Uppercase strings</p>
+<hr>
+<h4 id="seriesstr_to_lowercase--serieslower"><a class="header" href="#seriesstr_to_lowercase--serieslower"><code>series.str_to_lowercase()</code> / <code>series.lower()</code></a></h4>
+<p>Converts all strings to lowercase.</p>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - Lowercase strings</p>
+<hr>
+<h4 id="seriesstr_trim"><a class="header" href="#seriesstr_trim"><code>series.str_trim()</code></a></h4>
+<p>Removes leading and trailing whitespace.</p>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - Trimmed strings</p>
+<hr>
+<h4 id="seriesstr_replacepattern-replacement"><a class="header" href="#seriesstr_replacepattern-replacement"><code>series.str_replace(pattern, replacement)</code></a></h4>
+<p>Replaces occurrences of a pattern.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>pattern</code></td><td><code>String</code></td><td>Pattern to find</td></tr>
+<tr><td><code>replacement</code></td><td><code>String</code></td><td>Replacement text</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - Series with replacements made</p>
+<hr>
+<h4 id="seriesstr_substringstart-length"><a class="header" href="#seriesstr_substringstart-length"><code>series.str_substring(start, length?)</code></a></h4>
+<p>Extracts substrings.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>start</code></td><td><code>Int</code></td><td>Starting index</td></tr>
+<tr><td><code>length</code></td><td><code>Int?</code></td><td>Length (default: rest of string)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - Extracted substrings</p>
+<hr>
+<h4 id="seriesstr_padwidth-side-char"><a class="header" href="#seriesstr_padwidth-side-char"><code>series.str_pad(width, side, char)</code></a></h4>
+<p>Pads strings to a specified width.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>width</code></td><td><code>Int</code></td><td>Target width</td></tr>
+<tr><td><code>side</code></td><td><code>String</code></td><td>“left”, “right”, or “both”</td></tr>
+<tr><td><code>char</code></td><td><code>String</code></td><td>Padding character (single char)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - Padded strings</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let codes = Data.series("code", ["1", "12", "123"])
+codes.str_pad(5, "left", "0")  // ["00001", "00012", "00123"]
+</code></pre>
+<hr>
+<h4 id="seriesstr_extractpattern"><a class="header" href="#seriesstr_extractpattern"><code>series.str_extract(pattern)</code></a></h4>
+<p>Extracts the first regex capture group from each string.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>pattern</code></td><td><code>String</code></td><td>Regex pattern with capture group</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - Extracted matches</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let emails = Data.series("email", ["user@domain.com", "admin@site.org"])
+let domains = emails.str_extract("@(.+)")
+// ["domain.com", "site.org"]
+</code></pre>
+<hr>
+<h4 id="seriesstr_matchpattern"><a class="header" href="#seriesstr_matchpattern"><code>series.str_match(pattern)</code></a></h4>
+<p>Tests if each string matches a regex pattern.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>pattern</code></td><td><code>String</code></td><td>Regex pattern</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;Bool&gt;</code> - True where pattern matches</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let texts = Data.series("text", ["hello123", "world", "test456"])
+texts.str_match("\\d+")  // [true, false, true]
+</code></pre>
+<hr>
+<h4 id="seriesstr_catother-separator"><a class="header" href="#seriesstr_catother-separator"><code>series.str_cat(other, separator)</code></a></h4>
+<p>Concatenates two string series element-wise.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>other</code></td><td><code>Series</code></td><td>Other string series</td></tr>
+<tr><td><code>separator</code></td><td><code>String</code></td><td>Separator between values</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - Concatenated strings</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let first = Data.series("first", ["John", "Jane"])
+let last = Data.series("last", ["Doe", "Smith"])
+first.str_cat(last, " ")  // ["John Doe", "Jane Smith"]
+</code></pre>
+<hr>
+<h4 id="seriesstr_slicestart-end"><a class="header" href="#seriesstr_slicestart-end"><code>series.str_slice(start, end?)</code></a></h4>
+<p>Slices each string from start to end index.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>start</code></td><td><code>Int</code></td><td>Start index</td></tr>
+<tr><td><code>end</code></td><td><code>Int?</code></td><td>End index (exclusive, default: end of string)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>Series&lt;String&gt;</code> - Sliced strings</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let codes = Data.series("code", ["ABCD1234", "EFGH5678"])
+codes.str_slice(0, 4)  // ["ABCD", "EFGH"]
+</code></pre>
+<hr>
+<h2 id="dataframe-statistical-methods"><a class="header" href="#dataframe-statistical-methods">DataFrame Statistical Methods</a></h2>
+<h3 id="dfdescribe"><a class="header" href="#dfdescribe"><code>df.describe()</code></a></h3>
+<p>Generates summary statistics for all numeric columns. Returns a DataFrame with rows for count, mean, std, min, 25%, 50%, 75%, and max.</p>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Summary statistics table</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {age: 25, salary: 50000},
+    {age: 30, salary: 60000},
+    {age: 35, salary: 70000},
+    {age: 40, salary: 80000}
+])
+
+let stats = df.describe()
+// Returns DataFrame with statistics for each numeric column
+</code></pre>
+<hr>
+<h3 id="dfcorr"><a class="header" href="#dfcorr"><code>df.corr()</code></a></h3>
+<p>Computes the correlation matrix between all numeric columns.</p>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Correlation matrix</p>
+<p><strong>Aliases:</strong> <code>correlation()</code></p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {height: 170, weight: 70},
+    {height: 175, weight: 75},
+    {height: 180, weight: 80}
+])
+
+let correlations = df.corr()
+// Shows correlation between height and weight
+</code></pre>
+<hr>
+<h3 id="dfcov"><a class="header" href="#dfcov"><code>df.cov()</code></a></h3>
+<p>Computes the covariance matrix between all numeric columns.</p>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Covariance matrix</p>
+<p><strong>Aliases:</strong> <code>covariance()</code></p>
+<hr>
+<h3 id="dfvalue_countscolumn"><a class="header" href="#dfvalue_countscolumn"><code>df.value_counts(column)</code></a></h3>
+<p>Counts occurrences of each unique value in a column.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>column</code></td><td><code>String</code></td><td>Column to count values in</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Value counts with columns: value, count</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {city: "NYC", status: "active"},
+    {city: "LA", status: "active"},
+    {city: "NYC", status: "inactive"},
+    {city: "NYC", status: "active"}
+])
+
+df.value_counts("city")
+// {value: ["NYC", "LA"], count: [3, 1]}
+
+df.value_counts("status")
+// {value: ["active", "inactive"], count: [3, 1]}
+</code></pre>
+<hr>
+<h2 id="dataframe-missing-data"><a class="header" href="#dataframe-missing-data">DataFrame Missing Data</a></h2>
+<h3 id="dfdropnacolumns"><a class="header" href="#dfdropnacolumns"><code>df.dropna(columns...)</code></a></h3>
+<p>Drops rows containing null values.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>columns</code></td><td><code>String...?</code></td><td>Optional specific columns to check</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame without rows containing nulls</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {a: 1, b: 2},
+    {a: null, b: 3},
+    {a: 4, b: null}
+])
+
+// Drop rows with any null
+df.dropna()  // Only keeps {a: 1, b: 2}
+
+// Drop rows with null in specific column
+df.dropna("a")  // Keeps rows 1 and 3
+</code></pre>
+<hr>
+<h3 id="dffillnavalue"><a class="header" href="#dffillnavalue"><code>df.fillna(value)</code></a></h3>
+<p>Fills null values in the DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>value</code></td><td><code>Value | Map | String</code></td><td>Fill value, column map, or method</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with nulls filled</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {a: 1, b: null},
+    {a: null, b: 3}
+])
+
+// Fill all nulls with 0
+df.fillna(0)
+
+// Fill with column-specific values
+df.fillna({a: -1, b: -2})
+
+// Forward fill
+df.fillna("forward")
+
+// Backward fill
+df.fillna("backward")
+</code></pre>
+<hr>
+<h2 id="dataframe-reshape-operations"><a class="header" href="#dataframe-reshape-operations">DataFrame Reshape Operations</a></h2>
+<h3 id="dftranspose--dft"><a class="header" href="#dftranspose--dft"><code>df.transpose()</code> / <code>df.T</code></a></h3>
+<p>Transposes rows and columns.</p>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Transposed DataFrame</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {a: 1, b: 2, c: 3}
+])
+df.transpose()
+// Converts columns to rows
+</code></pre>
+<hr>
+<h3 id="dfpivotindex-columns-values"><a class="header" href="#dfpivotindex-columns-values"><code>df.pivot(index, columns, values)</code></a></h3>
+<p>Creates a pivot table from long to wide format.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>index</code></td><td><code>String</code></td><td>Column to use as row index</td></tr>
+<tr><td><code>columns</code></td><td><code>String</code></td><td>Column whose values become new columns</td></tr>
+<tr><td><code>values</code></td><td><code>String</code></td><td>Column to use for cell values</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Pivoted DataFrame</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {date: "2024-01", product: "A", sales: 100},
+    {date: "2024-01", product: "B", sales: 150},
+    {date: "2024-02", product: "A", sales: 120},
+    {date: "2024-02", product: "B", sales: 180}
+])
+
+df.pivot("date", "product", "sales")
+// Returns:
+// date      | A   | B
+// 2024-01   | 100 | 150
+// 2024-02   | 120 | 180
+</code></pre>
+<hr>
+<h3 id="dfpivot_tableindex-columns-values-aggfunc"><a class="header" href="#dfpivot_tableindex-columns-values-aggfunc"><code>df.pivot_table(index, columns, values, aggfunc)</code></a></h3>
+<p>Creates a pivot table with aggregation.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>index</code></td><td><code>String</code></td><td>Column for row index</td></tr>
+<tr><td><code>columns</code></td><td><code>String</code></td><td>Column for new columns</td></tr>
+<tr><td><code>values</code></td><td><code>String</code></td><td>Column to aggregate</td></tr>
+<tr><td><code>aggfunc</code></td><td><code>String</code></td><td>Aggregation function: “sum”, “mean”, “count”, etc.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Aggregated pivot table</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let sales = Data.frame([
+    {region: "East", product: "A", amount: 100},
+    {region: "East", product: "A", amount: 150},
+    {region: "West", product: "B", amount: 200}
+])
+
+sales.pivot_table("region", "product", "amount", "sum")
+// Sums amounts for each region-product combination
+</code></pre>
+<hr>
+<h3 id="dfmeltid_vars"><a class="header" href="#dfmeltid_vars"><code>df.melt(id_vars...)</code></a></h3>
+<p>Unpivots a DataFrame from wide to long format.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>id_vars</code></td><td><code>String...</code></td><td>Columns to keep as identifiers</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Melted DataFrame with “variable” and “value” columns</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {id: 1, jan: 100, feb: 110, mar: 120},
+    {id: 2, jan: 200, feb: 210, mar: 220}
+])
+
+df.melt("id")
+// Returns:
+// id | variable | value
+// 1  | jan      | 100
+// 1  | feb      | 110
+// 1  | mar      | 120
+// 2  | jan      | 200
+// ...
+</code></pre>
+<hr>
+<h3 id="dfstackcolumns"><a class="header" href="#dfstackcolumns"><code>df.stack(columns...)</code></a></h3>
+<p>Stacks specified columns into rows.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>columns</code></td><td><code>String...</code></td><td>Columns to stack</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Stacked DataFrame</p>
+<hr>
+<h3 id="dfunstackindex_col-column_col-value_col"><a class="header" href="#dfunstackindex_col-column_col-value_col"><code>df.unstack(index_col, column_col, value_col)</code></a></h3>
+<p>Unstacks rows into columns (opposite of stack).</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>index_col</code></td><td><code>String</code></td><td>Column for row identifiers</td></tr>
+<tr><td><code>column_col</code></td><td><code>String</code></td><td>Column whose values become columns</td></tr>
+<tr><td><code>value_col</code></td><td><code>String</code></td><td>Column for cell values</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Unstacked DataFrame</p>
+<hr>
+<h3 id="dfexplodecolumn"><a class="header" href="#dfexplodecolumn"><code>df.explode(column)</code></a></h3>
+<p>Explodes a list column into multiple rows.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>column</code></td><td><code>String</code></td><td>Column containing lists to explode</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with exploded rows</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {id: 1, tags: ["a", "b", "c"]},
+    {id: 2, tags: ["x", "y"]}
+])
+
+df.explode("tags")
+// Returns:
+// id | tags
+// 1  | a
+// 1  | b
+// 1  | c
+// 2  | x
+// 2  | y
+</code></pre>
+<hr>
+<h2 id="dataframe-advanced-operations"><a class="header" href="#dataframe-advanced-operations">DataFrame Advanced Operations</a></h2>
+<h3 id="column-operations"><a class="header" href="#column-operations">Column Operations</a></h3>
+<h4 id="dfadd_columnname-values_or_closure"><a class="header" href="#dfadd_columnname-values_or_closure"><code>df.add_column(name, values_or_closure)</code></a></h4>
+<p>Adds a new column to the DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td><code>String</code></td><td>Name for the new column</td></tr>
+<tr><td><code>values_or_closure</code></td><td><code>List | Series | Function</code></td><td>Values or row transformer</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with new column</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {a: 1, b: 2},
+    {a: 3, b: 4}
+])
+
+// Add from list
+df.add_column("c", [10, 20])
+
+// Add computed column
+df.add_column("sum", |row| row.a + row.b)
+// {a: 1, b: 2, sum: 3}, {a: 3, b: 4, sum: 7}
+</code></pre>
+<hr>
+<h4 id="dfapplyclosure"><a class="header" href="#dfapplyclosure"><code>df.apply(closure)</code></a></h4>
+<p>Applies a function to each row, returning results as a list.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>closure</code></td><td><code>Function</code></td><td>Function taking a row and returning a value</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>List</code> - List of closure results</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {name: "Alice", age: 30},
+    {name: "Bob", age: 25}
+])
+
+let descriptions = df.apply(|row| {
+    row.name + " is " + str(row.age) + " years old"
+})
+// ["Alice is 30 years old", "Bob is 25 years old"]
+</code></pre>
+<hr>
+<h4 id="dftransformcolumn-closure"><a class="header" href="#dftransformcolumn-closure"><code>df.transform(column, closure)</code></a></h4>
+<p>Transforms a single column using a function.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>column</code></td><td><code>String</code></td><td>Column to transform</td></tr>
+<tr><td><code>closure</code></td><td><code>Function</code></td><td>Function to apply to each value</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with transformed column</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {name: "alice", age: 30},
+    {name: "bob", age: 25}
+])
+
+df.transform("name", |n| n.to_upper())
+// {name: "ALICE", age: 30}, {name: "BOB", age: 25}
+</code></pre>
+<hr>
+<h4 id="dfcastcolumn-target_type"><a class="header" href="#dfcastcolumn-target_type"><code>df.cast(column, target_type)</code></a></h4>
+<p>Casts a column to a different type.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>column</code></td><td><code>String</code></td><td>Column to cast</td></tr>
+<tr><td><code>target_type</code></td><td><code>String</code></td><td>Target type: “int”, “float”, “string”, “bool”</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with cast column</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([{value: "123"}, {value: "456"}])
+df.cast("value", "int")
+</code></pre>
+<hr>
+<h3 id="concatenation"><a class="header" href="#concatenation">Concatenation</a></h3>
+<h4 id="dataconcatdfs"><a class="header" href="#dataconcatdfs"><code>Data.concat(dfs...)</code></a></h4>
+<p>Concatenates multiple DataFrames vertically.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>dfs</code></td><td><code>DataFrame...</code></td><td>DataFrames to concatenate</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Combined DataFrame</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df1 = Data.frame([{a: 1}, {a: 2}])
+let df2 = Data.frame([{a: 3}, {a: 4}])
+
+let combined = Data.concat(df1, df2)
+// {a: 1}, {a: 2}, {a: 3}, {a: 4}
+</code></pre>
+<hr>
+<h4 id="dfappendother"><a class="header" href="#dfappendother"><code>df.append(other)</code></a></h4>
+<p>Appends rows from another DataFrame.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>other</code></td><td><code>DataFrame</code></td><td>DataFrame to append</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Combined DataFrame</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df1 = Data.frame([{a: 1}])
+let df2 = Data.frame([{a: 2}])
+
+df1.append(df2)  // {a: 1}, {a: 2}
+</code></pre>
+<hr>
+<h3 id="merge-operations"><a class="header" href="#merge-operations">Merge Operations</a></h3>
+<h4 id="dfmergeother-on-how-left_suffix-right_suffix"><a class="header" href="#dfmergeother-on-how-left_suffix-right_suffix"><code>df.merge(other, on, how, left_suffix?, right_suffix?)</code></a></h4>
+<p>SQL-style merge/join with suffix handling for duplicate columns.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>other</code></td><td><code>DataFrame</code></td><td>DataFrame to merge with</td></tr>
+<tr><td><code>on</code></td><td><code>String | List</code></td><td>Column(s) to join on</td></tr>
+<tr><td><code>how</code></td><td><code>String</code></td><td>Join type: “inner”, “left”, “right”, “outer”</td></tr>
+<tr><td><code>left_suffix</code></td><td><code>String?</code></td><td>Suffix for left duplicates (default: “_x”)</td></tr>
+<tr><td><code>right_suffix</code></td><td><code>String?</code></td><td>Suffix for right duplicates (default: “_y”)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Merged DataFrame</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let users = Data.frame([
+    {id: 1, name: "Alice"},
+    {id: 2, name: "Bob"}
+])
+
+let orders = Data.frame([
+    {user_id: 1, amount: 100},
+    {user_id: 1, amount: 200}
+])
+
+users.merge(orders, "id", "left")
+// Joins on users.id = orders.user_id
+</code></pre>
+<hr>
+<h4 id="dfcross_joinother"><a class="header" href="#dfcross_joinother"><code>df.cross_join(other)</code></a></h4>
+<p>Creates the Cartesian product of two DataFrames.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>other</code></td><td><code>DataFrame</code></td><td>DataFrame for cross join</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - Cartesian product</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let sizes = Data.frame([{size: "S"}, {size: "M"}, {size: "L"}])
+let colors = Data.frame([{color: "Red"}, {color: "Blue"}])
+
+sizes.cross_join(colors)
+// 6 rows: all combinations of size and color
+</code></pre>
+<hr>
+<h3 id="index-operations"><a class="header" href="#index-operations">Index Operations</a></h3>
+<h4 id="dfreset_index"><a class="header" href="#dfreset_index"><code>df.reset_index()</code></a></h4>
+<p>Resets the DataFrame index to default sequential integers.</p>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with reset index</p>
+<hr>
+<h4 id="dfset_indexcolumn"><a class="header" href="#dfset_indexcolumn"><code>df.set_index(column)</code></a></h4>
+<p>Sets a column as the DataFrame index.</p>
+<p><strong>Parameters:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>column</code></td><td><code>String</code></td><td>Column to use as index</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns:</strong> <code>DataFrame</code> - DataFrame with new index</p>
+<p><strong>Example:</strong></p>
+<pre><code class="language-stratum">let df = Data.frame([
+    {id: "A", value: 1},
+    {id: "B", value: 2}
+])
+
+df.set_index("id")
+// Uses "id" as the row index
+</code></pre>
+<hr>
+<h2 id="pipeline-examples"><a class="header" href="#pipeline-examples">Pipeline Examples</a></h2>
+<p>DataFrames integrate naturally with Stratum’s pipeline operator:</p>
+<pre><code class="language-stratum">// Load, transform, and analyze
+let result = Data.read_csv("sales.csv")
+    |&gt; .filter(|row| row.year == 2024)
+    |&gt; .select("region", "product", "revenue")
+    |&gt; .group_by("region")
+    |&gt; .aggregate(
+        Agg.sum("revenue", "total_revenue"),
+        Agg.count("num_sales")
+    )
+    |&gt; .sort_by("-total_revenue")
+    |&gt; .head(10)
+
+result.to_csv("top_regions.csv")
+</code></pre>
+<pre><code class="language-stratum">// Join multiple data sources
+let users = Data.read_parquet("users.parquet")
+let orders = Data.read_parquet("orders.parquet")
+let products = Data.read_parquet("products.parquet")
+
+let report = orders
+    |&gt; .join(users, Join.left_cols("user_id", "id"))
+    |&gt; .join(products, Join.left_cols("product_id", "id"))
+    |&gt; .select("user_name", "product_name", "quantity", "total")
+    |&gt; .sort_by("-total")
+</code></pre>
+<hr>
+<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
+<ul>
+<li><a href="agg.html">Agg</a> - Aggregation specifications for group_by</li>
+<li><a href="join.html">Join</a> - Join specifications for combining DataFrames</li>
+<li><a href="cube.html">Cube</a> - OLAP cube operations for multi-dimensional analysis</li>
+<li><a href="json.html">Json</a> - JSON encoding/decoding</li>
+<li><a href="file.html">File</a> - General file operations</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../stdlib/log.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../stdlib/agg.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../stdlib/log.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../stdlib/agg.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

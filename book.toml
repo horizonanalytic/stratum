@@ -1,0 +1,30 @@
+[book]
+title = "Stratum Standard Library"
+authors = ["Cache McClure"]
+description = "Reference documentation for the Stratum programming language standard library"
+src = "."
+language = "en"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+smart-punctuation = true
+git-repository-url = "https://github.com/cachemcclure/stratum"
+edit-url-template = "https://github.com/cachemcclure/stratum/edit/main/docs/{path}"
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 30
+boost-hierarchy = 2
+
+[output.html.playground]
+editable = false
+copyable = true
