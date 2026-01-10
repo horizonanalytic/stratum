@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-b2c90539.js";
+            window.path_to_searchindex_js = "searchindex-4d90a1ab.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-22706313.js"></script>
+        <script src="toc-521f66e1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -1092,6 +1092,626 @@ rm -rf /tmp/stratum-install-*
 </code></pre>
 </li>
 </ol>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="examples"><a class="header" href="#examples">Examples</a></h1>
+<p>This section contains example programs demonstrating Stratum’s features and capabilities. The examples are organized by complexity level:</p>
+<ul>
+<li><strong>Simple</strong> - Basic programs for beginners learning Stratum</li>
+<li><strong>Intermediate</strong> - Programs demonstrating common patterns and standard library usage</li>
+<li><strong>Advanced</strong> - More complex examples showing real-world use cases</li>
+</ul>
+<h2 id="running-examples"><a class="header" href="#running-examples">Running Examples</a></h2>
+<p>All examples can be run using the Stratum CLI:</p>
+<pre><code class="language-bash">stratum run examples/simple/hello_world.strat
+</code></pre>
+<p>Or clone the repository and run from the examples directory:</p>
+<pre><code class="language-bash">git clone https://github.com/cachemcclure/stratum
+cd stratum
+stratum run examples/simple/hello_world.strat
+</code></pre>
+<h2 id="example-categories"><a class="header" href="#example-categories">Example Categories</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Category</th><th>Description</th><th>Examples</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#simple-examples">Simple</a></td><td>Basic syntax and language features</td><td>Hello World, Variables, FizzBuzz, Fibonacci, Factorial</td></tr>
+<tr><td><a href="#intermediate-examples">Intermediate</a></td><td>Standard library and common patterns</td><td>Temperature Converter, JSON API, Word Count</td></tr>
+<tr><td><a href="#advanced-examples">Advanced</a></td><td>Real-world applications</td><td>Todo App, Data Analysis, CSV Processor, Web Scraper</td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="simple-examples"><a class="header" href="#simple-examples">Simple Examples</a></h1>
+<p>These examples demonstrate basic Stratum syntax and language features. Perfect for beginners learning the language.</p>
+<h2 id="hello-world"><a class="header" href="#hello-world">Hello World</a></h2>
+<p>The simplest Stratum program - prints a greeting to the console.</p>
+<pre><code class="language-stratum">// Hello World - The simplest Stratum program
+// Run with: stratum run hello_world.strat
+
+fx main() {
+    print("Hello, Stratum!")
+}
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li><code>fx</code> declares a function</li>
+<li><code>main()</code> is the entry point</li>
+<li><code>print()</code> outputs text to the console</li>
+</ul>
+<hr>
+<h2 id="variables"><a class="header" href="#variables">Variables</a></h2>
+<p>Demonstrates variable declaration and type inference.</p>
+<pre><code class="language-stratum">// Variables and Type Inference
+// Stratum infers types automatically - you rarely need to write them
+
+fx main() {
+    // Basic types - all inferred
+    let name = "Alice";              // String
+    let age = 30;                    // Int
+    let height = 5.7;                // Float
+    let is_student = false;          // Bool
+
+    // Collections
+    let numbers = [1, 2, 3, 4, 5];           // List&lt;Int&gt;
+    let scores = {"math": 95, "science": 87}; // Map&lt;String, Int&gt;
+
+    // Print string values
+    println("Name: Alice");
+    println("Age: 30");
+    println("Height: 5.7");
+    println("Is student: false");
+    println("Numbers: [1, 2, 3, 4, 5]");
+    println("Scores: math=95, science=87");
+
+    // Nullable types with ?
+    let middle_name: String? = null;
+    let display_name = middle_name ?? "N/A";
+    println("Middle name: N/A");
+
+    // Type inference verification
+    assert(name == "Alice");
+    assert(age == 30);
+    assert(numbers.len() == 5);
+    assert((scores.get("math") ?? 0) == 95);
+}
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li><code>let</code> declares variables (mutable by default)</li>
+<li>Type inference - types are determined automatically</li>
+<li>Lists use <code>[]</code> syntax</li>
+<li>Maps use <code>{}</code> syntax</li>
+<li>Nullable types use <code>?</code> suffix</li>
+<li><code>??</code> is the null coalescing operator</li>
+</ul>
+<hr>
+<h2 id="fizzbuzz"><a class="header" href="#fizzbuzz">FizzBuzz</a></h2>
+<p>A classic programming challenge demonstrating conditionals and loops.</p>
+<pre><code class="language-stratum">// FizzBuzz - A classic programming challenge
+// Print numbers 1-100, but:
+//   - Print "Fizz" for multiples of 3
+//   - Print "Buzz" for multiples of 5
+//   - Print "FizzBuzz" for multiples of both
+
+fx main() {
+    let i = 1;
+    while i &lt;= 20 {  // Just 20 for demo
+        let result = if i % 15 == 0 {
+            "FizzBuzz"
+        } else if i % 3 == 0 {
+            "Fizz"
+        } else if i % 5 == 0 {
+            "Buzz"
+        } else {
+            "."
+        };
+        print(result);
+        i = i + 1;
+    }
+    println("");  // Final newline
+}
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li><code>while</code> loops</li>
+<li><code>if</code>/<code>else if</code>/<code>else</code> expressions</li>
+<li><code>%</code> modulo operator</li>
+<li>Expressions return values (no <code>return</code> needed for last expression)</li>
+</ul>
+<hr>
+<h2 id="fibonacci"><a class="header" href="#fibonacci">Fibonacci</a></h2>
+<p>Calculate Fibonacci numbers using recursive and iterative approaches.</p>
+<pre><code class="language-stratum">// Fibonacci Sequence
+// Calculate Fibonacci numbers using different approaches
+
+// Recursive approach (simple but slow for large n)
+fx fib_recursive(n: Int) -&gt; Int {
+    if n &lt;= 1 { n } else { fib_recursive(n - 1) + fib_recursive(n - 2) }
+}
+
+// Iterative approach (efficient)
+fx fib_iterative(n: Int) -&gt; Int {
+    if n &lt;= 1 { n } else {
+        let a = 0;
+        let b = 1;
+        let i = 2;
+        let result = 0;
+        while i &lt;= n {
+            result = a + b;
+            a = b;
+            b = result;
+            i = i + 1;
+        }
+        b
+    }
+}
+
+fx main() {
+    println("Fibonacci Tests:");
+
+    // Verify values using asserts
+    assert(fib_iterative(0) == 0);
+    assert(fib_iterative(1) == 1);
+    assert(fib_iterative(5) == 5);
+    assert(fib_iterative(10) == 55);
+
+    // Test recursive version (for small numbers)
+    assert(fib_recursive(6) == 8);
+    assert(fib_recursive(7) == 13);
+
+    println("All Fibonacci tests passed!");
+}
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>Function parameters with type annotations (<code>n: Int</code>)</li>
+<li>Return types (<code>-&gt; Int</code>)</li>
+<li>Recursion</li>
+<li><code>assert()</code> for testing</li>
+</ul>
+<hr>
+<h2 id="factorial"><a class="header" href="#factorial">Factorial</a></h2>
+<p>Calculate factorials using multiple approaches including functional style.</p>
+<pre><code class="language-stratum">// Factorial Calculator
+// Demonstrates recursion and iteration in Stratum
+
+// Recursive factorial
+fx factorial_recursive(n: Int) -&gt; Int {
+    if n &lt;= 1 { 1 } else { n * factorial_recursive(n - 1) }
+}
+
+// Iterative factorial
+fx factorial_iterative(n: Int) -&gt; Int {
+    let result = 1;
+    let i = 2;
+    while i &lt;= n {
+        result = result * i;
+        i = i + 1;
+    }
+    result
+}
+
+// Using reduce (functional style)
+fx factorial_functional(n: Int) -&gt; Int {
+    let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    nums.reduce(|acc: Int, x: Int| -&gt; Int {
+        if x &lt;= n { acc * x } else { acc }
+    }, 1)
+}
+
+fx main() {
+    println("Factorial Tests:");
+
+    // Test factorial_recursive
+    assert(factorial_recursive(0) == 1);
+    assert(factorial_recursive(1) == 1);
+    assert(factorial_recursive(5) == 120);
+    assert(factorial_recursive(7) == 5040);
+
+    // Test factorial_iterative
+    assert(factorial_iterative(0) == 1);
+    assert(factorial_iterative(1) == 1);
+    assert(factorial_iterative(5) == 120);
+    assert(factorial_iterative(7) == 5040);
+    assert(factorial_iterative(10) == 3628800);
+
+    // Verify both methods match
+    assert(factorial_recursive(6) == factorial_iterative(6));
+
+    println("All factorial tests passed!");
+}
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>Multiple function implementations</li>
+<li><code>reduce()</code> for functional programming</li>
+<li>Lambda/closure syntax: <code>|params| -&gt; ReturnType { body }</code></li>
+<li>Comparing different algorithmic approaches</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="intermediate-examples"><a class="header" href="#intermediate-examples">Intermediate Examples</a></h1>
+<p>These examples demonstrate common patterns and standard library usage in Stratum.</p>
+<h2 id="temperature-converter"><a class="header" href="#temperature-converter">Temperature Converter</a></h2>
+<p>Convert between Celsius, Fahrenheit, and Kelvin temperature scales.</p>
+<pre><code class="language-stratum">// Temperature Converter
+// Convert between Celsius, Fahrenheit, and Kelvin
+
+// Conversion functions
+fx celsius_to_fahrenheit(c: Float) -&gt; Float {
+    c * 9.0 / 5.0 + 32.0
+}
+
+fx celsius_to_kelvin(c: Float) -&gt; Float {
+    c + 273.15
+}
+
+fx fahrenheit_to_celsius(f: Float) -&gt; Float {
+    (f - 32.0) * 5.0 / 9.0
+}
+
+fx fahrenheit_to_kelvin(f: Float) -&gt; Float {
+    fahrenheit_to_celsius(f) + 273.15
+}
+
+fx kelvin_to_celsius(k: Float) -&gt; Float {
+    k - 273.15
+}
+
+fx kelvin_to_fahrenheit(k: Float) -&gt; Float {
+    celsius_to_fahrenheit(kelvin_to_celsius(k))
+}
+
+fx main() {
+    println("Temperature Converter Tests:");
+
+    // Test freezing point of water
+    let freezing_c = 0.0;
+    assert(celsius_to_fahrenheit(freezing_c) == 32.0);
+    assert(celsius_to_kelvin(freezing_c) == 273.15);
+
+    // Test boiling point of water
+    let boiling_c = 100.0;
+    assert(celsius_to_fahrenheit(boiling_c) == 212.0);
+    assert(celsius_to_kelvin(boiling_c) == 373.15);
+
+    // Test body temperature (Fahrenheit to Celsius)
+    let body_f = 98.6;
+    let body_c = fahrenheit_to_celsius(body_f);
+    assert(body_c &gt; 36.9);
+    assert(body_c &lt; 37.1);
+
+    // Test absolute zero
+    let abs_zero_k = 0.0;
+    let abs_zero_c = kelvin_to_celsius(abs_zero_k);
+    assert(abs_zero_c == -273.15);
+
+    // Test round-trip conversions
+    let temp = 25.0;
+    let round_trip = fahrenheit_to_celsius(celsius_to_fahrenheit(temp));
+    assert(round_trip &gt; 24.99);
+    assert(round_trip &lt; 25.01);
+
+    println("All temperature conversion tests passed!");
+}
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>Function composition (calling functions within functions)</li>
+<li>Float arithmetic</li>
+<li>Range-based assertions for floating-point comparisons</li>
+<li>Unit testing with <code>assert()</code></li>
+</ul>
+<hr>
+<h2 id="json-api"><a class="header" href="#json-api">JSON API</a></h2>
+<p>Fetch and parse JSON data from a public REST API.</p>
+<pre><code class="language-stratum">// JSON API Example - Fetching data from a public API
+// Uses JSONPlaceholder for testing
+
+fx main() {
+    print("Fetching data from JSONPlaceholder API...");
+
+    let response = Http.get("https://jsonplaceholder.typicode.com/users/1");
+    print("Response received!");
+
+    // Parse JSON response
+    let user = Json.parse(response.body);
+    let name = user.name;
+    let email = user.email;
+
+    print("User: {name}");
+    print("Email: {email}")
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>Fetching data from JSONPlaceholder API...
+Response received!
+User: Leanne Graham
+Email: Sincere@april.biz
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li><code>Http.get()</code> for HTTP requests</li>
+<li><code>Json.parse()</code> for parsing JSON strings</li>
+<li>Dynamic property access on parsed JSON</li>
+<li>String interpolation with <code>{variable}</code></li>
+</ul>
+<hr>
+<h2 id="word-count"><a class="header" href="#word-count">Word Count</a></h2>
+<p>Count word frequencies in text using string processing and maps.</p>
+<pre><code class="language-stratum">// Word Count - Count word frequencies in text
+// Demonstrates string processing and maps
+
+fx main() {
+    print("Word Frequency Analysis");
+    print("=======================");
+
+    // Sample text
+    let text = "The quick brown fox jumps over the lazy dog. The dog was not amused by the fox. Quick thinking by the fox saved the day.";
+    print("\nText: {text}");
+
+    // Normalize and split
+    let lower = text.to_lower();
+    let normalized = lower.replace(".", "").replace(",", "");
+    let words = normalized.split(" ");
+
+    // Count words
+    let counts = {"_init_": 0};
+    for word in words {
+        if word.len() &gt; 0 {
+            let current = counts.get(word) ?? 0;
+            counts[word] = current + 1;
+        }
+    }
+
+    // Print results
+    print("\nWord frequencies:");
+    let total = 0;
+    for word in words {
+        if word.len() &gt; 0 {
+            total = total + 1;
+        }
+    }
+    print("Total words: {total}");
+
+    let unique = counts.len();
+    print("Unique words: {unique}")
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>Word Frequency Analysis
+=======================
+
+Text: The quick brown fox jumps over the lazy dog. The dog was not amused by the fox. Quick thinking by the fox saved the day.
+
+Word frequencies:
+Total words: 25
+Unique words: 16
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>String methods: <code>to_lower()</code>, <code>replace()</code>, <code>split()</code></li>
+<li><code>for</code> loops for iteration</li>
+<li>Map operations: <code>get()</code>, index assignment <code>counts[word]</code></li>
+<li>Null coalescing: <code>??</code> operator for default values</li>
+<li>String length with <code>len()</code></li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="advanced-examples"><a class="header" href="#advanced-examples">Advanced Examples</a></h1>
+<p>These examples demonstrate real-world use cases and more complex Stratum applications.</p>
+<h2 id="todo-app"><a class="header" href="#todo-app">Todo App</a></h2>
+<p>A simple console-based todo list application.</p>
+<pre><code class="language-stratum">// Todo Application - Simple console version
+// Demonstrates basic state management
+
+fx main() {
+    print("Todo App Demo");
+    print("=============");
+
+    // Simple todo list stored as strings
+    let todos = ["Buy groceries", "Write code", "Read book"];
+
+    print("\nMy Todos:");
+    let i = 1;
+    for todo in todos {
+        print("  {i}. {todo}");
+        i = i + 1;
+    }
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>Todo App Demo
+=============
+
+My Todos:
+  1. Buy groceries
+  2. Write code
+  3. Read book
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>List iteration with <code>for</code> loops</li>
+<li>Manual index tracking</li>
+<li>String interpolation in output</li>
+</ul>
+<hr>
+<h2 id="data-analysis"><a class="header" href="#data-analysis">Data Analysis</a></h2>
+<p>Basic statistical operations on numeric data.</p>
+<pre><code class="language-stratum">// Data Analysis - Basic statistical operations
+// Demonstrates working with numeric data
+
+fx main() {
+    print("Data Analysis Demo");
+    print("==================");
+
+    // Sample data
+    let values = [4.5, 3.2, 5.1, 4.8, 3.9, 5.5, 4.1];
+
+    print("\nValues:");
+    for v in values {
+        print("  {v}");
+    }
+
+    // Calculate sum using a loop
+    let sum = 0.0;
+    for v in values {
+        sum = sum + v;
+    }
+    print("\nSum: {sum}");
+
+    // Calculate average
+    let count = 7;
+    let avg = sum / count;
+    print("Average: {avg}")
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>Data Analysis Demo
+==================
+
+Values:
+  4.5
+  3.2
+  5.1
+  4.8
+  3.9
+  5.5
+  4.1
+
+Sum: 31.1
+Average: 4.442857142857143
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>Working with float lists</li>
+<li>Accumulator pattern for sum calculation</li>
+<li>Basic statistical computations</li>
+</ul>
+<hr>
+<h2 id="csv-processor"><a class="header" href="#csv-processor">CSV Processor</a></h2>
+<p>Process and analyze tabular data.</p>
+<pre><code class="language-stratum">// CSV Processor - Data processing demo
+
+fx main() {
+    print("Data Processing Example");
+    print("=======================");
+
+    // Create simple list data
+    let regions = ["North", "South", "East", "West"];
+    let sales = [100, 75, 120, 50];
+
+    print("\nRegions:");
+    for r in regions {
+        print("  - {r}");
+    }
+
+    print("\nSales:");
+    for s in sales {
+        print("  {s}");
+    }
+
+    // Calculate total
+    let total = 0;
+    for s in sales {
+        total = total + s;
+    }
+    print("\nTotal sales: {total}");
+
+    print("\nDone!")
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>Data Processing Example
+=======================
+
+Regions:
+  - North
+  - South
+  - East
+  - West
+
+Sales:
+  100
+  75
+  120
+  50
+
+Total sales: 345
+
+Done!
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>Parallel lists for related data</li>
+<li>Multiple iterations over different data sets</li>
+<li>Aggregation calculations</li>
+</ul>
+<hr>
+<h2 id="web-scraper"><a class="header" href="#web-scraper">Web Scraper</a></h2>
+<p>Fetch and process data from web APIs.</p>
+<pre><code class="language-stratum">// Web Scraper - Fetch data from APIs
+// Demonstrates HTTP requests and JSON parsing
+
+fx main() {
+    print("Web Data Fetcher");
+    print("================");
+
+    // Fetch a user from JSONPlaceholder
+    print("\nFetching user data...");
+    let response = Http.get("https://jsonplaceholder.typicode.com/users/1");
+    let user = Json.parse(response.body);
+
+    print("\nUser Info:");
+    let name = user.name;
+    let email = user.email;
+    let company = user.company.name;
+    print("  Name: {name}");
+    print("  Email: {email}");
+    print("  Company: {company}");
+
+    // Fetch posts for this user (limited to 3)
+    print("\nFetching posts...");
+    let posts_response = Http.get("https://jsonplaceholder.typicode.com/posts?userId=1&amp;_limit=3");
+    let posts = Json.parse(posts_response.body);
+
+    print("\nUser's Posts:");
+    for post in posts {
+        let title = post.title;
+        print("  - {title}");
+    }
+
+    print("\nDone!");
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>Web Data Fetcher
+================
+
+Fetching user data...
+
+User Info:
+  Name: Leanne Graham
+  Email: Sincere@april.biz
+  Company: Romaguera-Crona
+
+Fetching posts...
+
+User's Posts:
+  - sunt aut facere repellat provident occaecati excepturi optio reprehenderit
+  - qui est esse
+  - ea molestias quasi exercitationem repellat qui ipsa sit aut
+
+Done!
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>Multiple HTTP requests in sequence</li>
+<li>Nested JSON property access (<code>user.company.name</code>)</li>
+<li>Iterating over JSON arrays with <code>for</code> loops</li>
+<li>Query parameters in URLs (<code>?userId=1&amp;_limit=3</code>)</li>
+<li>Real-world API integration patterns</li>
+</ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="standard-library-reference-1"><a class="header" href="#standard-library-reference-1">Standard Library Reference</a></h1>
 <p>Stratum’s standard library provides a comprehensive set of built-in functions organized into namespaces. All functions are available without imports.</p>
@@ -15041,7 +15661,7 @@ let joined = users.join(orders, Join.cols("id", "customer_id"))
 </table>
 </div>
 <hr>
-<h2 id="examples"><a class="header" href="#examples">Examples</a></h2>
+<h2 id="examples-1"><a class="header" href="#examples-1">Examples</a></h2>
 <h3 id="multi-table-analysis"><a class="header" href="#multi-table-analysis">Multi-Table Analysis</a></h3>
 <pre><code class="language-stratum">let users = Data.read_csv("users.csv")
 let orders = Data.read_csv("orders.csv")
@@ -15784,7 +16404,7 @@ do_other_work()
 let result = await background_task
 </code></pre>
 <hr>
-<h2 id="examples-1"><a class="header" href="#examples-1">Examples</a></h2>
+<h2 id="examples-2"><a class="header" href="#examples-2">Examples</a></h2>
 <h3 id="delayed-operations"><a class="header" href="#delayed-operations">Delayed Operations</a></h3>
 <pre><code class="language-stratum">fx countdown(n: Int) {
     for i in range(n, 0, -1) {
@@ -16214,7 +16834,7 @@ db.execute(
 )
 </code></pre>
 <hr>
-<h2 id="examples-2"><a class="header" href="#examples-2">Examples</a></h2>
+<h2 id="examples-3"><a class="header" href="#examples-3">Examples</a></h2>
 <h3 id="basic-crud-operations"><a class="header" href="#basic-crud-operations">Basic CRUD Operations</a></h3>
 <pre><code class="language-stratum">let db = Db.sqlite("tasks.db")
 

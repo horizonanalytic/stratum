@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>System - Stratum Standard Library</title>
+        <title>Intermediate Examples - Stratum Standard Library</title>
 
 
         <!-- Custom HTML head -->
@@ -146,7 +146,7 @@
                         <a href="https://github.com/cachemcclure/stratum" title="Git repository" aria-label="Git repository">
                             <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
                         </a>
-                        <a href="https://github.com/cachemcclure/stratum/edit/main/docs/./stdlib/system.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                        <a href="https://github.com/cachemcclure/stratum/edit/main/docs/./examples/intermediate.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
                             <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
                         </a>
 
@@ -180,327 +180,182 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="system"><a class="header" href="#system">System</a></h1>
-<p>System information and control functions.</p>
-<h2 id="overview"><a class="header" href="#overview">Overview</a></h2>
-<p>The System namespace provides functions for querying system information (OS, architecture, memory), managing the current working directory, creating temporary files, and controlling program execution.</p>
-<p>These functions are useful for writing cross-platform scripts, getting system metrics, and managing program lifecycle.</p>
-<hr>
-<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
-<h3 id="systemos"><a class="header" href="#systemos"><code>System.os()</code></a></h3>
-<p>Returns the name of the operating system.</p>
-<p><strong>Parameters:</strong> None</p>
-<p><strong>Returns:</strong> <code>String</code> - The OS name: <code>"macos"</code>, <code>"linux"</code>, <code>"windows"</code>, or another platform identifier</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">let os = System.os()
-println("Running on: " + os)
+                        <h1 id="intermediate-examples"><a class="header" href="#intermediate-examples">Intermediate Examples</a></h1>
+<p>These examples demonstrate common patterns and standard library usage in Stratum.</p>
+<h2 id="temperature-converter"><a class="header" href="#temperature-converter">Temperature Converter</a></h2>
+<p>Convert between Celsius, Fahrenheit, and Kelvin temperature scales.</p>
+<pre><code class="language-stratum">// Temperature Converter
+// Convert between Celsius, Fahrenheit, and Kelvin
 
-// Platform-specific behavior
-if System.os() == "windows" {
-    let home = Env.get("USERPROFILE")
-} else {
-    let home = Env.get("HOME")
-}
-</code></pre>
-<hr>
-<h3 id="systemarch"><a class="header" href="#systemarch"><code>System.arch()</code></a></h3>
-<p>Returns the CPU architecture.</p>
-<p><strong>Parameters:</strong> None</p>
-<p><strong>Returns:</strong> <code>String</code> - The architecture: <code>"x86_64"</code>, <code>"aarch64"</code>, <code>"arm"</code>, or another identifier</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">let arch = System.arch()
-println("Architecture: " + arch)
-
-// Check for Apple Silicon
-if System.os() == "macos" &amp;&amp; System.arch() == "aarch64" {
-    println("Running on Apple Silicon")
-}
-</code></pre>
-<hr>
-<h3 id="systemcwd"><a class="header" href="#systemcwd"><code>System.cwd()</code></a></h3>
-<p>Returns the current working directory.</p>
-<p><strong>Parameters:</strong> None</p>
-<p><strong>Returns:</strong> <code>String</code> - Absolute path to the current working directory</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">let cwd = System.cwd()
-println("Current directory: " + cwd)
-
-// Build paths relative to cwd
-let config_path = Path.join(System.cwd(), "config.json")
-</code></pre>
-<hr>
-<h3 id="systemset_cwdpath"><a class="header" href="#systemset_cwdpath"><code>System.set_cwd(path)</code></a></h3>
-<p>Changes the current working directory.</p>
-<p><strong>Parameters:</strong></p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Name</th><th>Type</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>path</code></td><td><code>String</code></td><td>Path to the new working directory</td></tr>
-</tbody>
-</table>
-</div>
-<p><strong>Returns:</strong> <code>Null</code></p>
-<p><strong>Throws:</strong> Error if the directory doesn’t exist or access is denied</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">// Change to a specific directory
-System.set_cwd("/home/user/project")
-println("Now in: " + System.cwd())
-
-// Save and restore working directory
-let original = System.cwd()
-System.set_cwd("/tmp")
-// ... do work ...
-System.set_cwd(original)
-</code></pre>
-<hr>
-<h3 id="systemtemp_dir"><a class="header" href="#systemtemp_dir"><code>System.temp_dir()</code></a></h3>
-<p>Returns the path to the system’s temporary directory.</p>
-<p><strong>Parameters:</strong> None</p>
-<p><strong>Returns:</strong> <code>String</code> - Path to the temporary directory</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">let tmp = System.temp_dir()
-println("Temp directory: " + tmp)  // e.g., /tmp or C:\Users\...\AppData\Local\Temp
-
-// Create a temp file path
-let temp_file = Path.join(System.temp_dir(), "my_temp_file.txt")
-File.write_text(temp_file, "temporary data")
-</code></pre>
-<hr>
-<h3 id="systemtemp_file"><a class="header" href="#systemtemp_file"><code>System.temp_file()</code></a></h3>
-<p>Creates a new temporary file and returns its path.</p>
-<p><strong>Parameters:</strong> None</p>
-<p><strong>Returns:</strong> <code>String</code> - Path to the newly created temporary file</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">// Create a temp file
-let temp_path = System.temp_file()
-println("Created: " + temp_path)
-
-// Write data to the temp file
-File.write_text(temp_path, "temporary content")
-
-// Process and clean up
-let content = File.read_text(temp_path)
-File.delete(temp_path)
-</code></pre>
-<hr>
-<h3 id="systemexitcode"><a class="header" href="#systemexitcode"><code>System.exit(?code)</code></a></h3>
-<p>Terminates the program with an optional exit code.</p>
-<p><strong>Parameters:</strong></p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Name</th><th>Type</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><code>code</code></td><td><code>Int?</code></td><td>Exit code (default: 0). Convention: 0 = success, non-zero = error</td></tr>
-</tbody>
-</table>
-</div>
-<p><strong>Returns:</strong> Does not return (program terminates)</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">// Success exit
-println("Done!")
-System.exit()  // Exit with code 0
-
-// Error exit
-if !File.exists("required.txt") {
-    println("Error: required.txt not found")
-    System.exit(1)
+// Conversion functions
+fx celsius_to_fahrenheit(c: Float) -&gt; Float {
+    c * 9.0 / 5.0 + 32.0
 }
 
-// Exit with specific error code
-if validation_failed {
-    System.exit(2)  // Custom error code
+fx celsius_to_kelvin(c: Float) -&gt; Float {
+    c + 273.15
+}
+
+fx fahrenheit_to_celsius(f: Float) -&gt; Float {
+    (f - 32.0) * 5.0 / 9.0
+}
+
+fx fahrenheit_to_kelvin(f: Float) -&gt; Float {
+    fahrenheit_to_celsius(f) + 273.15
+}
+
+fx kelvin_to_celsius(k: Float) -&gt; Float {
+    k - 273.15
+}
+
+fx kelvin_to_fahrenheit(k: Float) -&gt; Float {
+    celsius_to_fahrenheit(kelvin_to_celsius(k))
+}
+
+fx main() {
+    println("Temperature Converter Tests:");
+
+    // Test freezing point of water
+    let freezing_c = 0.0;
+    assert(celsius_to_fahrenheit(freezing_c) == 32.0);
+    assert(celsius_to_kelvin(freezing_c) == 273.15);
+
+    // Test boiling point of water
+    let boiling_c = 100.0;
+    assert(celsius_to_fahrenheit(boiling_c) == 212.0);
+    assert(celsius_to_kelvin(boiling_c) == 373.15);
+
+    // Test body temperature (Fahrenheit to Celsius)
+    let body_f = 98.6;
+    let body_c = fahrenheit_to_celsius(body_f);
+    assert(body_c &gt; 36.9);
+    assert(body_c &lt; 37.1);
+
+    // Test absolute zero
+    let abs_zero_k = 0.0;
+    let abs_zero_c = kelvin_to_celsius(abs_zero_k);
+    assert(abs_zero_c == -273.15);
+
+    // Test round-trip conversions
+    let temp = 25.0;
+    let round_trip = fahrenheit_to_celsius(celsius_to_fahrenheit(temp));
+    assert(round_trip &gt; 24.99);
+    assert(round_trip &lt; 25.01);
+
+    println("All temperature conversion tests passed!");
 }
 </code></pre>
-<hr>
-<h3 id="systemcpu_count"><a class="header" href="#systemcpu_count"><code>System.cpu_count()</code></a></h3>
-<p>Returns the number of CPU cores available.</p>
-<p><strong>Parameters:</strong> None</p>
-<p><strong>Returns:</strong> <code>Int</code> - Number of CPU cores</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">let cpus = System.cpu_count()
-println("CPU cores: " + str(cpus))
-
-// Scale workers to CPU count
-let worker_count = System.cpu_count()
-for i in range(0, worker_count) {
-    spawn_worker(i)
-}
-</code></pre>
-<hr>
-<h3 id="systemtotal_memory"><a class="header" href="#systemtotal_memory"><code>System.total_memory()</code></a></h3>
-<p>Returns the total system memory in bytes.</p>
-<p><strong>Parameters:</strong> None</p>
-<p><strong>Returns:</strong> <code>Int</code> - Total memory in bytes</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">let memory = System.total_memory()
-println("Total memory: " + str(memory) + " bytes")
-
-// Format as human-readable
-let gb = memory / (1024 * 1024 * 1024)
-println("Total memory: " + str(gb) + " GB")
-
-// Check minimum requirements
-let min_memory = 4 * 1024 * 1024 * 1024  // 4 GB
-if System.total_memory() &lt; min_memory {
-    println("Warning: Less than 4 GB of RAM available")
-}
-</code></pre>
-<hr>
-<h3 id="systemhostname"><a class="header" href="#systemhostname"><code>System.hostname()</code></a></h3>
-<p>Returns the system’s hostname.</p>
-<p><strong>Parameters:</strong> None</p>
-<p><strong>Returns:</strong> <code>String</code> - The hostname of the machine</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">let hostname = System.hostname()
-println("Hostname: " + hostname)
-
-// Use in logging
-fx log_with_host(message: String) {
-    let ts = DateTime.now()
-    println("[" + System.hostname() + "] " + str(ts) + ": " + message)
-}
-</code></pre>
-<hr>
-<h3 id="systemuptime"><a class="header" href="#systemuptime"><code>System.uptime()</code></a></h3>
-<p>Returns the system uptime in seconds.</p>
-<p><strong>Parameters:</strong> None</p>
-<p><strong>Returns:</strong> <code>Int</code> - System uptime in seconds</p>
-<p><strong>Example:</strong></p>
-<pre><code class="language-stratum">let uptime = System.uptime()
-println("System uptime: " + str(uptime) + " seconds")
-
-// Format as human-readable
-let hours = uptime / 3600
-let minutes = (uptime % 3600) / 60
-println("Uptime: " + str(hours) + "h " + str(minutes) + "m")
-
-// Check for fresh reboot
-if System.uptime() &lt; 300 {  // Less than 5 minutes
-    println("System was recently restarted")
-}
-</code></pre>
-<hr>
-<h2 id="common-patterns"><a class="header" href="#common-patterns">Common Patterns</a></h2>
-<h3 id="system-information-display"><a class="header" href="#system-information-display">System Information Display</a></h3>
-<pre><code class="language-stratum">fx print_system_info() {
-    println("System Information")
-    println("==================")
-    println("OS:           " + System.os())
-    println("Architecture: " + System.arch())
-    println("CPU Cores:    " + str(System.cpu_count()))
-
-    let memory_gb = System.total_memory() / (1024 * 1024 * 1024)
-    println("Memory:       " + str(memory_gb) + " GB")
-
-    println("CWD:          " + System.cwd())
-    println("Temp Dir:     " + System.temp_dir())
-}
-
-print_system_info()
-</code></pre>
-<h3 id="cross-platform-path-handling"><a class="header" href="#cross-platform-path-handling">Cross-Platform Path Handling</a></h3>
-<pre><code class="language-stratum">fx get_config_dir() {
-    let os = System.os()
-
-    if os == "windows" {
-        return Env.get("APPDATA") + "\\MyApp"
-    } else if os == "macos" {
-        return Env.get("HOME") + "/Library/Application Support/MyApp"
-    } else {
-        // Linux and others
-        return Env.get("HOME") + "/.config/myapp"
-    }
-}
-
-let config_dir = get_config_dir()
-if !Dir.exists(config_dir) {
-    Dir.create_all(config_dir)
-}
-</code></pre>
-<h3 id="graceful-shutdown-handler"><a class="header" href="#graceful-shutdown-handler">Graceful Shutdown Handler</a></h3>
-<pre><code class="language-stratum">fx main() {
-    println("Starting application...")
-
-    if !initialize() {
-        println("Failed to initialize")
-        System.exit(1)
-    }
-
-    let result = run_application()
-
-    if result.success {
-        println("Application completed successfully")
-        System.exit(0)
-    } else {
-        println("Application failed: " + result.error)
-        System.exit(result.exit_code)
-    }
-}
-
-main()
-</code></pre>
-<h3 id="temporary-file-workflow"><a class="header" href="#temporary-file-workflow">Temporary File Workflow</a></h3>
-<pre><code class="language-stratum">// Process data through a temp file
-fx process_with_temp(data) {
-    let temp = System.temp_file()
-
-    // Write input
-    File.write_text(temp, data)
-
-    // Process with external tool
-    let result = Shell.run("processor", [temp])
-
-    // Read result (if tool modified in place)
-    let output = File.read_text(temp)
-
-    // Clean up
-    File.delete(temp)
-
-    return output
-}
-</code></pre>
-<h3 id="resource-aware-processing"><a class="header" href="#resource-aware-processing">Resource-Aware Processing</a></h3>
-<pre><code class="language-stratum">fx choose_batch_size() {
-    let memory_gb = System.total_memory() / (1024 * 1024 * 1024)
-    let cpus = System.cpu_count()
-
-    // Scale batch size based on available resources
-    if memory_gb &gt;= 16 &amp;&amp; cpus &gt;= 8 {
-        return 10000  // High-resource system
-    } else if memory_gb &gt;= 8 &amp;&amp; cpus &gt;= 4 {
-        return 5000   // Medium-resource system
-    } else {
-        return 1000   // Low-resource system
-    }
-}
-
-let batch_size = choose_batch_size()
-println("Using batch size: " + str(batch_size))
-</code></pre>
-<hr>
-<h2 id="see-also"><a class="header" href="#see-also">See Also</a></h2>
+<p><strong>Key concepts:</strong></p>
 <ul>
-<li><a href="env.html">Env</a> - Environment variable access</li>
-<li><a href="args.html">Args</a> - Command-line argument access</li>
-<li><a href="shell.html">Shell</a> - Shell command execution</li>
-<li><a href="path.html">Path</a> - Path manipulation utilities</li>
-<li><a href="file.html">File</a> - File system operations</li>
+<li>Function composition (calling functions within functions)</li>
+<li>Float arithmetic</li>
+<li>Range-based assertions for floating-point comparisons</li>
+<li>Unit testing with <code>assert()</code></li>
+</ul>
+<hr>
+<h2 id="json-api"><a class="header" href="#json-api">JSON API</a></h2>
+<p>Fetch and parse JSON data from a public REST API.</p>
+<pre><code class="language-stratum">// JSON API Example - Fetching data from a public API
+// Uses JSONPlaceholder for testing
+
+fx main() {
+    print("Fetching data from JSONPlaceholder API...");
+
+    let response = Http.get("https://jsonplaceholder.typicode.com/users/1");
+    print("Response received!");
+
+    // Parse JSON response
+    let user = Json.parse(response.body);
+    let name = user.name;
+    let email = user.email;
+
+    print("User: {name}");
+    print("Email: {email}")
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>Fetching data from JSONPlaceholder API...
+Response received!
+User: Leanne Graham
+Email: Sincere@april.biz
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li><code>Http.get()</code> for HTTP requests</li>
+<li><code>Json.parse()</code> for parsing JSON strings</li>
+<li>Dynamic property access on parsed JSON</li>
+<li>String interpolation with <code>{variable}</code></li>
+</ul>
+<hr>
+<h2 id="word-count"><a class="header" href="#word-count">Word Count</a></h2>
+<p>Count word frequencies in text using string processing and maps.</p>
+<pre><code class="language-stratum">// Word Count - Count word frequencies in text
+// Demonstrates string processing and maps
+
+fx main() {
+    print("Word Frequency Analysis");
+    print("=======================");
+
+    // Sample text
+    let text = "The quick brown fox jumps over the lazy dog. The dog was not amused by the fox. Quick thinking by the fox saved the day.";
+    print("\nText: {text}");
+
+    // Normalize and split
+    let lower = text.to_lower();
+    let normalized = lower.replace(".", "").replace(",", "");
+    let words = normalized.split(" ");
+
+    // Count words
+    let counts = {"_init_": 0};
+    for word in words {
+        if word.len() &gt; 0 {
+            let current = counts.get(word) ?? 0;
+            counts[word] = current + 1;
+        }
+    }
+
+    // Print results
+    print("\nWord frequencies:");
+    let total = 0;
+    for word in words {
+        if word.len() &gt; 0 {
+            total = total + 1;
+        }
+    }
+    print("Total words: {total}");
+
+    let unique = counts.len();
+    print("Unique words: {unique}")
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>Word Frequency Analysis
+=======================
+
+Text: The quick brown fox jumps over the lazy dog. The dog was not amused by the fox. Quick thinking by the fox saved the day.
+
+Word frequencies:
+Total words: 25
+Unique words: 16
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>String methods: <code>to_lower()</code>, <code>replace()</code>, <code>split()</code></li>
+<li><code>for</code> loops for iteration</li>
+<li>Map operations: <code>get()</code>, index assignment <code>counts[word]</code></li>
+<li>Null coalescing: <code>??</code> operator for default values</li>
+<li>String length with <code>len()</code></li>
 </ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../stdlib/zip.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../examples/simple.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../stdlib/env.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../examples/advanced.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -510,11 +365,11 @@ println("Using batch size: " + str(batch_size))
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../stdlib/zip.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../examples/simple.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../stdlib/env.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../examples/advanced.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
