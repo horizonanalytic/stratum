@@ -1,26 +1,23 @@
-//! Stratum Workshop - Lightweight IDE bundled with Stratum
+//! Stratum Shell - Interactive Environment
 //!
-//! A modern IDE built with Stratum's own GUI framework (dogfooding).
-//! Like Python's IDLE but modern, providing immediate productivity.
+//! A clean, minimal REPL-focused environment for the Stratum programming language.
+//! Inspired by Python's IDLE - simple, approachable, effective.
 //!
 //! # Architecture
 //!
-//! Workshop uses iced's `pane_grid` for a flexible, resizable panel layout:
-//!
 //! ```text
 //! ┌─────────────────────────────────────────────────┐
-//! │  Menu Bar                                       │
-//! ├────────────┬────────────────────────────────────┤
-//! │            │  Tab Bar                           │
-//! │   File     ├────────────────────────────────────┤
-//! │  Browser   │                                    │
-//! │            │     Editor Area                    │
-//! │            │                                    │
-//! │            ├────────────────────────────────────┤
-//! │            │  Run | Debug | Build               │
-//! │            ├────────────────────────────────────┤
-//! │            │     Output / REPL                  │
-//! └────────────┴────────────────────────────────────┘
+//! │  New  Open  Save  Close  |  Run  |  About      │
+//! ├─────────────────────────────────────────────────┤
+//! │  [Optional: Editor pane when file is open]     │
+//! ├─────────────────────────────────────────────────┤
+//! │                                                 │
+//! │  >>> REPL                                       │
+//! │  >>> _                                          │
+//! │                                                 │
+//! ├─────────────────────────────────────────────────┤
+//! │  Ready                                          │
+//! └─────────────────────────────────────────────────┘
 //! ```
 //!
 //! # Usage
@@ -29,37 +26,17 @@
 //! use stratum_workshop::launch;
 //! use std::path::PathBuf;
 //!
-//! // Launch with no initial path
+//! // Launch with no initial path (REPL only)
 //! launch(None).unwrap();
-//!
-//! // Launch with a folder
-//! launch(Some(PathBuf::from("/path/to/project"))).unwrap();
 //!
 //! // Launch with a file
 //! launch(Some(PathBuf::from("/path/to/file.strat"))).unwrap();
 //! ```
-//!
-//! # Modules
-//!
-//! - [`workshop`]: Main application structure
-//! - [`config`]: Layout persistence and user preferences
-//! - [`panels`]: Individual panel implementations
-//! - [`widgets`]: Custom widgets (code editor, etc.)
 
-pub mod config;
-pub mod debug;
-pub mod execution;
-pub mod highlight;
 pub mod panels;
-pub mod widgets;
 pub mod workshop;
 
-pub use config::{LayoutConfig, PanelVisibility, WorkshopConfig};
-pub use debug::{DebugResult, DebugSession, DebugSessionState};
-pub use execution::{execute_source, execute_source_async, CancellationToken, ExecutionResult};
-pub use highlight::{HighlightSettings, HighlightTheme, StratumHighlighter};
-pub use panels::{EditorMessage, EditorPanel, EditorTab, FileBrowserPanel, OutputPanel, RecentFilesData, ReplPanel, WelcomeAction};
-pub use widgets::{code_editor, CodeEditorMessage, CodeEditorState, CursorMovement, Position, Selection};
+pub use panels::{ReplMessage, ReplPanel};
 pub use workshop::{Workshop, WorkshopMessage, WorkshopState};
 
 use iced::{Size, Subscription, Task};
@@ -69,11 +46,11 @@ use std::sync::OnceLock;
 /// Global storage for initial path to pass to boot function
 static INITIAL_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 
-/// Launch Stratum Workshop IDE
+/// Launch Stratum Shell
 ///
 /// # Arguments
 ///
-/// * `initial_path` - Optional path to open on startup (file or folder)
+/// * `initial_path` - Optional path to open on startup (file only)
 ///
 /// # Returns
 ///
@@ -85,25 +62,19 @@ static INITIAL_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 /// use stratum_workshop::launch;
 /// use std::path::PathBuf;
 ///
-/// // Open Workshop with empty editor
+/// // Open Shell (REPL only)
 /// launch(None).unwrap();
 ///
-/// // Open Workshop with a specific folder
-/// launch(Some(PathBuf::from("/my/project"))).unwrap();
+/// // Open Shell with a file
+/// launch(Some(PathBuf::from("/my/script.strat"))).unwrap();
 /// ```
 pub fn launch(initial_path: Option<PathBuf>) -> iced::Result {
     // Store initial path for boot function to access
     let _ = INITIAL_PATH.set(initial_path);
 
-    // Load config for window settings
-    let config = WorkshopConfig::load();
-
     iced::application(boot, update, view)
-        .title("Stratum Workshop")
-        .window_size(Size::new(
-            config.window_size.0 as f32,
-            config.window_size.1 as f32,
-        ))
+        .title("Stratum Shell")
+        .window_size(Size::new(700.0, 500.0))
         .subscription(subscription)
         .run()
 }
@@ -113,23 +84,19 @@ fn boot() -> (Workshop, Task<WorkshopMessage>) {
     let mut workshop = Workshop::new();
 
     // Handle initial path argument
-    let task = if let Some(Some(path)) = INITIAL_PATH.get() {
-        if path.is_dir() {
-            let _ = workshop.file_browser.open_folder(path.clone());
-            Task::none()
-        } else if path.is_file() {
-            match std::fs::read_to_string(path) {
-                Ok(content) => Task::done(WorkshopMessage::FileOpened(path.clone(), content)),
-                Err(_) => Task::none(),
+    if let Some(Some(path)) = INITIAL_PATH.get() {
+        if path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                // Directly open the file
+                let _ = workshop.update(WorkshopMessage::FileDialogOpened(Some((
+                    path.clone(),
+                    content,
+                ))));
             }
-        } else {
-            Task::none()
         }
-    } else {
-        Task::none()
-    };
+    }
 
-    (workshop, task)
+    (workshop, Task::none())
 }
 
 /// Update function

@@ -7,7 +7,7 @@ use iced::widget::{column, container, row, scrollable, text, text_input, Column}
 use iced::{Element, Length};
 use std::cell::RefCell;
 use stratum_core::bytecode::Value;
-use stratum_core::{Compiler, Parser, VM};
+use stratum_core::{with_output_capture, Compiler, Parser, VM};
 
 /// Messages for the REPL panel
 #[derive(Debug, Clone)]
@@ -163,12 +163,13 @@ impl ReplPanel {
 
         // Evaluate the input
         let (output, is_error) = match self.eval(&full_input) {
-            Ok(value) => {
-                if matches!(value, Value::Null) {
-                    (String::new(), false)
-                } else {
-                    (pretty_print(&value), false)
+            Ok((stdout, value)) => {
+                // Combine captured stdout with the result value
+                let mut output_parts = stdout;
+                if !matches!(value, Value::Null) {
+                    output_parts.push(pretty_print(&value));
                 }
+                (output_parts.join("\n"), false)
             }
             Err(err) => (err, true),
         };
@@ -185,7 +186,8 @@ impl ReplPanel {
     }
 
     /// Evaluate a string of Stratum code
-    fn eval(&self, input: &str) -> Result<Value, String> {
+    /// Returns (captured_stdout, result_value) or error
+    fn eval(&self, input: &str) -> Result<(Vec<String>, Value), String> {
         // Parse the input - supports expressions, statements, and function definitions
         let repl_input = Parser::parse_repl_input(input).map_err(|errors| {
             errors
@@ -206,10 +208,13 @@ impl ReplPanel {
                     .join("\n")
             })?;
 
-        // Run in the VM (globals are preserved between runs)
-        self.vm
-            .borrow_mut()
-            .run(function)
+        // Run in the VM with output capture (globals are preserved between runs)
+        let (result, captured) = with_output_capture(|| {
+            self.vm.borrow_mut().run(function)
+        });
+
+        result
+            .map(|value| (captured.stdout, value))
             .map_err(|e| format!("Runtime error: {e}"))
     }
 
@@ -371,9 +376,38 @@ impl ReplPanel {
                 })
                 .collect();
 
-            scrollable(Column::with_children(items).spacing(1).padding(4))
-                .height(Length::Fill)
-                .into()
+            scrollable(
+                Column::with_children(items)
+                    .spacing(1)
+                    .padding(4)
+                    .width(Length::Fill),
+            )
+            .direction(scrollable::Direction::Both {
+                vertical: scrollable::Scrollbar::default(),
+                horizontal: scrollable::Scrollbar::default(),
+            })
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .into()
+        };
+
+        // Show accumulated multi-line input if in multi-line mode
+        let pending_lines: Element<'_, ReplMessage> = if self.multi_line_mode && !self.accumulated_input.is_empty() {
+            let lines: Vec<Element<'_, ReplMessage>> = self
+                .accumulated_input
+                .lines()
+                .enumerate()
+                .map(|(i, line)| {
+                    let prompt = if i == 0 { ">>> " } else { "... " };
+                    text(format!("{prompt}{line}"))
+                        .size(12)
+                        .font(iced::Font::MONOSPACE)
+                        .into()
+                })
+                .collect();
+            Column::with_children(lines).spacing(1).padding([0, 4]).into()
+        } else {
+            column![].into()
         };
 
         // Determine prompt based on mode
@@ -401,7 +435,7 @@ impl ReplPanel {
         .padding(4)
         .into();
 
-        container(column![history_view, input_row].spacing(2))
+        container(column![history_view, pending_lines, input_row].spacing(2))
             .width(Length::Fill)
             .height(Length::FillPortion(1))
             .style(|theme: &iced::Theme| {
@@ -718,7 +752,8 @@ mod tests {
         let repl = ReplPanel::new();
         let result = repl.eval("1 + 2");
         assert!(result.is_ok());
-        assert_eq!(format!("{}", result.unwrap()), "3");
+        let (_stdout, value) = result.unwrap();
+        assert_eq!(format!("{}", value), "3");
     }
 
     #[test]
@@ -729,17 +764,29 @@ mod tests {
         // First expression
         let result = repl.eval("1 + 2");
         assert!(result.is_ok());
-        assert_eq!(format!("{}", result.unwrap()), "3");
+        let (_stdout, value) = result.unwrap();
+        assert_eq!(format!("{}", value), "3");
 
         // Second expression on same VM instance
         let result = repl.eval("10 * 5");
         assert!(result.is_ok());
-        assert_eq!(format!("{}", result.unwrap()), "50");
+        let (_stdout, value) = result.unwrap();
+        assert_eq!(format!("{}", value), "50");
 
         // Third expression - test that VM is still alive
         let result = repl.eval("[1, 2, 3].len()");
         assert!(result.is_ok());
-        assert_eq!(format!("{}", result.unwrap()), "3");
+        let (_stdout, value) = result.unwrap();
+        assert_eq!(format!("{}", value), "3");
+    }
+
+    #[test]
+    fn test_eval_with_print_capture() {
+        let repl = ReplPanel::new();
+        let result = repl.eval("println(\"hello\")");
+        assert!(result.is_ok());
+        let (stdout, _value) = result.unwrap();
+        assert_eq!(stdout, vec!["hello"]);
     }
 
     #[test]
@@ -750,5 +797,15 @@ mod tests {
 
         let s = Value::String(std::rc::Rc::new("hello".to_string()));
         assert_eq!(pretty_print(&s), "\"hello\"");
+    }
+
+    #[test]
+    fn test_for_loop_with_println() {
+        let repl = ReplPanel::new();
+        let result = repl.eval("for ii in 1..=3 { println(ii) }");
+        assert!(result.is_ok());
+        let (stdout, _value) = result.unwrap();
+        // Should have captured 3 lines: "1", "2", "3"
+        assert_eq!(stdout, vec!["1", "2", "3"]);
     }
 }

@@ -1479,6 +1479,12 @@ impl Compiler {
         for stmt in &block.stmts {
             self.statement(stmt);
         }
+        // Also compile the trailing expression if present (for side effects, discard result)
+        if let Some(expr) = &block.expr {
+            let line = self.line_from_span(expr.span);
+            self.expression(expr);
+            self.emit_op(OpCode::Pop, line); // Discard the result
+        }
         let line = self.line_from_span(block.span);
         self.end_scope(line);
     }
