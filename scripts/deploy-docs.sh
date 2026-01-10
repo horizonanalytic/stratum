@@ -15,6 +15,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOCS_DIR="$PROJECT_ROOT/docs"
 
+# Safety: ensure we never run destructive commands in the project root
+safety_check() {
+    local current_dir="$1"
+    if [[ "$current_dir" == "$PROJECT_ROOT" ]] || [[ "$current_dir" == "$DOCS_DIR" ]]; then
+        echo "ERROR: Refusing to run destructive command in project directory"
+        exit 1
+    fi
+}
+
 # Colors
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -47,6 +56,14 @@ REMOTE_URL=$(git remote get-url origin)
 TEMP_DIR=$(mktemp -d)
 log_info "Working in temporary directory: $TEMP_DIR"
 
+# Cleanup function to ensure temp directory is removed
+cleanup() {
+    if [[ -n "${TEMP_DIR:-}" ]] && [[ -d "$TEMP_DIR" ]]; then
+        rm -rf "$TEMP_DIR"
+    fi
+}
+trap cleanup EXIT
+
 cd "$TEMP_DIR"
 
 # Initialize a new repo and set up gh-pages branch
@@ -58,7 +75,8 @@ if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
     log_info "Fetching existing gh-pages branch..."
     git fetch origin gh-pages
     git checkout -b gh-pages origin/gh-pages
-    # Clean everything
+    # Clean everything (safety check first)
+    safety_check "$(pwd)"
     git rm -rf . 2>/dev/null || true
 else
     log_info "Creating new gh-pages branch..."
@@ -79,9 +97,8 @@ git commit -m "Deploy docs $(date +%Y-%m-%d)" || { log_info "No changes to commi
 log_info "Pushing to origin/gh-pages..."
 git push origin gh-pages --force
 
-# Cleanup
+# Return to project root (cleanup handled by trap)
 cd "$PROJECT_ROOT"
-rm -rf "$TEMP_DIR"
 
 log_success "Documentation deployed to gh-pages branch!"
 log_info "Configure GitHub Pages at your repo Settings -> Pages"

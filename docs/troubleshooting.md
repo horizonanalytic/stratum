@@ -1,32 +1,10 @@
 # Troubleshooting
 
-This guide covers common issues encountered when installing, upgrading, or running Stratum.
+This guide covers common issues encountered when installing or running Stratum.
 
 ## Installation Issues
 
-### Permission Denied Errors
-
-**Symptom:** Installation fails with "Permission denied" or "EACCES" errors.
-
-**Solutions:**
-
-1. **Use a user-writable location** (recommended):
-   ```bash
-   curl -fsSL https://get.stratum-lang.dev | sh -s -- --prefix=$HOME/.stratum
-   ```
-
-2. **Fix directory permissions:**
-   ```bash
-   # If using /usr/local/stratum
-   sudo chown -R $(whoami) /usr/local/stratum
-   ```
-
-3. **Use sudo for system-wide installation:**
-   ```bash
-   curl -fsSL https://get.stratum-lang.dev | sudo sh
-   ```
-
-### PATH Not Updated
+### "command not found" After Installation
 
 **Symptom:** After installation, `stratum: command not found`.
 
@@ -46,17 +24,39 @@ This guide covers common issues encountered when installing, upgrading, or runni
 
 2. **Manually add to PATH:**
    ```bash
-   # For ~/.stratum installation, add to your shell config:
-   export PATH="$HOME/.stratum/bin:$PATH"
-
-   # For /usr/local/stratum:
-   export PATH="/usr/local/stratum/bin:$PATH"
+   # Add to your shell config (~/.bashrc, ~/.zshrc, etc.):
+   export PATH="/path/to/stratum:$PATH"
    ```
 
-3. **Check installation location:**
+3. **Verify where stratum is installed:**
    ```bash
-   # Find where stratum is installed
-   find / -name "stratum" -type f 2>/dev/null
+   # Check common locations
+   ls -la /usr/local/bin/stratum
+   ls -la ~/.cargo/bin/stratum
+   which stratum
+   ```
+
+### Permission Denied Errors
+
+**Symptom:** Installation fails with "Permission denied" errors.
+
+**Solutions:**
+
+1. **Install to user directory:**
+   ```bash
+   # When building from source
+   cargo install --path crates/stratum-cli
+   # Installs to ~/.cargo/bin/
+   ```
+
+2. **Use sudo for system-wide installation:**
+   ```bash
+   sudo mv stratum /usr/local/bin/
+   ```
+
+3. **Fix directory permissions:**
+   ```bash
+   sudo chown -R $(whoami) /usr/local/bin/stratum
    ```
 
 ### Shell Completions Not Working
@@ -65,7 +65,7 @@ This guide covers common issues encountered when installing, upgrading, or runni
 
 **Solutions:**
 
-1. **Regenerate completions:**
+1. **Generate completions:**
    ```bash
    # Bash
    stratum completions bash > ~/.local/share/bash-completion/completions/stratum
@@ -93,60 +93,36 @@ This guide covers common issues encountered when installing, upgrading, or runni
    sudo apt install bash-completion
    ```
 
-### Version Conflicts
+### Build from Source Failures
 
-**Symptom:** Multiple versions installed, wrong version being used.
-
-**Solutions:**
-
-1. **Check which version is active:**
-   ```bash
-   stratum --version
-   which stratum
-   ```
-
-2. **List installed versions:**
-   ```bash
-   stratum self list
-   ```
-
-3. **Switch to specific version:**
-   ```bash
-   stratum self use 1.2.0
-   ```
-
-4. **Check for conflicting installations:**
-   ```bash
-   # Look for stratum in common locations
-   ls -la /usr/local/bin/stratum
-   ls -la /usr/bin/stratum
-   ls -la ~/.stratum/bin/stratum
-   ls -la ~/.cargo/bin/stratum  # If installed via cargo
-   ```
-
-### Download or Checksum Failures
-
-**Symptom:** Installation fails during download or with checksum mismatch.
+**Symptom:** `cargo build` fails with errors.
 
 **Solutions:**
 
-1. **Check network connectivity:**
+1. **Ensure Rust 1.75+ is installed:**
    ```bash
-   curl -I https://github.com/horizon-analytic/stratum/releases
+   rustc --version
+   # Should be 1.75.0 or higher
    ```
 
-2. **Try a different mirror or direct download:**
+2. **Update Rust:**
    ```bash
-   # Download manually
-   wget https://github.com/horizon-analytic/stratum/releases/latest/download/stratum-macos-universal-VERSION.tar.gz
-
-   # Verify checksum
-   sha256sum stratum-macos-universal-VERSION.tar.gz
+   rustup update
    ```
 
-3. **Clear cached downloads:**
+3. **Clean and rebuild:**
    ```bash
-   rm -rf /tmp/stratum-install-*
+   cargo clean
+   cargo build --release
+   ```
+
+4. **Check for missing system dependencies:**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install build-essential pkg-config libssl-dev
+
+   # macOS (with Xcode command line tools)
+   xcode-select --install
    ```
 
 ---
@@ -168,25 +144,25 @@ This guide covers common issues encountered when installing, upgrading, or runni
    xattr -d com.apple.quarantine /path/to/stratum
    ```
 
-3. **For Homebrew installations,** this shouldn't occur as bottles are signed and notarized.
-
-### macOS: Rosetta 2 Required (Apple Silicon)
+### macOS: "Bad CPU type in executable" (Apple Silicon)
 
 **Symptom:** On M1/M2/M3 Mac, "Bad CPU type in executable" error.
 
 **Solutions:**
 
-1. **Use native ARM64 binary:** The installer should auto-detect and use the correct binary. If not:
+1. **Download the correct binary:** Ensure you downloaded the ARM64/aarch64 version for Apple Silicon Macs.
+
+2. **Build from source:** Building from source will automatically compile for your architecture:
    ```bash
-   curl -fsSL https://get.stratum-lang.dev | sh -s -- --arch=aarch64
+   cargo build --release
    ```
 
-2. **Install Rosetta 2** (for x86_64 binaries):
+3. **Install Rosetta 2** (for x86_64 binaries):
    ```bash
    softwareupdate --install-rosetta
    ```
 
-### Linux: Missing Dependencies
+### Linux: Missing Shared Libraries
 
 **Symptom:** "error while loading shared libraries" or similar.
 
@@ -207,12 +183,7 @@ This guide covers common issues encountered when installing, upgrading, or runni
    sudo dnf install glibc openssl ca-certificates
    ```
 
-3. **Use musl build for Alpine:**
-   ```bash
-   curl -fsSL https://get.stratum-lang.dev | sh -s -- --musl
-   ```
-
-### Linux: AppArmor/SELinux Blocking Execution
+### Linux: SELinux Blocking Execution
 
 **Symptom:** Permission denied even with correct file permissions.
 
@@ -225,35 +196,20 @@ This guide covers common issues encountered when installing, upgrading, or runni
 
 2. **Allow execution:**
    ```bash
-   # SELinux
    sudo chcon -t bin_t /path/to/stratum
-
-   # Or set permissive for troubleshooting
-   sudo setenforce 0
    ```
 
-### Container Environment Detection
+### Windows: Execution Policy
 
-**Symptom:** Interactive installer hangs or behaves unexpectedly in containers.
+**Symptom:** PowerShell blocks running stratum.
 
 **Solutions:**
 
-1. **Use non-interactive mode:**
-   ```bash
-   curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes --tier=data
-   ```
+1. **Run from Command Prompt** instead of PowerShell.
 
-2. **In Dockerfile:**
-   ```dockerfile
-   FROM debian:bookworm-slim
-   RUN apt-get update && apt-get install -y curl ca-certificates \
-       && curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes --quiet \
-       && rm -rf /var/lib/apt/lists/*
-   ```
-
-3. **Or use official Docker image:**
-   ```dockerfile
-   FROM ghcr.io/horizon-analytic/stratum:data
+2. **Or adjust execution policy:**
+   ```powershell
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
    ```
 
 ---
@@ -268,7 +224,6 @@ This guide covers common issues encountered when installing, upgrading, or runni
 
 1. **Check terminal supports interactive input:**
    ```bash
-   # Verify TTY
    tty
    ```
 
@@ -288,112 +243,65 @@ This guide covers common issues encountered when installing, upgrading, or runni
 
 **Solutions:**
 
-1. **Verify GUI tier is installed:**
-   ```bash
-   stratum self info
-   # Should show "gui" or "full" tier
-   ```
-
-2. **Upgrade to GUI tier:**
-   ```bash
-   stratum self update --tier=gui
-   ```
-
-3. **Check display server (Linux):**
+1. **Check display server (Linux):**
    ```bash
    echo $DISPLAY  # X11
    echo $WAYLAND_DISPLAY  # Wayland
    ```
 
-4. **macOS: Grant accessibility permissions:**
+2. **macOS: Grant accessibility permissions:**
    - System Preferences > Security & Privacy > Privacy > Accessibility
-   - Add Stratum Workshop or Terminal
+   - Add Terminal or your terminal emulator
 
-### LSP Not Connecting to Editor
+3. **Install required GUI libraries (Linux):**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install libgtk-3-0 libwebkit2gtk-4.0-37
+   ```
 
-**Symptom:** No IntelliSense or diagnostics in VS Code/editor.
+### Script Execution Errors
+
+**Symptom:** Script fails with unexpected errors.
 
 **Solutions:**
 
-1. **Verify LSP is installed:**
+1. **Check syntax:**
    ```bash
-   which stratum-lsp
-   stratum-lsp --version
+   stratum fmt --check script.strat
    ```
 
-2. **Check VS Code extension is installed:**
+2. **Run with debug output:**
    ```bash
-   stratum extension list
+   STRATUM_LOG=debug stratum run script.strat
    ```
 
-3. **Reinstall extension:**
-   ```bash
-   stratum extension uninstall
-   stratum extension install
-   ```
-
-4. **Check Output panel** in VS Code for Stratum Language Server logs.
+3. **Test in REPL:** Copy problematic code sections to the REPL to isolate issues.
 
 ---
 
 ## Uninstallation
 
-### What Gets Removed
-
-When uninstalling Stratum, the following are removed by default:
-
-| Component | Location | Removed |
-|-----------|----------|---------|
-| Binaries | `/usr/local/stratum/bin/` or `~/.stratum/bin/` | Yes |
-| Standard Library | `<install>/lib/` | Yes |
-| Shell Completions | Various (see below) | Yes |
-| PATH entries | Shell config files | Yes |
-| **User Configuration** | `~/.stratum/config.toml` | Only with `--purge` |
-| **Installed Packages** | `~/.stratum/packages/` | Only with `--purge` |
-| **REPL History** | `~/.stratum/history` | Only with `--purge` |
-
-### Shell Completion Locations
-
-| Shell | Completion File |
-|-------|-----------------|
-| Bash | `~/.local/share/bash-completion/completions/stratum` |
-| Zsh | `~/.zfunc/_stratum` |
-| Fish | `~/.config/fish/completions/stratum.fish` |
-
 ### Manual Cleanup
 
-If automatic uninstall doesn't work:
+To completely remove Stratum:
 
 ```bash
-# Remove binaries
+# Remove binary
+rm /usr/local/bin/stratum
+# Or if installed via cargo:
+rm ~/.cargo/bin/stratum
+
+# Remove configuration and data
 rm -rf ~/.stratum
-rm -rf /usr/local/stratum
 
 # Remove shell completions
-rm ~/.local/share/bash-completion/completions/stratum
-rm ~/.zfunc/_stratum
-rm ~/.config/fish/completions/stratum.fish
+rm -f ~/.local/share/bash-completion/completions/stratum
+rm -f ~/.zfunc/_stratum
+rm -f ~/.config/fish/completions/stratum.fish
 
 # Remove PATH entries from shell configs
-# Edit ~/.bashrc, ~/.zshrc, ~/.config/fish/config.fish
-# Remove lines containing STRATUM_HOME or stratum/bin
-
-# macOS: Remove .pkg receipt
-sudo pkgutil --forget dev.stratum-lang.stratum
-```
-
-### Orphaned Files After Failed Install
-
-If installation failed partway:
-
-```bash
-# Find stratum-related files
-find ~ -name "*stratum*" -type f 2>/dev/null
-find /usr/local -name "*stratum*" 2>/dev/null
-find /tmp -name "*stratum*" 2>/dev/null
-
-# Clean up
-rm -rf /tmp/stratum-install-*
+# Edit ~/.bashrc, ~/.zshrc, or ~/.config/fish/config.fish
+# Remove lines containing stratum
 ```
 
 ---
@@ -402,10 +310,10 @@ rm -rf /tmp/stratum-install-*
 
 If these solutions don't resolve your issue:
 
-1. **Check existing issues:** [GitHub Issues](https://github.com/horizon-analytic/stratum/issues)
+1. **Check existing issues:** [GitHub Issues](https://github.com/horizonanalytic/stratum/issues)
 
 2. **Open a new issue** with:
-   - Your OS and version (`uname -a`)
+   - Your OS and version (`uname -a` or Windows version)
    - Stratum version (`stratum --version`)
    - Full error message
    - Steps to reproduce
@@ -413,9 +321,4 @@ If these solutions don't resolve your issue:
 3. **Enable debug logging:**
    ```bash
    STRATUM_LOG=debug stratum <command>
-   ```
-
-4. **Generate diagnostic report:**
-   ```bash
-   stratum self diagnose > stratum-diagnostics.txt
    ```

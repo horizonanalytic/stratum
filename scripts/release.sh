@@ -34,6 +34,17 @@
 
 set -euo pipefail
 
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Load .env file if it exists
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    set -a
+    source "$PROJECT_ROOT/.env"
+    set +a
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -41,9 +52,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Build Configuration
 BINARY_NAME="stratum"
 BUILD_DIR="$PROJECT_ROOT/target/release-build"
 ARTIFACTS_DIR="$BUILD_DIR/artifacts"
