@@ -1,7 +1,27 @@
 //! Stratum CLI - Command-line interface for the Stratum programming language
+//!
+//! # Feature Flags
+//!
+//! The CLI supports tiered installation via Cargo features:
+//!
+//! - `gui` - Enables GUI framework support (stratum-gui)
+//! - `workshop` - Enables Workshop IDE (implies gui)
+//! - `lsp` - Enables Language Server Protocol support
+//! - `full` - Enables all features (default)
+//!
+//! ## Installation Tiers
+//!
+//! | Tier | Features | Approximate Size |
+//! |------|----------|------------------|
+//! | Core | (none) | ~15 MB |
+//! | Data | (none, data is always included) | ~45 MB |
+//! | GUI | `gui` | ~80 MB |
+//! | Full | `full` (default) | ~120 MB |
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Shell};
+use std::io;
 use std::path::PathBuf;
 
 mod add;
@@ -11,6 +31,7 @@ mod init;
 mod publish;
 mod remove;
 mod repl;
+mod self_cmd;
 mod update;
 
 #[derive(Parser)]
@@ -206,12 +227,14 @@ enum Commands {
     },
 
     /// Open Stratum Workshop IDE
+    #[cfg(feature = "workshop")]
     Workshop {
         /// Path to file or folder to open
         path: Option<PathBuf>,
     },
 
     /// Start the Language Server Protocol (LSP) server
+    #[cfg(feature = "lsp")]
     Lsp,
 
     /// Start the Debug Adapter Protocol (DAP) server
@@ -239,6 +262,13 @@ enum Commands {
         open: bool,
     },
 
+    /// Generate shell completions for bash, zsh, fish, or PowerShell
+    Completions {
+        /// The shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+
     /// Publish a package to GitHub Releases
     ///
     /// Creates a tarball of your package and publishes it as a GitHub release.
@@ -264,6 +294,10 @@ enum Commands {
     /// Manage VS Code extension
     #[command(subcommand)]
     Extension(ExtensionCommand),
+
+    /// Manage Stratum installation (update, uninstall)
+    #[command(name = "self", subcommand)]
+    SelfCmd(SelfCommand),
 }
 
 /// Subcommands for `stratum extension`
@@ -281,6 +315,71 @@ enum ExtensionCommand {
 
     /// Uninstall the Stratum VS Code extension
     Uninstall,
+}
+
+/// Subcommands for `stratum self`
+#[derive(Subcommand)]
+enum SelfCommand {
+    /// Update Stratum to the latest version
+    Update {
+        /// Force update even if already on latest version
+        #[arg(long)]
+        force: bool,
+
+        /// Change installation tier (core, data, gui, full)
+        #[arg(long)]
+        tier: Option<String>,
+
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
+
+        /// Perform a dry run without making changes
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Uninstall Stratum from the system
+    Uninstall {
+        /// Remove all configuration and user data
+        #[arg(long)]
+        purge: bool,
+
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
+    },
+
+    /// Install a specific version of Stratum
+    Install {
+        /// Version to install (e.g., 1.0.0 or v1.0.0)
+        version: String,
+
+        /// Installation tier (core, data, gui, full)
+        #[arg(long, default_value = "full")]
+        tier: String,
+
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
+
+        /// Make this version active after installation
+        #[arg(long, default_value = "true")]
+        activate: bool,
+    },
+
+    /// Switch to a different installed version
+    Use {
+        /// Version to switch to
+        version: String,
+    },
+
+    /// List installed versions and available releases
+    List {
+        /// Also show available versions from GitHub releases
+        #[arg(long)]
+        available: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -396,10 +495,12 @@ fn main() -> Result<()> {
             build_executable(&file, output, release)?;
         }
 
+        #[cfg(feature = "workshop")]
         Some(Commands::Workshop { path }) => {
             launch_workshop(path)?;
         }
 
+        #[cfg(feature = "lsp")]
         Some(Commands::Lsp) => {
             run_lsp_server()?;
         }
@@ -415,6 +516,10 @@ fn main() -> Result<()> {
             open,
         }) => {
             generate_documentation(&path, output, &format, open)?;
+        }
+
+        Some(Commands::Completions { shell }) => {
+            generate_completions(shell);
         }
 
         Some(Commands::Publish {
@@ -442,6 +547,39 @@ fn main() -> Result<()> {
                 }
                 ExtensionCommand::Uninstall => {
                     extension::uninstall_extension()?;
+                }
+            }
+        }
+
+        Some(Commands::SelfCmd(cmd)) => {
+            match cmd {
+                SelfCommand::Update { force, tier, yes, dry_run } => {
+                    let options = self_cmd::UpdateOptions {
+                        force,
+                        tier,
+                        yes,
+                        dry_run,
+                    };
+                    self_cmd::update(options)?;
+                }
+                SelfCommand::Uninstall { purge, yes } => {
+                    let options = self_cmd::UninstallOptions { purge, yes };
+                    self_cmd::uninstall(options)?;
+                }
+                SelfCommand::Install { version, tier, yes, activate } => {
+                    let options = self_cmd::InstallVersionOptions {
+                        version,
+                        tier,
+                        yes,
+                        activate,
+                    };
+                    self_cmd::install_version(options)?;
+                }
+                SelfCommand::Use { version } => {
+                    self_cmd::use_version(&version)?;
+                }
+                SelfCommand::List { available } => {
+                    self_cmd::list_versions(available)?;
                 }
             }
         }
@@ -502,6 +640,7 @@ fn run_file(
     let mut vm = stratum_core::VM::new();
 
     // Register GUI bindings so Stratum code can use Gui.* functions
+    #[cfg(feature = "gui")]
     stratum_gui::register_gui(&mut vm);
 
     let _ = vm
@@ -761,11 +900,13 @@ fn build_executable(path: &PathBuf, output: Option<PathBuf>, release: bool) -> R
 }
 
 /// Launch Stratum Workshop IDE
+#[cfg(feature = "workshop")]
 fn launch_workshop(path: Option<PathBuf>) -> Result<()> {
     stratum_workshop::launch(path).map_err(|e| anyhow::anyhow!("Workshop error: {e}"))
 }
 
 /// Run the Language Server Protocol (LSP) server
+#[cfg(feature = "lsp")]
 fn run_lsp_server() -> Result<()> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -1113,6 +1254,12 @@ fn format_files(files: &[PathBuf], check: bool) -> Result<()> {
     Ok(())
 }
 
+/// Generate shell completions and write them to stdout
+fn generate_completions(shell: Shell) {
+    let mut cmd = Cli::command();
+    generate(shell, &mut cmd, "stratum", &mut io::stdout());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1208,6 +1355,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "workshop")]
     fn test_workshop_no_path() {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "workshop"]).unwrap();
@@ -1220,6 +1368,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "workshop")]
     fn test_workshop_with_file() {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "workshop", "main.strat"]).unwrap();
@@ -1232,6 +1381,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "workshop")]
     fn test_workshop_with_folder() {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "workshop", "/path/to/project"]).unwrap();
@@ -1448,6 +1598,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "lsp")]
     fn test_lsp_command() {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "lsp"]).unwrap();
@@ -1497,5 +1648,112 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "extension", "uninstall"]).unwrap();
         assert!(matches!(cli.command, Some(Commands::Extension(ExtensionCommand::Uninstall))));
+    }
+
+    #[test]
+    fn test_self_update() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "self", "update"]).unwrap();
+        match cli.command {
+            Some(Commands::SelfCmd(SelfCommand::Update { force, tier, yes, dry_run })) => {
+                assert!(!force);
+                assert!(tier.is_none());
+                assert!(!yes);
+                assert!(!dry_run);
+            }
+            _ => panic!("Expected Self Update command"),
+        }
+    }
+
+    #[test]
+    fn test_self_update_with_flags() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&[
+            "stratum", "self", "update",
+            "--force", "--tier", "full", "-y", "--dry-run"
+        ]).unwrap();
+        match cli.command {
+            Some(Commands::SelfCmd(SelfCommand::Update { force, tier, yes, dry_run })) => {
+                assert!(force);
+                assert_eq!(tier, Some("full".to_string()));
+                assert!(yes);
+                assert!(dry_run);
+            }
+            _ => panic!("Expected Self Update command"),
+        }
+    }
+
+    #[test]
+    fn test_self_uninstall() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "self", "uninstall"]).unwrap();
+        match cli.command {
+            Some(Commands::SelfCmd(SelfCommand::Uninstall { purge, yes })) => {
+                assert!(!purge);
+                assert!(!yes);
+            }
+            _ => panic!("Expected Self Uninstall command"),
+        }
+    }
+
+    #[test]
+    fn test_self_uninstall_with_purge() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "self", "uninstall", "--purge", "-y"]).unwrap();
+        match cli.command {
+            Some(Commands::SelfCmd(SelfCommand::Uninstall { purge, yes })) => {
+                assert!(purge);
+                assert!(yes);
+            }
+            _ => panic!("Expected Self Uninstall command"),
+        }
+    }
+
+    #[test]
+    fn test_completions_bash() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "completions", "bash"]).unwrap();
+        match cli.command {
+            Some(Commands::Completions { shell }) => {
+                assert_eq!(shell, Shell::Bash);
+            }
+            _ => panic!("Expected Completions command"),
+        }
+    }
+
+    #[test]
+    fn test_completions_zsh() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "completions", "zsh"]).unwrap();
+        match cli.command {
+            Some(Commands::Completions { shell }) => {
+                assert_eq!(shell, Shell::Zsh);
+            }
+            _ => panic!("Expected Completions command"),
+        }
+    }
+
+    #[test]
+    fn test_completions_fish() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "completions", "fish"]).unwrap();
+        match cli.command {
+            Some(Commands::Completions { shell }) => {
+                assert_eq!(shell, Shell::Fish);
+            }
+            _ => panic!("Expected Completions command"),
+        }
+    }
+
+    #[test]
+    fn test_completions_powershell() {
+        use clap::Parser as ClapParser;
+        let cli = Cli::try_parse_from(&["stratum", "completions", "powershell"]).unwrap();
+        match cli.command {
+            Some(Commands::Completions { shell }) => {
+                assert_eq!(shell, Shell::PowerShell);
+            }
+            _ => panic!("Expected Completions command"),
+        }
     }
 }

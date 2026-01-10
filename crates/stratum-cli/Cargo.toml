@@ -12,16 +12,35 @@ rust-version.workspace = true
 name = "stratum"
 path = "src/main.rs"
 
+[features]
+# Default includes all features for full installation
+default = ["full"]
+
+# Full installation: includes GUI, Workshop IDE, and LSP
+full = ["gui", "workshop", "lsp"]
+
+# GUI framework support (stratum-gui)
+gui = ["dep:stratum-gui"]
+
+# Workshop IDE support (implies gui)
+workshop = ["gui", "dep:stratum-workshop"]
+
+# Language Server Protocol support
+lsp = ["dep:stratum-lsp"]
+
 [dependencies]
 stratum-core = { path = "../stratum-core" }
-stratum-gui = { path = "../stratum-gui" }
-stratum-lsp = { path = "../stratum-lsp" }
 stratum-pkg = { path = "../stratum-pkg" }
-stratum-workshop = { path = "../stratum-workshop" }
+
+# Optional dependencies for tiered installation
+stratum-gui = { path = "../stratum-gui", optional = true }
+stratum-lsp = { path = "../stratum-lsp", optional = true }
+stratum-workshop = { path = "../stratum-workshop", optional = true }
 anyhow.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 rustyline = "15"
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 
 # For publish command
 flate2.workspace = true
@@ -34,6 +53,12 @@ serde_json.workspace = true
 
 # For extension command
 dirs = "5"
+
+# For self command (self-update, self-uninstall)
+reqwest = { workspace = true }
+sha2.workspace = true
+chrono.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

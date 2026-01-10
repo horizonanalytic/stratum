@@ -1,0 +1,801 @@
+# GitHub Actions workflow for building and publishing releases
+# Triggers on tag push (v*.*.*) and creates platform-specific binaries
+#
+# This workflow:
+# 1. Runs tests on all platforms
+# 2. Builds binaries for macOS (arm64, x86_64), Linux (x86_64, aarch64, musl)
+# 3. Creates universal macOS binary
+# 4. Signs and notarizes macOS binaries (requires Apple Developer)
+# 5. Creates .deb and .rpm packages for Linux
+# 6. Creates release tarballs
+# 7. Uploads all artifacts to GitHub Release
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'  # Pre-releases like v1.0.0-beta.1
+
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v0.1.0)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run (build but do not publish)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # Needed to create releases and upload assets
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  BINARY_NAME: stratum
+
+jobs:
+  # Pre-flight checks and version extraction
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+          # Check if this is a prerelease
+          if [[ "$VERSION" == *"-"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+            echo "This is a prerelease"
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Run tests before building release artifacts
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --all
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all -- -D warnings
+
+  # Build for each platform
+  build:
+    name: Build (${{ matrix.target }})
+    needs: [prepare, test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact_name: stratum-macos-arm64
+
+          # macOS x86_64 (Intel)
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact_name: stratum-macos-x86_64
+
+          # Linux x86_64 (glibc)
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact_name: stratum-linux-x86_64
+
+          # Linux ARM64 (glibc)
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            artifact_name: stratum-linux-aarch64
+            cross: true
+
+          # Linux x86_64 (musl - static)
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+            artifact_name: stratum-linux-x86_64-musl
+            cross: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.cross
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build (native)
+        if: ${{ !matrix.cross }}
+        run: |
+          cargo build --release --target ${{ matrix.target }} -p stratum-cli
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: |
+          cross build --release --target ${{ matrix.target }} -p stratum-cli
+
+      - name: Create artifact directory
+        run: |
+          mkdir -p artifacts
+          cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} artifacts/
+
+          # Copy completion scripts
+          mkdir -p artifacts/completions
+          ./target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} completions bash > artifacts/completions/stratum.bash
+          ./target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} completions zsh > artifacts/completions/_stratum
+          ./target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} completions fish > artifacts/completions/stratum.fish
+        continue-on-error: true  # Completions may fail for cross-compiled binaries
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: artifacts/
+          retention-days: 7
+
+  # Create macOS universal binary
+  macos-universal:
+    name: Create macOS Universal Binary
+    needs: build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create universal binary
+        run: |
+          mkdir -p universal
+
+          # Create universal binary using lipo
+          lipo -create \
+            artifacts/stratum-macos-arm64/stratum \
+            artifacts/stratum-macos-x86_64/stratum \
+            -output universal/stratum
+
+          # Verify the universal binary
+          file universal/stratum
+          lipo -info universal/stratum
+
+          # Copy completions (same for all architectures)
+          cp -r artifacts/stratum-macos-arm64/completions universal/ || true
+
+      - name: Upload universal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratum-macos-universal
+          path: universal/
+          retention-days: 7
+
+  # Sign and notarize macOS binaries
+  macos-sign:
+    name: Sign & Notarize macOS
+    needs: macos-universal
+    runs-on: macos-14
+    if: ${{ !inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download universal artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: stratum-macos-universal
+          path: universal
+
+      - name: Import signing certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Create a temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # Import certificate
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+          security import certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          # Allow codesign to access the keychain
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+      - name: Sign binary
+        env:
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+        run: |
+          # Sign the binary with hardened runtime
+          codesign --force --options runtime \
+            --sign "$APPLE_DEVELOPER_ID" \
+            --timestamp \
+            universal/stratum
+
+          # Verify signature
+          codesign -dv --verbose=4 universal/stratum
+
+      - name: Create signed archive for notarization
+        run: |
+          # Create a zip for notarization
+          ditto -c -k --keepParent universal/stratum stratum-notarize.zip
+
+      - name: Notarize binary
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Submit for notarization
+          xcrun notarytool submit stratum-notarize.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+      - name: Staple notarization
+        run: |
+          # Note: stapling only works for .app, .pkg, .dmg - not standalone binaries
+          # For binaries, notarization status is checked online
+          echo "Binary notarized successfully. Notarization ticket is stored with Apple."
+
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratum-macos-universal-signed
+          path: universal/
+          retention-days: 7
+
+  # Create macOS .pkg installer
+  macos-pkg:
+    name: Create macOS Installer
+    needs: [prepare, macos-sign]
+    runs-on: macos-14
+    if: ${{ !inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download signed artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: stratum-macos-universal-signed
+          path: universal
+
+      - name: Create installer package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          APPLE_INSTALLER_ID: ${{ secrets.APPLE_INSTALLER_ID }}
+        run: |
+          # Create directory structure for pkg
+          PKG_ROOT="$RUNNER_TEMP/pkg-root"
+          mkdir -p "$PKG_ROOT/usr/local/bin"
+          mkdir -p "$PKG_ROOT/usr/local/share/bash-completion/completions"
+          mkdir -p "$PKG_ROOT/usr/local/share/zsh/site-functions"
+          mkdir -p "$PKG_ROOT/usr/local/share/fish/vendor_completions.d"
+
+          # Copy binary
+          cp universal/stratum "$PKG_ROOT/usr/local/bin/"
+          chmod 755 "$PKG_ROOT/usr/local/bin/stratum"
+
+          # Copy completions if they exist
+          if [ -d "universal/completions" ]; then
+            cp universal/completions/stratum.bash "$PKG_ROOT/usr/local/share/bash-completion/completions/stratum" || true
+            cp universal/completions/_stratum "$PKG_ROOT/usr/local/share/zsh/site-functions/_stratum" || true
+            cp universal/completions/stratum.fish "$PKG_ROOT/usr/local/share/fish/vendor_completions.d/stratum.fish" || true
+          fi
+
+          # Create component package
+          pkgbuild \
+            --root "$PKG_ROOT" \
+            --identifier dev.stratum-lang.stratum \
+            --version "$VERSION" \
+            --install-location "/" \
+            stratum-component.pkg
+
+          # Create product package (distribution)
+          cat > distribution.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <installer-gui-script minSpecVersion="2">
+            <title>Stratum Programming Language</title>
+            <organization>dev.stratum-lang</organization>
+            <domains enable_localSystem="true"/>
+            <options customize="never" require-scripts="false" hostArchitectures="x86_64,arm64"/>
+            <welcome file="welcome.html"/>
+            <conclusion file="conclusion.html"/>
+            <pkg-ref id="dev.stratum-lang.stratum"/>
+            <choices-outline>
+              <line choice="default">
+                <line choice="dev.stratum-lang.stratum"/>
+              </line>
+            </choices-outline>
+            <choice id="default"/>
+            <choice id="dev.stratum-lang.stratum" visible="false">
+              <pkg-ref id="dev.stratum-lang.stratum"/>
+            </choice>
+            <pkg-ref id="dev.stratum-lang.stratum" version="${VERSION}" onConclusion="none">stratum-component.pkg</pkg-ref>
+          </installer-gui-script>
+          EOF
+
+          # Create HTML resources
+          mkdir -p resources
+          cat > resources/welcome.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head><title>Welcome</title></head>
+          <body>
+          <h1>Stratum Programming Language</h1>
+          <p>Version ${VERSION}</p>
+          <p>This installer will install the Stratum CLI and shell completions.</p>
+          <p>After installation, run <code>stratum --help</code> to get started.</p>
+          </body>
+          </html>
+          EOF
+
+          cat > resources/conclusion.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head><title>Installation Complete</title></head>
+          <body>
+          <h1>Installation Complete</h1>
+          <p>Stratum has been installed successfully!</p>
+          <p>Open a new terminal and run:</p>
+          <ul>
+            <li><code>stratum repl</code> - Start the interactive REPL</li>
+            <li><code>stratum init</code> - Create a new project</li>
+            <li><code>stratum --help</code> - Show all commands</li>
+          </ul>
+          </body>
+          </html>
+          EOF
+
+          # Build product archive
+          productbuild \
+            --distribution distribution.xml \
+            --resources resources \
+            --package-path . \
+            stratum-${VERSION}-macos.pkg
+
+          # Sign the product package
+          if [ -n "$APPLE_INSTALLER_ID" ]; then
+            productsign \
+              --sign "$APPLE_INSTALLER_ID" \
+              stratum-${VERSION}-macos.pkg \
+              stratum-${VERSION}-macos-signed.pkg
+            mv stratum-${VERSION}-macos-signed.pkg stratum-${VERSION}-macos.pkg
+          fi
+
+      - name: Notarize package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Submit for notarization
+          xcrun notarytool submit stratum-${VERSION}-macos.pkg \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          # Staple the notarization ticket
+          xcrun stapler staple stratum-${VERSION}-macos.pkg
+
+      - name: Upload pkg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratum-macos-pkg
+          path: stratum-*.pkg
+          retention-days: 7
+
+  # Create Linux .deb package
+  linux-deb:
+    name: Create Linux .deb Package
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: stratum-linux-x86_64
+          path: binary
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Create .deb package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          # Create debian directory structure
+          DEB_ROOT="$RUNNER_TEMP/deb-root"
+          mkdir -p "$DEB_ROOT/DEBIAN"
+          mkdir -p "$DEB_ROOT/usr/bin"
+          mkdir -p "$DEB_ROOT/usr/share/bash-completion/completions"
+          mkdir -p "$DEB_ROOT/usr/share/zsh/vendor-completions"
+          mkdir -p "$DEB_ROOT/usr/share/fish/vendor_completions.d"
+          mkdir -p "$DEB_ROOT/usr/share/doc/stratum"
+
+          # Copy binary
+          cp binary/stratum "$DEB_ROOT/usr/bin/"
+          chmod 755 "$DEB_ROOT/usr/bin/stratum"
+
+          # Copy completions
+          if [ -d "binary/completions" ]; then
+            cp binary/completions/stratum.bash "$DEB_ROOT/usr/share/bash-completion/completions/stratum" || true
+            cp binary/completions/_stratum "$DEB_ROOT/usr/share/zsh/vendor-completions/_stratum" || true
+            cp binary/completions/stratum.fish "$DEB_ROOT/usr/share/fish/vendor_completions.d/stratum.fish" || true
+          fi
+
+          # Create control file
+          cat > "$DEB_ROOT/DEBIAN/control" << EOF
+          Package: stratum
+          Version: ${VERSION}
+          Section: devel
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Horizon Analytic Studios <support@horizonanalytic.com>
+          Description: Stratum programming language
+           Stratum is a Goldilocks programming language with native data operations
+           and GUI support. It offers a learning curve between Python and Rust,
+           with built-in DataFrame support, Arrow integration, and a bundled IDE.
+          Homepage: https://stratum-lang.dev
+          EOF
+
+          # Create copyright file
+          cat > "$DEB_ROOT/usr/share/doc/stratum/copyright" << EOF
+          Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+          Upstream-Name: stratum
+          Source: https://github.com/horizon-analytic/stratum
+
+          Files: *
+          Copyright: 2024-2026 Horizon Analytic Studios, LLC
+          License: MIT or Apache-2.0
+          EOF
+
+          # Calculate installed size
+          INSTALLED_SIZE=$(du -sk "$DEB_ROOT" | cut -f1)
+          echo "Installed-Size: $INSTALLED_SIZE" >> "$DEB_ROOT/DEBIAN/control"
+
+          # Build the .deb
+          dpkg-deb --build "$DEB_ROOT" "stratum_${VERSION}_amd64.deb"
+
+          # Verify the package
+          dpkg-deb -I "stratum_${VERSION}_amd64.deb"
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratum-linux-deb
+          path: stratum_*.deb
+          retention-days: 7
+
+  # Create Linux .rpm package
+  linux-rpm:
+    name: Create Linux .rpm Package
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: stratum-linux-x86_64
+          path: binary
+
+      - name: Install rpm build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+
+      - name: Create .rpm package
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          # Set up rpmbuild directories
+          mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          mkdir -p ~/rpmbuild/BUILDROOT/stratum-${VERSION}-1.x86_64
+
+          # Create directory structure
+          RPM_ROOT="$HOME/rpmbuild/BUILDROOT/stratum-${VERSION}-1.x86_64"
+          mkdir -p "$RPM_ROOT/usr/bin"
+          mkdir -p "$RPM_ROOT/usr/share/bash-completion/completions"
+          mkdir -p "$RPM_ROOT/usr/share/zsh/site-functions"
+          mkdir -p "$RPM_ROOT/usr/share/fish/vendor_completions.d"
+
+          # Copy binary
+          cp binary/stratum "$RPM_ROOT/usr/bin/"
+          chmod 755 "$RPM_ROOT/usr/bin/stratum"
+
+          # Copy completions
+          if [ -d "binary/completions" ]; then
+            cp binary/completions/stratum.bash "$RPM_ROOT/usr/share/bash-completion/completions/stratum" || true
+            cp binary/completions/_stratum "$RPM_ROOT/usr/share/zsh/site-functions/_stratum" || true
+            cp binary/completions/stratum.fish "$RPM_ROOT/usr/share/fish/vendor_completions.d/stratum.fish" || true
+          fi
+
+          # Create spec file
+          cat > ~/rpmbuild/SPECS/stratum.spec << EOF
+          Name:           stratum
+          Version:        ${VERSION}
+          Release:        1%{?dist}
+          Summary:        Stratum programming language
+
+          License:        MIT or Apache-2.0
+          URL:            https://stratum-lang.dev
+
+          %description
+          Stratum is a Goldilocks programming language with native data operations
+          and GUI support. It offers a learning curve between Python and Rust,
+          with built-in DataFrame support, Arrow integration, and a bundled IDE.
+
+          %files
+          %{_bindir}/stratum
+          %{_datadir}/bash-completion/completions/stratum
+          %{_datadir}/zsh/site-functions/_stratum
+          %{_datadir}/fish/vendor_completions.d/stratum.fish
+
+          %changelog
+          * $(date +"%a %b %d %Y") Horizon Analytic Studios <support@horizonanalytic.com> - ${VERSION}-1
+          - Release ${VERSION}
+          EOF
+
+          # Build the RPM
+          rpmbuild -bb ~/rpmbuild/SPECS/stratum.spec
+
+          # Copy to current directory
+          cp ~/rpmbuild/RPMS/x86_64/stratum-${VERSION}-1.x86_64.rpm .
+
+      - name: Upload rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratum-linux-rpm
+          path: stratum-*.rpm
+          retention-days: 7
+
+  # Create release tarballs
+  package:
+    name: Create Release Tarballs
+    needs: [prepare, build, macos-universal]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - artifact: stratum-macos-universal
+            archive_name: stratum-macos-universal
+          - artifact: stratum-linux-x86_64
+            archive_name: stratum-linux-x86_64
+          - artifact: stratum-linux-aarch64
+            archive_name: stratum-linux-aarch64
+          - artifact: stratum-linux-x86_64-musl
+            archive_name: stratum-linux-x86_64-musl
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+
+      - name: Create tarball
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          ARCHIVE_NAME="${{ matrix.archive_name }}"
+          mkdir -p "stratum-${VERSION}"
+
+          # Copy binary
+          cp dist/stratum "stratum-${VERSION}/"
+          chmod 755 "stratum-${VERSION}/stratum"
+
+          # Copy completions if they exist
+          if [ -d "dist/completions" ]; then
+            cp -r dist/completions "stratum-${VERSION}/"
+          fi
+
+          # Create README
+          cat > "stratum-${VERSION}/README.txt" << EOF
+          Stratum Programming Language v${VERSION}
+          ========================================
+
+          Installation:
+            1. Copy 'stratum' to a directory in your PATH (e.g., /usr/local/bin)
+            2. Run 'stratum --help' to verify installation
+
+          Shell Completions:
+            Bash: Copy completions/stratum.bash to ~/.local/share/bash-completion/completions/stratum
+            Zsh:  Copy completions/_stratum to a directory in your fpath
+            Fish: Copy completions/stratum.fish to ~/.config/fish/completions/
+
+          Getting Started:
+            stratum repl    - Start the interactive REPL
+            stratum init    - Create a new project
+            stratum --help  - Show all commands
+
+          Documentation: https://stratum-lang.dev
+          Repository: https://github.com/horizon-analytic/stratum
+          EOF
+
+          # Create tarball
+          tar -czvf "${ARCHIVE_NAME}-${VERSION}.tar.gz" "stratum-${VERSION}"
+
+          # Create checksum
+          sha256sum "${ARCHIVE_NAME}-${VERSION}.tar.gz" > "${ARCHIVE_NAME}-${VERSION}.tar.gz.sha256"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarball-${{ matrix.archive_name }}
+          path: |
+            *.tar.gz
+            *.sha256
+          retention-days: 7
+
+  # Create GitHub Release
+  release:
+    name: Create Release
+    needs: [prepare, package, linux-deb, linux-rpm, macos-pkg]
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p release-assets
+
+          # Copy tarballs
+          cp artifacts/tarball-*/*.tar.gz release-assets/
+          cp artifacts/tarball-*/*.sha256 release-assets/
+
+          # Copy .deb
+          cp artifacts/stratum-linux-deb/*.deb release-assets/
+
+          # Copy .rpm
+          cp artifacts/stratum-linux-rpm/*.rpm release-assets/
+
+          # Copy .pkg if it exists
+          if [ -d "artifacts/stratum-macos-pkg" ]; then
+            cp artifacts/stratum-macos-pkg/*.pkg release-assets/
+          fi
+
+          # Create checksums file
+          cd release-assets
+          sha256sum * > checksums.sha256
+          cd ..
+
+          # List all assets
+          echo "Release assets:"
+          ls -la release-assets/
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          IS_PRERELEASE: ${{ needs.prepare.outputs.is_prerelease }}
+        run: |
+          # Prepare release notes
+          cat > release-notes.md << 'EOF'
+          ## Installation
+
+          ### Quick Install (macOS/Linux)
+          ```bash
+          curl -fsSL https://get.stratum-lang.dev | sh
+          ```
+
+          ### Homebrew (macOS/Linux)
+          ```bash
+          brew tap horizon-analytic/stratum
+          brew install stratum
+          ```
+
+          ### macOS Installer
+          Download `stratum-VERSION-macos.pkg` and run the installer.
+
+          ### Linux (Debian/Ubuntu)
+          ```bash
+          sudo dpkg -i stratum_VERSION_amd64.deb
+          ```
+
+          ### Linux (Fedora/RHEL)
+          ```bash
+          sudo rpm -i stratum-VERSION-1.x86_64.rpm
+          ```
+
+          ### Manual Installation
+          Download the appropriate tarball for your platform, extract, and copy the `stratum` binary to your PATH.
+
+          ## Checksums
+          SHA256 checksums for all files are available in `checksums.sha256`.
+
+          ## Getting Started
+          ```bash
+          stratum repl     # Start the interactive REPL
+          stratum init     # Create a new project
+          stratum --help   # Show all commands
+          ```
+          EOF
+
+          # Replace VERSION placeholder
+          sed -i "s/VERSION/${VERSION}/g" release-notes.md
+
+          # Create release
+          PRERELEASE_FLAG=""
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          gh release create "v${VERSION}" \
+            --title "Stratum v${VERSION}" \
+            --notes-file release-notes.md \
+            $PRERELEASE_FLAG \
+            release-assets/*
+
+      - name: Summary
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          echo "## Release v${VERSION} Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Assets" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ls release-assets/ | while read file; do
+            echo "- \`${file}\`" >> $GITHUB_STEP_SUMMARY
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [Release Page](https://github.com/horizon-analytic/stratum/releases/tag/v${VERSION})" >> $GITHUB_STEP_SUMMARY

@@ -43,9 +43,58 @@ fx main() {
 - `.strat` - Source files
 - `.stratum` - Compiled binaries
 
+## Installation
+
+### Quick Install (Recommended)
+
+```bash
+# Interactive installer - choose your tier
+curl -fsSL https://get.stratum-lang.dev | sh
+
+# Or non-interactive with defaults
+curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes
+```
+
+### Homebrew (macOS / Linux)
+
+```bash
+# Add the tap
+brew tap horizon-analytic/stratum
+
+# Install (default: Data tier with DataFrame support)
+brew install stratum
+
+# Install with GUI framework
+brew install stratum --with-gui
+
+# Install full (including Workshop IDE)
+brew install stratum --with-full
+```
+
+### Docker
+
+```bash
+# Run a script
+docker run --rm -v $(pwd):/app ghcr.io/horizon-analytic/stratum run /app/script.strat
+
+# Interactive REPL
+docker run --rm -it ghcr.io/horizon-analytic/stratum repl
+```
+
+### Installation Tiers
+
+| Tier | Size | Includes |
+|------|------|----------|
+| **Core** | ~15 MB | CLI, REPL, compiler, type checker |
+| **Data** | ~45 MB | Core + DataFrame, Arrow, SQL (default) |
+| **GUI** | ~80 MB | Data + GUI framework (iced) |
+| **Full** | ~120 MB | GUI + Workshop IDE, LSP |
+
+For detailed installation options, system requirements, and troubleshooting, see the [Installation Guide](docs/installation.md).
+
 ## Project Status
 
-**Status:** In Development (Phase 1: Project Setup)
+**Status:** In Development
 
 See [planning/00-overview.md](planning/00-overview.md) for development roadmap.
 

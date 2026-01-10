@@ -1,0 +1,46 @@
+# Build artifacts
+target/
+*.stratum
+
+# Git
+.git/
+.gitignore
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation (not needed in image)
+docs/
+planning/
+*.md
+!README.md
+
+# Development files
+.github/
+scripts/
+homebrew/
+tests/
+benches/
+examples/
+
+# Local configuration
+.env
+.env.*
+*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Test data and samples
+*.parquet
+*.csv
+*.json
+!Cargo.lock

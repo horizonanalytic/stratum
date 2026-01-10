@@ -1,0 +1,218 @@
+# GitHub Actions workflow for building and publishing Homebrew bottles
+# Bottles are pre-built binaries that allow faster installation without compilation
+#
+# This workflow:
+# 1. Builds bottles on multiple platforms (macOS arm64, macOS x86_64, Linux x86_64)
+# 2. Uploads bottles as GitHub Release assets
+# 3. Updates the formula with bottle SHA256 hashes
+
+name: Build Homebrew Bottles
+
+on:
+  # Trigger on release publication
+  release:
+    types: [published]
+
+  # Manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build bottles for (e.g., 0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write  # Needed to upload release assets
+
+jobs:
+  build-bottles:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-14
+            arch: arm64
+            bottle_tag: arm64_sonoma
+          # macOS x86_64 (Intel)
+          - os: macos-13
+            arch: x86_64
+            bottle_tag: sonoma
+          # Linux x86_64
+          - os: ubuntu-22.04
+            arch: x86_64
+            bottle_tag: x86_64_linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building bottles for version: $VERSION"
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: horizon-analytic/homebrew-stratum
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-stratum
+
+      - name: Set up tap
+        run: |
+          mkdir -p $(brew --repository)/Library/Taps/horizon-analytic
+          ln -s $GITHUB_WORKSPACE/homebrew-stratum $(brew --repository)/Library/Taps/horizon-analytic/homebrew-stratum
+
+      - name: Build bottle
+        id: bottle
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Install dependencies
+          brew install rust pkg-config
+
+          # Build the formula (this creates the bottle)
+          brew install --build-bottle horizon-analytic/stratum/stratum
+
+          # Create the bottle
+          cd $(brew --cache)
+          brew bottle --json --root-url="https://github.com/horizon-analytic/stratum/releases/download/v${VERSION}" horizon-analytic/stratum/stratum
+
+          # Find the bottle file
+          BOTTLE_FILE=$(ls stratum--*.bottle.*.tar.gz 2>/dev/null | head -1)
+          if [ -z "$BOTTLE_FILE" ]; then
+            echo "Error: No bottle file found"
+            exit 1
+          fi
+
+          echo "bottle_file=$BOTTLE_FILE" >> $GITHUB_OUTPUT
+          echo "bottle_path=$(pwd)/$BOTTLE_FILE" >> $GITHUB_OUTPUT
+
+          # Calculate SHA256
+          SHA256=$(shasum -a 256 "$BOTTLE_FILE" | cut -d ' ' -f 1)
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+
+          echo "Built bottle: $BOTTLE_FILE"
+          echo "SHA256: $SHA256"
+
+      - name: Upload bottle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bottle-${{ matrix.bottle_tag }}
+          path: ${{ steps.bottle.outputs.bottle_path }}
+          retention-days: 7
+
+      - name: Upload bottle to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BOTTLE_PATH="${{ steps.bottle.outputs.bottle_path }}"
+
+          # Rename bottle to include version properly
+          BOTTLE_NAME="stratum-${VERSION}.${{ matrix.bottle_tag }}.bottle.tar.gz"
+          cp "$BOTTLE_PATH" "$BOTTLE_NAME"
+
+          # Upload to the release
+          gh release upload "v${VERSION}" "$BOTTLE_NAME" \
+            --repo horizon-analytic/stratum \
+            --clobber
+
+  update-formula:
+    needs: build-bottles
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: horizon-analytic/homebrew-stratum
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-stratum
+
+      - name: Download bottle artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: bottles
+
+      - name: Update formula with bottle hashes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          FORMULA="homebrew-stratum/Formula/stratum.rb"
+
+          # Calculate SHA256 for each bottle
+          ARM64_SHA=$(shasum -a 256 bottles/bottle-arm64_sonoma/*.tar.gz | cut -d ' ' -f 1)
+          SONOMA_SHA=$(shasum -a 256 bottles/bottle-sonoma/*.tar.gz | cut -d ' ' -f 1)
+          LINUX_SHA=$(shasum -a 256 bottles/bottle-x86_64_linux/*.tar.gz | cut -d ' ' -f 1)
+
+          echo "arm64_sonoma SHA256: $ARM64_SHA"
+          echo "sonoma SHA256: $SONOMA_SHA"
+          echo "x86_64_linux SHA256: $LINUX_SHA"
+
+          # Check if bottle block exists, if not add it
+          if ! grep -q "bottle do" "$FORMULA"; then
+            # Add bottle block after license line
+            sed -i '/^  license/a\
+          \
+            bottle do\
+              root_url "https://github.com/horizon-analytic/stratum/releases/download/v'"$VERSION"'"\
+              sha256 cellar: :any_skip_relocation, arm64_sonoma: "'"$ARM64_SHA"'"\
+              sha256 cellar: :any_skip_relocation, sonoma: "'"$SONOMA_SHA"'"\
+              sha256 cellar: :any_skip_relocation, x86_64_linux: "'"$LINUX_SHA"'"\
+            end' "$FORMULA"
+          else
+            # Update existing bottle block
+            # This is a simplified approach - in practice you might want more robust parsing
+            sed -i "s|arm64_sonoma: \"[^\"]*\"|arm64_sonoma: \"$ARM64_SHA\"|g" "$FORMULA"
+            sed -i "s|sonoma: \"[^\"]*\"|sonoma: \"$SONOMA_SHA\"|g" "$FORMULA"
+            sed -i "s|x86_64_linux: \"[^\"]*\"|x86_64_linux: \"$LINUX_SHA\"|g" "$FORMULA"
+            sed -i "s|download/v[^/]*/|download/v$VERSION/|g" "$FORMULA"
+          fi
+
+          echo "Updated formula:"
+          cat "$FORMULA"
+
+      - name: Commit and push
+        working-directory: homebrew-stratum
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add Formula/stratum.rb
+          git diff --staged --quiet || git commit -m "Add bottles for stratum ${{ steps.version.outputs.version }}"
+          git push
+
+      - name: Summary
+        run: |
+          echo "## Bottles Built and Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platforms:**" >> $GITHUB_STEP_SUMMARY
+          echo "  - macOS ARM64 (arm64_sonoma)" >> $GITHUB_STEP_SUMMARY
+          echo "  - macOS x86_64 (sonoma)" >> $GITHUB_STEP_SUMMARY
+          echo "  - Linux x86_64 (x86_64_linux)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Users can now install with pre-built bottles:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "brew install horizon-analytic/stratum/stratum" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

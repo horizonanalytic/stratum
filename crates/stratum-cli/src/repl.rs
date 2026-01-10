@@ -54,6 +54,7 @@ impl Repl {
         let mut vm = VM::new();
 
         // Register GUI bindings so REPL users can use Gui.* functions
+        #[cfg(feature = "gui")]
         stratum_gui::register_gui(&mut vm);
         let mut editor = DefaultEditor::new()?;
 
@@ -75,6 +76,7 @@ impl Repl {
     fn reset(&mut self) {
         self.vm = VM::new();
         // Re-register GUI bindings after reset
+        #[cfg(feature = "gui")]
         stratum_gui::register_gui(&mut self.vm);
         self.user_functions.clear();
         self.user_variables.clear();

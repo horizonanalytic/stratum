@@ -35,13 +35,21 @@ Complete reference for Stratum's built-in functions and namespaces:
 - **Networking** - HTTP, TCP, UDP, WebSocket
 - **And more...**
 
+### [Installation Guide](installation.md)
+
+Complete installation instructions for all platforms:
+- Quick install via curl or Homebrew
+- Docker images for containerized workflows
+- Linux packages (.deb, .rpm)
+- Manual installation and configuration
+
+### [Troubleshooting](troubleshooting.md)
+
+Common issues and solutions for installation and runtime problems.
+
 ### Language Reference
 
 *(Coming soon)* - Syntax, types, control flow, and language semantics.
-
-### Getting Started Guide
-
-*(Coming soon)* - Step-by-step introduction to Stratum programming.
 
 ## Key Features
 

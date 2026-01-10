@@ -2,6 +2,11 @@
 
 [Introduction](index.md)
 
+# Getting Started
+
+- [Installation](installation.md)
+- [Troubleshooting](troubleshooting.md)
+
 # Standard Library
 
 - [Overview](stdlib/index.md)

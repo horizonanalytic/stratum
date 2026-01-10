@@ -1,0 +1,97 @@
+# GitHub Actions workflow to update Homebrew formula on release
+# This workflow triggers when a new release is published
+
+name: Update Homebrew Formula
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to update to (without v prefix)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          path: stratum
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: horizon-analytic/homebrew-stratum
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-stratum
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Updating to version: $VERSION"
+
+      - name: Download and hash tarball
+        id: hash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          URL="https://github.com/horizon-analytic/stratum/archive/refs/tags/v${VERSION}.tar.gz"
+          echo "Downloading: $URL"
+
+          # Download tarball
+          curl -sL "$URL" -o stratum.tar.gz
+
+          # Calculate SHA256
+          SHA256=$(shasum -a 256 stratum.tar.gz | cut -d ' ' -f 1)
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          echo "SHA256: $SHA256"
+
+      - name: Update formula
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SHA256="${{ steps.hash.outputs.sha256 }}"
+          FORMULA="homebrew-stratum/Formula/stratum.rb"
+
+          # Update version in URL
+          sed -i "s|archive/refs/tags/v[0-9.]*\.tar\.gz|archive/refs/tags/v${VERSION}.tar.gz|g" "$FORMULA"
+
+          # Update SHA256
+          sed -i "s|sha256 \".*\"|sha256 \"${SHA256}\"|g" "$FORMULA"
+
+          echo "Updated formula:"
+          grep -E "(url|sha256)" "$FORMULA" | head -2
+
+      - name: Commit and push
+        working-directory: homebrew-stratum
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add Formula/stratum.rb
+          git diff --staged --quiet || git commit -m "stratum ${{ steps.version.outputs.version }}"
+          git push
+
+      - name: Summary
+        run: |
+          echo "## Homebrew Formula Updated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA256:** ${{ steps.hash.outputs.sha256 }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Users can now update with:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "brew update && brew upgrade stratum" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

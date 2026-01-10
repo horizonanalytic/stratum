@@ -1,0 +1,65 @@
+# Stratum Full Docker Image
+# Tags: stratum:full
+# Base: Debian slim (better compatibility for LSP)
+# Features: CLI, REPL, compiler, DataFrame, Arrow, SQL, LSP server
+
+# Build stage
+FROM rust:1.75-slim-bookworm AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    libsqlite3-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy the source code
+COPY . .
+
+# Build stratum with LSP feature (no GUI/Workshop)
+RUN cargo build --release \
+    --package stratum \
+    --no-default-features \
+    --features lsp
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libsqlite3-0 \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for running stratum
+RUN useradd -m -u 1000 stratum
+USER stratum
+WORKDIR /home/stratum
+
+# Copy the binary from builder
+COPY --from=builder /build/target/release/stratum /usr/local/bin/stratum
+
+# Set up a workspace directory for mounting user code
+RUN mkdir -p /app
+WORKDIR /app
+
+# Expose LSP port (for language server mode)
+EXPOSE 9257
+
+# Default entrypoint
+ENTRYPOINT ["stratum"]
+
+# Default command (show help)
+CMD ["--help"]
+
+# Labels
+LABEL org.opencontainers.image.title="Stratum Full"
+LABEL org.opencontainers.image.description="Stratum programming language - Full tier with CLI, REPL, DataFrame, Arrow, SQL, and LSP server"
+LABEL org.opencontainers.image.vendor="Horizon Analytic Studios"
+LABEL org.opencontainers.image.source="https://github.com/horizon-analytic/stratum"
+LABEL org.opencontainers.image.licenses="MIT"

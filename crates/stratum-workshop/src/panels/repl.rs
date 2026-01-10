@@ -186,8 +186,8 @@ impl ReplPanel {
 
     /// Evaluate a string of Stratum code
     fn eval(&self, input: &str) -> Result<Value, String> {
-        // First, try parsing as an expression
-        let expr = Parser::parse_expression(input).map_err(|errors| {
+        // Parse the input - supports expressions, statements, and function definitions
+        let repl_input = Parser::parse_repl_input(input).map_err(|errors| {
             errors
                 .iter()
                 .map(|e| format!("Parse error: {e}"))
@@ -195,9 +195,9 @@ impl ReplPanel {
                 .join("\n")
         })?;
 
-        // Compile the expression
+        // Compile based on input type
         let function = Compiler::new()
-            .compile_expression(&expr)
+            .compile_repl_input(&repl_input)
             .map_err(|errors| {
                 errors
                     .iter()
@@ -602,7 +602,9 @@ const HELP_TEXT: &str = r#"REPL Commands:
 
 Tips:
   - Variables persist across inputs
-  - Use blocks for multiple statements: { let x = 5; x + 1 }
+  - Supports expressions: 1 + 2, "hello".len()
+  - Supports statements: let x = 5
+  - Supports functions: fx add(a, b) { a + b }
   - Press Enter to evaluate
   - Use up/down arrows for history"#;
 
