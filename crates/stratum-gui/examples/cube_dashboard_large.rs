@@ -1,75 +1,45 @@
-//! OLAP Cube Dashboard example demonstrating all OLAP widgets
+//! OLAP Cube Dashboard with large dataset (loaded from parquet)
 //!
-//! Run with: cargo run --package stratum-gui --example cube_dashboard
+//! First generate the data:
+//!   cargo run --package stratum-gui --example generate_sales_data
+//!
+//! Then run the dashboard:
+//!   cargo run --release --package stratum-gui --example cube_dashboard_large
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Instant;
 
 use stratum_core::bytecode::{StructInstance, Value};
-use stratum_core::data::{Cube, CubeAggFunc, DataFrame, Series};
+use stratum_core::data::{read_parquet, Cube, CubeAggFunc};
 use stratum_gui::element::{CubeChartType, CubeFilterContext, GuiElement};
 use stratum_gui::GuiRuntime;
 
 fn main() {
-    // Create sample sales data
-    let regions = Series::from_strings(
-        "region",
-        vec![
-            "North", "North", "North", "North",
-            "South", "South", "South", "South",
-            "East", "East", "East", "East",
-            "West", "West", "West", "West",
-        ],
-    );
+    let parquet_path = "sales_data_2m.parquet";
 
-    let products = Series::from_strings(
-        "product",
-        vec![
-            "Widgets", "Gadgets", "Widgets", "Gadgets",
-            "Widgets", "Gadgets", "Widgets", "Gadgets",
-            "Widgets", "Gadgets", "Widgets", "Gadgets",
-            "Widgets", "Gadgets", "Widgets", "Gadgets",
-        ],
-    );
+    if !Path::new(parquet_path).exists() {
+        eprintln!("Error: {} not found!", parquet_path);
+        eprintln!("Please generate the data first:");
+        eprintln!("  cargo run --package stratum-gui --example generate_sales_data");
+        std::process::exit(1);
+    }
 
-    let quarters = Series::from_strings(
-        "quarter",
-        vec![
-            "Q1", "Q1", "Q2", "Q2",
-            "Q1", "Q1", "Q2", "Q2",
-            "Q1", "Q1", "Q2", "Q2",
-            "Q1", "Q1", "Q2", "Q2",
-        ],
-    );
+    println!("Loading data from {}...", parquet_path);
+    let start = Instant::now();
 
-    let revenue = Series::from_floats(
-        "revenue",
-        vec![
-            1200.0, 800.0, 1500.0, 950.0,
-            900.0, 650.0, 1100.0, 780.0,
-            1400.0, 920.0, 1650.0, 1050.0,
-            1000.0, 700.0, 1250.0, 850.0,
-        ],
-    );
+    let df = read_parquet(parquet_path).expect("Failed to read parquet file");
+    let load_time = start.elapsed();
 
-    let units = Series::from_ints(
-        "units",
-        vec![
-            120, 80, 150, 95,
-            90, 65, 110, 78,
-            140, 92, 165, 105,
-            100, 70, 125, 85,
-        ],
-    );
-
-    let df = DataFrame::from_series(vec![regions, products, quarters, revenue, units])
-        .expect("Failed to create DataFrame");
-
-    println!("Created DataFrame with {} rows", df.num_rows());
+    println!("Loaded DataFrame with {} rows in {:.2?}", df.num_rows(), load_time);
 
     // Build the OLAP Cube
+    println!("Building OLAP Cube...");
+    let cube_start = Instant::now();
+
     let cube = Cube::from_dataframe(&df)
         .expect("Failed to start cube builder")
         .dimension("region")
@@ -78,18 +48,29 @@ fn main() {
         .expect("Failed to add product dimension")
         .dimension("quarter")
         .expect("Failed to add quarter dimension")
+        .dimension("year")
+        .expect("Failed to add year dimension")
+        .dimension("channel")
+        .expect("Failed to add channel dimension")
+        .dimension("category")
+        .expect("Failed to add category dimension")
         .measure("revenue", CubeAggFunc::Sum)
         .expect("Failed to add revenue measure")
         .measure("units", CubeAggFunc::Sum)
         .expect("Failed to add units measure")
+        .measure("cost", CubeAggFunc::Sum)
+        .expect("Failed to add cost measure")
         .build()
         .expect("Failed to build cube");
 
+    let cube_time = cube_start.elapsed();
+
     println!(
-        "Built Cube: {} dimensions, {} measures, {} rows",
+        "Built Cube: {} dimensions, {} measures, {} rows in {:.2?}",
         cube.dimension_names().len(),
         cube.measure_names().len(),
-        cube.row_count()
+        cube.row_count(),
+        cube_time
     );
 
     let cube_arc = Arc::new(cube);
@@ -100,7 +81,7 @@ fn main() {
     // Create the GUI elements
 
     // Title
-    let title = GuiElement::text("Sales Dashboard")
+    let title = GuiElement::text("Sales Dashboard (2M rows)")
         .text_size(24.0)
         .bold()
         .build();
@@ -110,16 +91,27 @@ fn main() {
         .bold()
         .build();
 
-    // Dimension Filter for region - connected to filter context
+    // Dimension Filters
     let region_filter = GuiElement::dimension_filter_with_cube(cube_arc.clone(), "region")
         .cube_label("Region")
         .show_all_option(true)
         .filter_context(filter_context.clone())
         .build();
 
-    // Dimension Filter for product - connected to filter context
     let product_filter = GuiElement::dimension_filter_with_cube(cube_arc.clone(), "product")
         .cube_label("Product")
+        .show_all_option(true)
+        .filter_context(filter_context.clone())
+        .build();
+
+    let year_filter = GuiElement::dimension_filter_with_cube(cube_arc.clone(), "year")
+        .cube_label("Year")
+        .show_all_option(true)
+        .filter_context(filter_context.clone())
+        .build();
+
+    let channel_filter = GuiElement::dimension_filter_with_cube(cube_arc.clone(), "channel")
+        .cube_label("Channel")
         .show_all_option(true)
         .filter_context(filter_context.clone())
         .build();
@@ -129,13 +121,12 @@ fn main() {
         .bold()
         .build();
 
-    // Measure Selector - connected to filter context
     let measure_selector = GuiElement::measure_selector_with_cube(cube_arc.clone())
         .cube_label("Visible")
         .filter_context(filter_context.clone())
         .build();
 
-    // CubeChart - Bar chart showing revenue by region - connected to filter context
+    // CubeChart - Bar chart showing revenue by region
     let bar_chart = GuiElement::cube_chart_with_cube(cube_arc.clone())
         .cube_chart_type(CubeChartType::Bar)
         .x_dimension("region")
@@ -146,7 +137,7 @@ fn main() {
         .filter_context(filter_context.clone())
         .build();
 
-    // CubeChart - Pie chart showing units by product - connected to filter context
+    // CubeChart - Pie chart showing units by product
     let pie_chart = GuiElement::cube_chart_with_cube(cube_arc.clone())
         .cube_chart_type(CubeChartType::Pie)
         .x_dimension("product")
@@ -156,28 +147,28 @@ fn main() {
         .filter_context(filter_context.clone())
         .build();
 
-    // CubeChart - Line chart showing revenue by quarter with product series - connected to filter context
+    // CubeChart - Line chart showing revenue by quarter with year series
     let line_chart = GuiElement::cube_chart_with_cube(cube_arc.clone())
         .cube_chart_type(CubeChartType::Line)
         .x_dimension("quarter")
         .y_measure("revenue")
-        .series_dimension("product")
-        .chart_title("Revenue Trend by Product")
+        .series_dimension("year")
+        .chart_title("Revenue Trend by Year")
         .chart_size(780.0, 280.0)
         .show_grid(true)
         .filter_context(filter_context.clone())
         .build();
 
     // Table header
-    let table_label = GuiElement::text("Data Table - Revenue & Units by Region and Product")
+    let table_label = GuiElement::text("Data Table - Aggregated by Region and Product")
         .bold()
         .build();
 
-    // CubeTable showing all data - connected to filter context
+    // CubeTable showing aggregated data
     let cube_table = GuiElement::cube_table_with_cube(cube_arc.clone())
         .row_dimensions(vec!["region".to_string(), "product".to_string()])
-        .measures(vec!["revenue".to_string(), "units".to_string()])
-        .page_size(Some(10))
+        .measures(vec!["revenue".to_string(), "units".to_string(), "cost".to_string()])
+        .page_size(Some(15))
         .show_drill_controls(true)
         .filter_context(filter_context.clone())
         .build();
@@ -188,6 +179,8 @@ fn main() {
         .child(filters_label)
         .child(region_filter)
         .child(product_filter)
+        .child(year_filter)
+        .child(channel_filter)
         .child(GuiElement::spacer().build())
         .child(measures_label)
         .child(measure_selector)
@@ -220,21 +213,22 @@ fn main() {
     // Create state
     let mut fields = HashMap::new();
     fields.insert("cube".to_string(), Value::Cube(cube_arc));
-    fields.insert("selected_region".to_string(), Value::Null);
 
     let mut instance = StructInstance::new("DashboardState".to_string());
     instance.fields = fields;
     let state = Value::Struct(Rc::new(RefCell::new(instance)));
 
     // Create and run the GUI
-    println!("Launching OLAP Dashboard...");
+    println!("\nLaunching OLAP Dashboard...");
+    println!("- Data: {} rows from {}", df.num_rows(), parquet_path);
     println!("- Bar chart: Revenue by Region");
     println!("- Pie chart: Units by Product");
-    println!("- Line chart: Revenue Trend by Product (Q1 vs Q2)");
+    println!("- Line chart: Revenue Trend by Year");
     println!("- Data table: Aggregated view with drill-down controls");
+    println!("\nTip: Run with --release for better performance!");
 
     let runtime = GuiRuntime::new(state)
-        .with_window("OLAP Cube Dashboard", (1100, 750))
+        .with_window("OLAP Cube Dashboard (Large Dataset)", (1200, 800))
         .with_root(root)
         .with_spacing(16.0);
 

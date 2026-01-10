@@ -72,6 +72,9 @@ pub mod charts;
 /// Theming and styling system
 pub mod theme;
 
+/// Language bindings for VM integration
+pub mod bindings;
+
 // Re-exports for convenience
 pub use callback::{Callback, CallbackExecutor, CallbackId, CallbackRegistry};
 pub use error::{GuiError, GuiResult};
@@ -93,3 +96,4 @@ pub use element::{
 pub use natives::gui_native_functions;
 pub use charts::{BarChartConfig, LineChartConfig, PieChartConfig, DataPoint, DataSeries, CHART_COLORS};
 pub use theme::{Color, Shadow, StratumPalette, StratumTheme, ThemePreset, WidgetStyle};
+pub use bindings::register_gui;

@@ -500,6 +500,10 @@ fn run_file(
 
     // Run the module to register functions
     let mut vm = stratum_core::VM::new();
+
+    // Register GUI bindings so Stratum code can use Gui.* functions
+    stratum_gui::register_gui(&mut vm);
+
     let _ = vm
         .run(function)
         .map_err(|e| anyhow::anyhow!("Runtime error: {e}"))?;

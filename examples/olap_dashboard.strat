@@ -1,0 +1,147 @@
+// OLAP Dashboard Example - GUI Application with OLAP Cube and Interactive Widgets
+// Demonstrates: Cube creation, CubeChart, CubeTable, DimensionFilter, MeasureSelector, drill-down
+
+struct DashboardState {
+    initialized: Bool
+}
+
+// Build the OLAP dashboard UI
+fx build_dashboard(state: DashboardState) {
+    // Create sample sales data
+    let df = Data.from_columns(
+        "region", ["North", "North", "North", "North", "South", "South", "South", "South", "East", "East", "East", "East", "West", "West", "West", "West"],
+        "product", ["Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets"],
+        "quarter", ["Q1", "Q1", "Q2", "Q2", "Q1", "Q1", "Q2", "Q2", "Q1", "Q1", "Q2", "Q2", "Q1", "Q1", "Q2", "Q2"],
+        "revenue", [1200.0, 800.0, 1500.0, 950.0, 900.0, 650.0, 1100.0, 780.0, 1400.0, 920.0, 1650.0, 1050.0, 1000.0, 700.0, 1250.0, 850.0],
+        "units", [120, 80, 150, 95, 90, 65, 110, 78, 140, 92, 165, 105, 100, 70, 125, 85]
+    );
+
+    // Build the OLAP Cube with dimensions and measures
+    let cube = Cube.from(df)
+        .dimension("region")
+        .dimension("product")
+        .dimension("quarter")
+        .measure("revenue", "sum")
+        .measure("units", "sum")
+        .build();
+
+    // === TITLE SECTION ===
+    let title = Gui.text("OLAP Sales Dashboard");
+    let title_styled = Gui.set_text_bold(title);
+    let title_final = Gui.set_text_size(title_styled, 24.0);
+
+    let subtitle = Gui.text("Multi-dimensional Analysis with Drill-down");
+    let subtitle_final = Gui.set_text_size(subtitle, 14.0);
+
+    // === DIMENSION FILTERS ===
+    let filters_label = Gui.text("Filters");
+    let filters_label_final = Gui.set_text_bold(filters_label);
+
+    // Region filter
+    let region_filter = Gui.dimension_filter(cube, "region");
+
+    // Product filter
+    let product_filter = Gui.dimension_filter(cube, "product");
+
+    // === MEASURE SELECTOR ===
+    let measures_label = Gui.text("Measures");
+    let measures_label_final = Gui.set_text_bold(measures_label);
+
+    let measure_selector = Gui.measure_selector(cube);
+
+    // === BAR CHART: Revenue by Region ===
+    let bar_chart = Gui.cube_chart(cube, "bar");
+    let bar_with_x = Gui.set_x_dimension(bar_chart, "region");
+    let bar_with_y = Gui.set_y_measure(bar_with_x, "revenue");
+    let bar_with_title = Gui.set_chart_title(bar_with_y, "Revenue by Region");
+    let bar_sized = Gui.set_chart_size(bar_with_title, 400.0, 250.0);
+    let bar_final = Gui.set_show_grid(bar_sized, true);
+
+    // === PIE CHART: Units by Product ===
+    let pie_chart = Gui.cube_chart(cube, "pie");
+    let pie_with_x = Gui.set_x_dimension(pie_chart, "product");
+    let pie_with_y = Gui.set_y_measure(pie_with_x, "units");
+    let pie_with_title = Gui.set_chart_title(pie_with_y, "Units by Product");
+    let pie_final = Gui.set_chart_size(pie_with_title, 300.0, 250.0);
+
+    // === LINE CHART: Revenue Trend by Product ===
+    let line_chart = Gui.cube_chart(cube, "line");
+    let line_with_x = Gui.set_x_dimension(line_chart, "quarter");
+    let line_with_y = Gui.set_y_measure(line_with_x, "revenue");
+    let line_with_series = Gui.set_series_dimension(line_with_y, "product");
+    let line_with_title = Gui.set_chart_title(line_with_series, "Revenue Trend by Product");
+    let line_sized = Gui.set_chart_size(line_with_title, 700.0, 250.0);
+    let line_with_legend = Gui.set_show_legend(line_sized, true);
+    let line_final = Gui.set_show_grid(line_with_legend, true);
+
+    // === CUBE TABLE ===
+    let table_label = Gui.text("Aggregated Data Table");
+    let table_label_final = Gui.set_text_bold(table_label);
+
+    let cube_table = Gui.cube_table(cube);
+    let table_with_dims = Gui.set_row_dimensions(cube_table, ["region", "product"]);
+    let table_with_measures = Gui.set_measures(table_with_dims, ["revenue", "units"]);
+    let table_final = Gui.set_page_size(table_with_measures, 10);
+
+    // === LAYOUT CONSTRUCTION ===
+
+    // Title section
+    let title_section = Gui.vstack();
+    let title_section_1 = Gui.add_child(title_section, title_final);
+    let title_section_2 = Gui.add_child(title_section_1, subtitle_final);
+    let title_section_final = Gui.set_spacing(title_section_2, 4.0);
+
+    // Sidebar with filters and measure selector
+    let sidebar = Gui.vstack();
+    let sidebar_1 = Gui.add_child(sidebar, filters_label_final);
+    let sidebar_2 = Gui.add_child(sidebar_1, region_filter);
+    let sidebar_3 = Gui.add_child(sidebar_2, product_filter);
+    let sidebar_4 = Gui.add_child(sidebar_3, Gui.spacer());
+    let sidebar_5 = Gui.add_child(sidebar_4, measures_label_final);
+    let sidebar_6 = Gui.add_child(sidebar_5, measure_selector);
+    let sidebar_spaced = Gui.set_spacing(sidebar_6, 12.0);
+    let sidebar_padded = Gui.set_padding(sidebar_spaced, 12.0);
+    let sidebar_final = Gui.set_width(sidebar_padded, 180.0);
+
+    // Charts row (bar + pie)
+    let charts_row = Gui.hstack();
+    let charts_row_1 = Gui.add_child(charts_row, bar_final);
+    let charts_row_2 = Gui.add_child(charts_row_1, pie_final);
+    let charts_row_final = Gui.set_spacing(charts_row_2, 20.0);
+
+    // Table section
+    let table_section = Gui.vstack();
+    let table_section_1 = Gui.add_child(table_section, table_label_final);
+    let table_section_2 = Gui.add_child(table_section_1, table_final);
+    let table_section_final = Gui.set_spacing(table_section_2, 8.0);
+
+    // Main content area
+    let main_content = Gui.vstack();
+    let main_1 = Gui.add_child(main_content, title_section_final);
+    let main_2 = Gui.add_child(main_1, charts_row_final);
+    let main_3 = Gui.add_child(main_2, line_final);
+    let main_4 = Gui.add_child(main_3, table_section_final);
+    let main_spaced = Gui.set_spacing(main_4, 16.0);
+    let main_final = Gui.set_padding(main_spaced, 16.0);
+
+    // Root layout (sidebar + main)
+    let root = Gui.hstack();
+    let root_1 = Gui.add_child(root, sidebar_final);
+    let root_2 = Gui.add_child(root_1, main_final);
+    let root_final = Gui.set_spacing(root_2, 16.0);
+
+    root_final
+}
+
+fx main() {
+    println("Starting Stratum OLAP Dashboard...");
+    println("Demonstrating: Cube, CubeChart, CubeTable, DimensionFilter, MeasureSelector");
+
+    // Initial state
+    let initial_state = DashboardState { initialized: true };
+
+    // Create and run the GUI application
+    Gui.app("Stratum OLAP Dashboard", initial_state, build_dashboard, 1100, 750);
+
+    println("OLAP Dashboard closed.");
+}

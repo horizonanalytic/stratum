@@ -1,6 +1,6 @@
 //! Native namespace implementations for File, Dir, Path, Env, Args, Shell, Http,
 //! Json, Toml, Yaml, Base64, Url, DateTime, Duration, Time, Regex, Gzip, Zip,
-//! Hash, Uuid, Random, Crypto
+//! Hash, Uuid, Random, Crypto, Gui
 
 use std::cell::RefCell;
 use std::collections::HashMap;

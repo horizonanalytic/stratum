@@ -26,6 +26,25 @@ pub const CHART_COLORS: [(u8, u8, u8); 10] = [
     (121, 85, 72),    // Brown
 ];
 
+/// Get a consistent color index for a given label string.
+/// Uses a simple hash to ensure the same label always gets the same color.
+#[must_use]
+pub fn color_index_for_label(label: &str) -> usize {
+    // Simple string hash - consistent across renders
+    let hash: usize = label.bytes().fold(0usize, |acc, b| {
+        acc.wrapping_mul(31).wrapping_add(b as usize)
+    });
+    hash % CHART_COLORS.len()
+}
+
+/// Get a color for a given label string.
+#[must_use]
+pub fn color_for_label(label: &str) -> Color {
+    let idx = color_index_for_label(label);
+    let (r, g, b) = CHART_COLORS[idx];
+    Color::from_rgb8(r, g, b)
+}
+
 /// A single data point with a label and value
 #[derive(Debug, Clone)]
 pub struct DataPoint {
@@ -521,12 +540,12 @@ impl canvas::Program<crate::runtime::Message> for LineChartProgram {
 
         // Draw each series
         for (series_idx, series) in config.series.iter().enumerate() {
+            // Use series name for consistent color across re-renders
             let color = if series_idx < config.series_colors.len() {
                 let (r, g, b) = config.series_colors[series_idx];
                 Color::from_rgb8(r, g, b)
             } else {
-                let c = CHART_COLORS[series_idx % CHART_COLORS.len()];
-                Color::from_rgb8(c.0, c.1, c.2)
+                color_for_label(&series.name)
             };
 
             // Collect points
@@ -623,12 +642,12 @@ impl canvas::Program<crate::runtime::Message> for LineChartProgram {
             let legend_y = margin_top + 20.0;
 
             for (i, series) in config.series.iter().enumerate() {
+                // Use series name for consistent color across re-renders
                 let color = if i < config.series_colors.len() {
                     let (r, g, b) = config.series_colors[i];
                     Color::from_rgb8(r, g, b)
                 } else {
-                    let c = CHART_COLORS[i % CHART_COLORS.len()];
-                    Color::from_rgb8(c.0, c.1, c.2)
+                    color_for_label(&series.name)
                 };
 
                 let y = legend_y + i as f32 * 20.0;
@@ -751,12 +770,12 @@ impl canvas::Program<crate::runtime::Message> for PieChartProgram {
             let percentage = point.value / total;
             let sweep_angle = (percentage * 2.0 * PI as f64) as f32;
 
+            // Use label-based color for consistency across re-renders
             let color = if i < config.slice_colors.len() {
                 let (r, g, b) = config.slice_colors[i];
                 Color::from_rgb8(r, g, b)
             } else {
-                let c = CHART_COLORS[i % CHART_COLORS.len()];
-                Color::from_rgb8(c.0, c.1, c.2)
+                color_for_label(&point.label)
             };
 
             // Draw slice using arc path
@@ -854,12 +873,12 @@ impl canvas::Program<crate::runtime::Message> for PieChartProgram {
                     continue;
                 }
 
+                // Use label-based color for consistency across re-renders
                 let color = if i < config.slice_colors.len() {
                     let (r, g, b) = config.slice_colors[i];
                     Color::from_rgb8(r, g, b)
                 } else {
-                    let c = CHART_COLORS[i % CHART_COLORS.len()];
-                    Color::from_rgb8(c.0, c.1, c.2)
+                    color_for_label(&point.label)
                 };
 
                 let y = legend_y + i as f32 * 22.0;

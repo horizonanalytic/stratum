@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use iced::widget::{button, column, container, row, text};
+use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{window, Center, Color, Element, Fill, Subscription, Task, Theme};
 
 use stratum_core::bytecode::Value;
@@ -461,6 +461,8 @@ pub struct GuiRuntime {
     lifecycle_hooks: LifecycleHooks,
     /// Root GUI element tree to render (optional - falls back to demo if None)
     root_element: Option<Arc<GuiElement>>,
+    /// View function for reactive rendering (Stratum closure that takes state, returns GuiElement)
+    view_fn: Option<Arc<Value>>,
 }
 
 impl GuiRuntime {
@@ -474,7 +476,19 @@ impl GuiRuntime {
             vm: None,
             lifecycle_hooks: LifecycleHooks::default(),
             root_element: None,
+            view_fn: None,
         }
+    }
+
+    /// Set the view function for reactive rendering
+    ///
+    /// The view function is a Stratum closure that takes the current state
+    /// and returns a GuiElement. It is re-invoked whenever state changes
+    /// to automatically update the UI.
+    #[must_use]
+    pub fn with_view_fn(mut self, view_fn: Arc<Value>) -> Self {
+        self.view_fn = Some(view_fn);
+        self
     }
 
     /// Set the root GUI element tree to render
@@ -640,6 +654,16 @@ impl GuiRuntime {
     ///
     /// This starts the iced event loop and blocks until all windows are closed.
     pub fn run(self) -> GuiResult<()> {
+        // Register any pending callbacks from Stratum code (e.g., from view functions)
+        // These are stored in thread-local storage by Gui.register_callback()
+        // Must be done before extracting values from self
+        let pending_callbacks = crate::bindings::take_pending_callbacks();
+        for callback in pending_callbacks {
+            if let Err(e) = self.register_callback(callback) {
+                eprintln!("Warning: Failed to register pending callback: {e}");
+            }
+        }
+
         let title = self.config.window.title.clone();
         let theme = self.config.theme;
         let main_window_settings = self.config.window.clone();
@@ -680,6 +704,7 @@ impl GuiRuntime {
         let main_window_settings_clone = main_window_settings.clone();
         let initial_theme = theme.clone();
         let root_element = self.root_element.clone();
+        let view_fn = self.view_fn.clone();
 
         // Wrap types that need to be moved out of the closure
         let executor_cell = Rc::new(RefCell::new(Some(executor)));
@@ -722,6 +747,7 @@ impl GuiRuntime {
                     key_release_callback: None,
                     context_menu: None,
                     root_element: root_element.clone(),
+                    view_fn: view_fn.clone(),
                     selected_measures: Vec::new(),
                 };
 
@@ -775,6 +801,8 @@ struct App {
     context_menu: Option<ContextMenuState>,
     /// Root GUI element tree to render (if provided)
     root_element: Option<Arc<GuiElement>>,
+    /// View function for reactive rendering (Stratum closure)
+    view_fn: Option<Arc<Value>>,
     /// Internal state for selected measures (when no callback registered)
     selected_measures: Vec<String>,
 }
@@ -791,6 +819,71 @@ pub struct ContextMenuState {
 }
 
 impl App {
+    /// Re-invoke the view function and update root_element
+    /// Called after callbacks execute to reflect state changes in the UI
+    fn refresh_view(&mut self) {
+        use crate::element::GuiElement;
+        use crate::bindings::take_pending_callbacks;
+        use crate::callback::Callback;
+
+        // Only refresh if we have both a view_fn and an executor
+        if let (Some(ref view_fn), Some(ref executor)) = (&self.view_fn, &self.executor) {
+            // Get current state value
+            let state_value = self.state.get().clone();
+
+            // Invoke view_fn with current state
+            match executor.execute_closure(view_fn.as_ref(), vec![state_value]) {
+                Ok(result) => {
+                    // Register any new callbacks that were created during view function execution
+                    let pending_callbacks = take_pending_callbacks();
+                    for callback_value in pending_callbacks {
+                        if let Ok(callback) = Callback::new(callback_value) {
+                            self.registry.borrow_mut().register(callback);
+                        }
+                    }
+
+                    // Extract GuiElement from result
+                    if let Value::GuiElement(elem) = result {
+                        if let Some(gui_elem) = elem.as_any().downcast_ref::<GuiElement>() {
+                            self.root_element = Some(Arc::new(gui_elem.clone()));
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("View function error: {e}");
+                }
+            }
+        }
+    }
+
+    /// Check if quit was requested and return appropriate task
+    fn check_quit_requested(&mut self) -> Option<Task<Message>> {
+        use crate::bindings::take_quit_request;
+
+        if take_quit_request() {
+            let _ = self.lifecycle.shutdown();
+            Some(iced::exit())
+        } else {
+            None
+        }
+    }
+
+    /// Check if a theme change was requested and apply it
+    fn check_pending_theme(&mut self) {
+        use crate::bindings::{take_pending_theme, PendingTheme};
+
+        if let Some(pending) = take_pending_theme() {
+            match pending {
+                PendingTheme::Preset(preset) => {
+                    self.theme = StratumTheme::preset(preset);
+                }
+                PendingTheme::Custom { name, palette } => {
+                    self.theme = StratumTheme::custom(name, palette);
+                }
+            }
+        }
+    }
+
     /// Update the application state based on a message
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
@@ -913,6 +1006,17 @@ impl App {
                 if let Some(ref executor) = self.executor {
                     if let Err(e) = executor.execute_with_state(id, &self.state) {
                         eprintln!("Callback execution error: {e}");
+                    }
+                    // Process any field updates queued by the callback via Gui.update_field()
+                    use crate::bindings::take_pending_field_updates;
+                    let updates = take_pending_field_updates();
+                    let had_updates = !updates.is_empty();
+                    for update in updates {
+                        self.state.update_field(&update.field, update.value);
+                    }
+                    // Re-invoke view function if state was updated
+                    if had_updates {
+                        self.refresh_view();
                     }
                 }
             }
@@ -1354,6 +1458,19 @@ impl App {
                 // internal_selection Arc<RwLock<...>> which is updated directly in the closure
             }
         }
+
+        // After any message processing, refresh the view if we have a view_fn
+        // This ensures the UI reflects any state changes from callbacks
+        self.refresh_view();
+
+        // Check if a theme change was requested by a callback (via Gui.set_theme())
+        self.check_pending_theme();
+
+        // Check if quit was requested by a callback (via Gui.quit())
+        if let Some(quit_task) = self.check_quit_requested() {
+            return quit_task;
+        }
+
         Task::none()
     }
 
@@ -1370,7 +1487,12 @@ impl App {
             self.render_demo_view()
         };
 
-        let base = container(content)
+        // Wrap content in scrollable for long content
+        let scrollable_content = scrollable(content)
+            .width(Fill)
+            .height(Fill);
+
+        let base = container(scrollable_content)
             .padding(self.padding)
             .center_x(Fill)
             .center_y(Fill);
@@ -1621,6 +1743,7 @@ mod tests {
             key_release_callback: None,
             context_menu: None,
             root_element: None,
+            view_fn: None,
             selected_measures: Vec::new(),
         }
     }
@@ -2040,6 +2163,7 @@ mod tests {
             key_release_callback: None,
             context_menu: None,
             root_element: None,
+            view_fn: None,
             selected_measures: Vec::new(),
         }
     }
@@ -2785,6 +2909,7 @@ mod tests {
             key_release_callback: None,
             context_menu: None,
             root_element: None,
+            view_fn: None,
             selected_measures: Vec::new(),
         };
 

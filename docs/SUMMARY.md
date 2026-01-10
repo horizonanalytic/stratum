@@ -99,3 +99,7 @@
 # Media
 
 - [Image](stdlib/image.md)
+
+# GUI Framework
+
+- [Gui](stdlib/gui.md)

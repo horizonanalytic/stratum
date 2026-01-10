@@ -10,7 +10,7 @@ use stratum_core::bytecode::{NativeFunction, Value};
 use crate::callback::CallbackId;
 use crate::charts::{BarChartConfig, DataPoint, DataSeries, LineChartConfig, PieChartConfig};
 use crate::element::{GuiElement, GuiElementKind, ImageContentFit};
-use crate::layout::{ScrollDirection, Size};
+use crate::layout::{HAlign, ScrollDirection, Size, VAlign};
 
 /// Result type for native GUI functions
 pub type NativeResult = Result<Value, String>;
@@ -79,6 +79,7 @@ pub fn gui_native_functions() -> Vec<(&'static str, NativeFunction)> {
         ("gui_set_padding", NativeFunction::new("gui_set_padding", 2, gui_set_padding)),
         ("gui_set_width", NativeFunction::new("gui_set_width", 2, gui_set_width)),
         ("gui_set_height", NativeFunction::new("gui_set_height", 2, gui_set_height)),
+        ("gui_set_alignment", NativeFunction::new("gui_set_alignment", 3, gui_set_alignment)),
         // Conditional and list rendering
         ("gui_if", NativeFunction::new("gui_if", -1, gui_if)),
         ("gui_for_each", NativeFunction::new("gui_for_each", -1, gui_for_each)),
@@ -106,6 +107,7 @@ pub fn gui_native_functions() -> Vec<(&'static str, NativeFunction)> {
         ("gui_set_chart_title", NativeFunction::new("gui_set_chart_title", 2, gui_set_chart_title)),
         ("gui_set_chart_size", NativeFunction::new("gui_set_chart_size", 3, gui_set_chart_size)),
         ("gui_set_chart_data", NativeFunction::new("gui_set_chart_data", 2, gui_set_chart_data)),
+        ("gui_set_chart_data_arrays", NativeFunction::new("gui_set_chart_data_arrays", 3, gui_set_chart_data_arrays)),
         ("gui_add_chart_series", NativeFunction::new("gui_add_chart_series", 3, gui_add_chart_series)),
         ("gui_set_chart_labels", NativeFunction::new("gui_set_chart_labels", 2, gui_set_chart_labels)),
         ("gui_set_show_legend", NativeFunction::new("gui_set_show_legend", 2, gui_set_show_legend)),
@@ -138,8 +140,10 @@ pub fn gui_native_functions() -> Vec<(&'static str, NativeFunction)> {
         ("gui_set_border_color", NativeFunction::new("gui_set_border_color", -1, gui_set_border_color)),
         ("gui_set_border_width", NativeFunction::new("gui_set_border_width", 2, gui_set_border_width)),
         ("gui_set_corner_radius", NativeFunction::new("gui_set_corner_radius", 2, gui_set_corner_radius)),
-        // Theme presets function
+        // Theme functions
         ("gui_theme_presets", NativeFunction::new("gui_theme_presets", 0, gui_theme_presets)),
+        ("gui_set_theme", NativeFunction::new("gui_set_theme", 1, gui_set_theme)),
+        ("gui_custom_theme", NativeFunction::new("gui_custom_theme", 2, gui_custom_theme)),
         // Interactive element functions
         ("gui_interactive", NativeFunction::new("gui_interactive", -1, gui_interactive)),
         ("gui_on_press", NativeFunction::new("gui_on_press", 2, gui_on_press)),
@@ -152,6 +156,11 @@ pub fn gui_native_functions() -> Vec<(&'static str, NativeFunction)> {
         ("gui_on_mouse_move", NativeFunction::new("gui_on_mouse_move", 2, gui_on_mouse_move)),
         ("gui_on_mouse_scroll", NativeFunction::new("gui_on_mouse_scroll", 2, gui_on_mouse_scroll)),
         ("gui_set_cursor", NativeFunction::new("gui_set_cursor", 2, gui_set_cursor)),
+        // Form element event handlers
+        ("gui_on_change", NativeFunction::new("gui_on_change", 2, gui_on_change)),
+        ("gui_on_submit", NativeFunction::new("gui_on_submit", 2, gui_on_submit)),
+        ("gui_on_toggle", NativeFunction::new("gui_on_toggle", 2, gui_on_toggle)),
+        ("gui_on_select", NativeFunction::new("gui_on_select", 2, gui_on_select)),
     ]
 }
 
@@ -218,6 +227,14 @@ fn get_string(args: &[Value], index: usize, name: &str) -> Result<String, String
         Some(Value::String(s)) => Ok(s.to_string()),
         Some(v) => Err(format!("{} must be a string, got {}", name, v.type_name())),
         None => Err(format!("missing required argument: {}", name)),
+    }
+}
+
+// Helper to extract StateBinding path if present
+fn get_state_binding_path(value: &Value) -> Option<String> {
+    match value {
+        Value::StateBinding(path) => Some(path.clone()),
+        _ => None,
     }
 }
 
@@ -422,12 +439,18 @@ fn gui_button(args: &[Value]) -> NativeResult {
 
 /// Create a TextField element
 /// gui_text_field() or gui_text_field(value) or gui_text_field(value, placeholder)
+/// gui_text_field(&state.field) - with state binding for two-way binding
 fn gui_text_field(args: &[Value]) -> NativeResult {
     let mut builder = GuiElement::text_field();
 
-    // First arg is initial value
-    if let Some(Value::String(s)) = args.first() {
-        builder = builder.value(s.as_str());
+    // First arg can be initial value (String) or state binding (StateBinding)
+    if let Some(arg) = args.first() {
+        if let Some(path) = get_state_binding_path(arg) {
+            // State binding: enable two-way binding to this field path
+            builder = builder.bind_field(&path);
+        } else if let Value::String(s) = arg {
+            builder = builder.value(s.as_str());
+        }
     }
 
     // Second arg is placeholder
@@ -445,14 +468,20 @@ fn gui_text_field(args: &[Value]) -> NativeResult {
 
 /// Create a Checkbox element
 /// gui_checkbox(label) or gui_checkbox(label, checked) or gui_checkbox(label, checked, callback_id)
+/// gui_checkbox(label, &state.field) - with state binding for two-way binding
 fn gui_checkbox(args: &[Value]) -> NativeResult {
     let label = get_string(args, 0, "label")?;
 
     let mut builder = GuiElement::checkbox(&label);
 
-    // Second arg is checked state (bool)
-    if let Some(Value::Bool(checked)) = args.get(1) {
-        builder = builder.checked(*checked);
+    // Second arg can be checked state (bool) or state binding (StateBinding)
+    if let Some(arg) = args.get(1) {
+        if let Some(path) = get_state_binding_path(arg) {
+            // State binding: enable two-way binding to this field path
+            builder = builder.bind_field(&path);
+        } else if let Value::Bool(checked) = arg {
+            builder = builder.checked(*checked);
+        }
     }
 
     // Third arg is callback ID for on_toggle
@@ -507,15 +536,21 @@ fn gui_set_checkbox_label(args: &[Value]) -> NativeResult {
 /// Create a RadioButton element
 /// gui_radio_button(label, value) or gui_radio_button(label, value, selected_value)
 /// or gui_radio_button(label, value, selected_value, callback_id)
+/// gui_radio_button(label, value, &state.field) - with state binding for two-way binding
 fn gui_radio_button(args: &[Value]) -> NativeResult {
     let label = get_string(args, 0, "label")?;
     let value = get_string(args, 1, "value")?;
 
     let mut builder = GuiElement::radio_button(&label, &value);
 
-    // Third arg is selected_value (string)
-    if let Some(Value::String(s)) = args.get(2) {
-        builder = builder.selected_value(s.as_str());
+    // Third arg can be selected_value (string) or state binding (StateBinding)
+    if let Some(arg) = args.get(2) {
+        if let Some(path) = get_state_binding_path(arg) {
+            // State binding: enable two-way binding to this field path
+            builder = builder.bind_field(&path);
+        } else if let Value::String(s) = arg {
+            builder = builder.selected_value(s.as_str());
+        }
     }
 
     // Fourth arg is callback ID for on_select
@@ -586,6 +621,7 @@ fn gui_set_radio_label(args: &[Value]) -> NativeResult {
 /// Create a Dropdown element
 /// gui_dropdown(options_list) or gui_dropdown(options_list, selected)
 /// or gui_dropdown(options_list, selected, placeholder) or gui_dropdown(options_list, selected, placeholder, callback_id)
+/// gui_dropdown(options_list, &state.field) - with state binding for two-way binding
 fn gui_dropdown(args: &[Value]) -> NativeResult {
     // First arg must be a list of strings
     let options = match args.first() {
@@ -606,9 +642,14 @@ fn gui_dropdown(args: &[Value]) -> NativeResult {
 
     let mut builder = GuiElement::dropdown(options);
 
-    // Second arg is selected value (string or null)
-    if let Some(Value::String(s)) = args.get(1) {
-        builder = builder.selected(s.as_str());
+    // Second arg can be selected value (string) or state binding (StateBinding)
+    if let Some(arg) = args.get(1) {
+        if let Some(path) = get_state_binding_path(arg) {
+            // State binding: enable two-way binding to this field path
+            builder = builder.bind_field(&path);
+        } else if let Value::String(s) = arg {
+            builder = builder.selected(s.as_str());
+        }
     }
 
     // Third arg is placeholder (string)
@@ -901,6 +942,68 @@ fn gui_set_height(args: &[Value]) -> NativeResult {
     Ok(element.into_value())
 }
 
+/// Parse a string value into HAlign
+fn parse_h_align(value: &Value) -> Result<HAlign, String> {
+    match value {
+        Value::String(s) => match s.to_lowercase().as_str() {
+            "start" | "left" => Ok(HAlign::Start),
+            "center" => Ok(HAlign::Center),
+            "end" | "right" => Ok(HAlign::End),
+            other => Err(format!("invalid horizontal alignment '{}', expected: start, center, end, left, or right", other)),
+        },
+        v => Err(format!("alignment must be a string, got {}", v.type_name())),
+    }
+}
+
+/// Parse a string value into VAlign
+fn parse_v_align(value: &Value) -> Result<VAlign, String> {
+    match value {
+        Value::String(s) => match s.to_lowercase().as_str() {
+            "top" | "start" => Ok(VAlign::Top),
+            "center" => Ok(VAlign::Center),
+            "bottom" | "end" => Ok(VAlign::Bottom),
+            other => Err(format!("invalid vertical alignment '{}', expected: top, center, bottom, start, or end", other)),
+        },
+        v => Err(format!("alignment must be a string, got {}", v.type_name())),
+    }
+}
+
+/// Set alignment on layout elements
+/// gui_set_alignment(element, h_align, v_align) -> new_element
+///
+/// Supports: VStack (h_align only), HStack (v_align only), Grid (both), Container (both)
+fn gui_set_alignment(args: &[Value]) -> NativeResult {
+    if args.len() != 3 {
+        return Err("gui_set_alignment requires 3 arguments: element, h_align, v_align".to_string());
+    }
+
+    let mut element = clone_gui_element(&args[0])?;
+    let h_align = parse_h_align(&args[1])?;
+    let v_align = parse_v_align(&args[2])?;
+
+    match &mut element.kind {
+        GuiElementKind::VStack(c) => {
+            // VStack aligns children horizontally
+            c.align = h_align;
+        }
+        GuiElementKind::HStack(c) => {
+            // HStack aligns children vertically
+            c.align = v_align;
+        }
+        GuiElementKind::Grid(c) => {
+            c.cell_align_x = h_align;
+            c.cell_align_y = v_align;
+        }
+        GuiElementKind::Container(c) => {
+            c.align_x = h_align;
+            c.align_y = v_align;
+        }
+        _ => return Err("alignment can only be set on VStack, HStack, Grid, or Container".to_string()),
+    }
+
+    Ok(element.into_value())
+}
+
 /// Set bold on a text element
 /// gui_set_text_bold(element) -> new_element
 fn gui_set_text_bold(args: &[Value]) -> NativeResult {
@@ -992,15 +1095,21 @@ fn gui_set_disabled(args: &[Value]) -> NativeResult {
 
 /// Create a Slider element
 /// gui_slider(min, max) or gui_slider(min, max, value) or gui_slider(min, max, value, step)
+/// gui_slider(min, max, &state.field) - with state binding for two-way binding
 fn gui_slider(args: &[Value]) -> NativeResult {
     let min = get_float(args, 0, "min")?;
     let max = get_float(args, 1, "max")?;
 
     let mut builder = GuiElement::slider(min, max);
 
-    // Third arg is initial value
-    if let Some(value) = get_opt_float(args, 2) {
-        builder = builder.slider_value(value);
+    // Third arg can be initial value (number) or state binding (StateBinding)
+    if let Some(arg) = args.get(2) {
+        if let Some(path) = get_state_binding_path(arg) {
+            // State binding: enable two-way binding to this field path
+            builder = builder.bind_field(&path);
+        } else if let Some(value) = get_opt_float(args, 2) {
+            builder = builder.slider_value(value);
+        }
     }
 
     // Fourth arg is step
@@ -1075,14 +1184,20 @@ fn gui_set_slider_step(args: &[Value]) -> NativeResult {
 
 /// Create a Toggle element
 /// gui_toggle(label) or gui_toggle(label, is_on) or gui_toggle(label, is_on, callback_id)
+/// gui_toggle(label, &state.field) - with state binding for two-way binding
 fn gui_toggle(args: &[Value]) -> NativeResult {
     let label = get_string(args, 0, "label")?;
 
     let mut builder = GuiElement::toggle(&label);
 
-    // Second arg is is_on state (bool)
-    if let Some(Value::Bool(is_on)) = args.get(1) {
-        builder = builder.is_on(*is_on);
+    // Second arg can be is_on state (bool) or state binding (StateBinding)
+    if let Some(arg) = args.get(1) {
+        if let Some(path) = get_state_binding_path(arg) {
+            // State binding: enable two-way binding to this field path
+            builder = builder.bind_field(&path);
+        } else if let Value::Bool(is_on) = arg {
+            builder = builder.is_on(*is_on);
+        }
     }
 
     // Third arg is callback ID for on_toggle
@@ -1434,10 +1549,14 @@ fn gui_set_page_size(args: &[Value]) -> NativeResult {
     let mut element = clone_gui_element(&args[0])?;
     let size = get_int(args, 1, "size")?;
 
-    if let GuiElementKind::DataTable(ref mut config) = element.kind {
-        config.page_size = if size > 0 { Some(size as usize) } else { None };
-    } else {
-        return Err("gui_set_page_size can only be applied to DataTable elements".to_string());
+    match &mut element.kind {
+        GuiElementKind::DataTable(config) => {
+            config.page_size = if size > 0 { Some(size as usize) } else { None };
+        }
+        GuiElementKind::CubeTable(config) => {
+            config.page_size = if size > 0 { Some(size as usize) } else { None };
+        }
+        _ => return Err("gui_set_page_size can only be applied to DataTable or CubeTable elements".to_string()),
     }
 
     Ok(element.into_value())
@@ -1781,6 +1900,7 @@ fn gui_set_chart_title(args: &[Value]) -> NativeResult {
         GuiElementKind::BarChart(c) => c.title = Some(title),
         GuiElementKind::LineChart(c) => c.title = Some(title),
         GuiElementKind::PieChart(c) => c.title = Some(title),
+        GuiElementKind::CubeChart(c) => c.title = Some(title),
         _ => return Err("gui_set_chart_title can only be applied to chart elements".to_string()),
     }
 
@@ -1811,6 +1931,10 @@ fn gui_set_chart_size(args: &[Value]) -> NativeResult {
             c.width = width;
             c.height = height;
         }
+        GuiElementKind::CubeChart(c) => {
+            c.width = width;
+            c.height = height;
+        }
         _ => return Err("gui_set_chart_size can only be applied to chart elements".to_string()),
     }
 
@@ -1831,6 +1955,72 @@ fn gui_set_chart_data(args: &[Value]) -> NativeResult {
         GuiElementKind::BarChart(c) => c.data = data,
         GuiElementKind::PieChart(c) => c.data = data,
         _ => return Err("gui_set_chart_data can only be applied to BarChart or PieChart".to_string()),
+    }
+
+    Ok(element.into_value())
+}
+
+/// Set chart data from separate label and value arrays (type-safe alternative)
+/// gui_set_chart_data_arrays(element, labels, values) -> new_element
+fn gui_set_chart_data_arrays(args: &[Value]) -> NativeResult {
+    if args.len() != 3 {
+        return Err(
+            "gui_set_chart_data_arrays requires 3 arguments (element, labels, values)".to_string(),
+        );
+    }
+
+    let mut element = clone_gui_element(&args[0])?;
+
+    // Extract labels
+    let labels = match &args[1] {
+        Value::List(list) => list
+            .borrow()
+            .iter()
+            .map(|v| match v {
+                Value::String(s) => Ok((**s).clone()),
+                _ => Ok(v.to_string()),
+            })
+            .collect::<Result<Vec<String>, String>>()?,
+        _ => return Err("labels must be a list of strings".to_string()),
+    };
+
+    // Extract values
+    let values = match &args[2] {
+        Value::List(list) => list
+            .borrow()
+            .iter()
+            .map(|v| match v {
+                Value::Float(f) => Ok(*f),
+                Value::Int(i) => Ok(*i as f64),
+                _ => Err(format!("values must be numeric, got {}", v.type_name())),
+            })
+            .collect::<Result<Vec<f64>, String>>()?,
+        _ => return Err("values must be a list of numbers".to_string()),
+    };
+
+    if labels.len() != values.len() {
+        return Err(format!(
+            "labels and values must have the same length: {} vs {}",
+            labels.len(),
+            values.len()
+        ));
+    }
+
+    // Build DataPoints
+    let data: Vec<DataPoint> = labels
+        .into_iter()
+        .zip(values)
+        .map(|(label, value)| DataPoint { label, value })
+        .collect();
+
+    match &mut element.kind {
+        GuiElementKind::BarChart(c) => c.data = data,
+        GuiElementKind::PieChart(c) => c.data = data,
+        _ => {
+            return Err(
+                "gui_set_chart_data_arrays can only be applied to BarChart or PieChart".to_string(),
+            )
+        }
     }
 
     Ok(element.into_value())
@@ -1917,6 +2107,7 @@ fn gui_set_show_legend(args: &[Value]) -> NativeResult {
         GuiElementKind::BarChart(c) => c.show_legend = show,
         GuiElementKind::LineChart(c) => c.show_legend = show,
         GuiElementKind::PieChart(c) => c.show_legend = show,
+        GuiElementKind::CubeChart(c) => c.show_legend = show,
         _ => return Err("gui_set_show_legend can only be applied to chart elements".to_string()),
     }
 
@@ -1939,7 +2130,8 @@ fn gui_set_show_grid(args: &[Value]) -> NativeResult {
     match &mut element.kind {
         GuiElementKind::BarChart(c) => c.show_grid = show,
         GuiElementKind::LineChart(c) => c.show_grid = show,
-        _ => return Err("gui_set_show_grid can only be applied to BarChart or LineChart".to_string()),
+        GuiElementKind::CubeChart(c) => c.show_grid = show,
+        _ => return Err("gui_set_show_grid can only be applied to BarChart, LineChart, or CubeChart".to_string()),
     }
 
     Ok(element.into_value())
@@ -2554,6 +2746,158 @@ fn gui_theme_presets(_args: &[Value]) -> NativeResult {
     Ok(Value::List(Rc::new(RefCell::new(names))))
 }
 
+/// Set the application theme by preset name
+/// gui_set_theme(preset_name) -> null
+fn gui_set_theme(args: &[Value]) -> NativeResult {
+    use crate::bindings::request_theme_preset;
+    use crate::theme::ThemePreset;
+
+    let preset_name = get_string(args, 0, "preset_name")?;
+
+    let preset = ThemePreset::from_name(&preset_name)
+        .ok_or_else(|| format!("Unknown theme preset: '{}'. Use Gui.theme_presets() to see available themes.", preset_name))?;
+
+    request_theme_preset(preset);
+    Ok(Value::Null)
+}
+
+/// Create and set a custom theme with a name and palette
+/// gui_custom_theme(name, palette) -> null
+/// palette can be:
+///   - A struct with fields: background, text, primary, success, warning, danger
+///   - Each color field can be: (r, g, b), (r, g, b, a), or "#RRGGBB" hex string
+fn gui_custom_theme(args: &[Value]) -> NativeResult {
+    use crate::bindings::request_custom_theme;
+    use crate::theme::StratumPalette;
+
+    if args.len() < 2 {
+        return Err("gui_custom_theme requires 2 arguments (name, palette)".to_string());
+    }
+
+    let name = get_string(args, 0, "name")?;
+    let palette_value = &args[1];
+
+    // Extract palette from struct
+    let palette = match palette_value {
+        Value::Struct(struct_ref) => {
+            let instance = struct_ref.borrow();
+
+            let background = extract_color_from_field(&instance.fields, "background")?;
+            let text = extract_color_from_field(&instance.fields, "text")?;
+            let primary = extract_color_from_field(&instance.fields, "primary")?;
+            let success = extract_color_from_field(&instance.fields, "success")?;
+            let warning = extract_color_from_field(&instance.fields, "warning")?;
+            let danger = extract_color_from_field(&instance.fields, "danger")?;
+
+            StratumPalette::new(background, text, primary, success, warning, danger)
+        }
+        _ => return Err(format!(
+            "palette must be a struct with color fields, got {}",
+            palette_value.type_name()
+        )),
+    };
+
+    request_custom_theme(name, palette);
+    Ok(Value::Null)
+}
+
+/// Helper to extract a Color from a struct field
+fn extract_color_from_field(
+    fields: &std::collections::HashMap<String, Value>,
+    field_name: &str,
+) -> Result<crate::theme::Color, String> {
+    let value = fields.get(field_name)
+        .ok_or_else(|| format!("palette missing required field: '{}'", field_name))?;
+
+    extract_color_value(value, field_name)
+}
+
+/// Helper to extract a Color from a Value
+fn extract_color_value(value: &Value, context: &str) -> Result<crate::theme::Color, String> {
+    use crate::theme::Color;
+
+    match value {
+        // Hex string: "#RRGGBB" or "#RRGGBBAA"
+        Value::String(s) => {
+            Color::from_hex(s)
+                .ok_or_else(|| format!("{}: invalid hex color '{}'", context, s))
+        }
+        // List/tuple: [r, g, b] or [r, g, b, a]
+        Value::List(list) => {
+            let list = list.borrow();
+            match list.len() {
+                3 => {
+                    let r = get_u8_from_value(&list[0], &format!("{}.r", context))?;
+                    let g = get_u8_from_value(&list[1], &format!("{}.g", context))?;
+                    let b = get_u8_from_value(&list[2], &format!("{}.b", context))?;
+                    Ok(Color::rgb(r, g, b))
+                }
+                4 => {
+                    let r = get_u8_from_value(&list[0], &format!("{}.r", context))?;
+                    let g = get_u8_from_value(&list[1], &format!("{}.g", context))?;
+                    let b = get_u8_from_value(&list[2], &format!("{}.b", context))?;
+                    let a = get_u8_from_value(&list[3], &format!("{}.a", context))?;
+                    Ok(Color::rgba(r, g, b, a))
+                }
+                n => Err(format!(
+                    "{}: color list must have 3 or 4 elements, got {}",
+                    context, n
+                )),
+            }
+        }
+        // Struct with r, g, b, a fields
+        Value::Struct(struct_ref) => {
+            let instance = struct_ref.borrow();
+            let r = instance.fields.get("r")
+                .map(|v| get_u8_from_value(v, &format!("{}.r", context)))
+                .transpose()?
+                .unwrap_or(0);
+            let g = instance.fields.get("g")
+                .map(|v| get_u8_from_value(v, &format!("{}.g", context)))
+                .transpose()?
+                .unwrap_or(0);
+            let b = instance.fields.get("b")
+                .map(|v| get_u8_from_value(v, &format!("{}.b", context)))
+                .transpose()?
+                .unwrap_or(0);
+            let a = instance.fields.get("a")
+                .map(|v| get_u8_from_value(v, &format!("{}.a", context)))
+                .transpose()?
+                .unwrap_or(255);
+            Ok(Color::rgba(r, g, b, a))
+        }
+        _ => Err(format!(
+            "{}: color must be hex string, [r,g,b], [r,g,b,a], or color struct, got {}",
+            context,
+            value.type_name()
+        )),
+    }
+}
+
+/// Helper to extract u8 from a Value (for color components)
+fn get_u8_from_value(value: &Value, context: &str) -> Result<u8, String> {
+    match value {
+        Value::Int(i) => {
+            if *i < 0 || *i > 255 {
+                Err(format!("{}: color component must be 0-255, got {}", context, i))
+            } else {
+                Ok(*i as u8)
+            }
+        }
+        Value::Float(f) => {
+            // Allow floats in 0.0-1.0 range (convert to 0-255)
+            if *f >= 0.0 && *f <= 1.0 {
+                Ok((f * 255.0) as u8)
+            } else if *f >= 0.0 && *f <= 255.0 {
+                Ok(*f as u8)
+            } else {
+                Err(format!("{}: color component must be 0-255 or 0.0-1.0, got {}", context, f))
+            }
+        }
+        _ => Err(format!("{}: color component must be a number, got {}", context, value.type_name())),
+    }
+}
+
 // ============================================================================
 // Interactive Element Functions
 // ============================================================================
@@ -2761,6 +3105,88 @@ fn gui_set_cursor(args: &[Value]) -> NativeResult {
         config.cursor_style = Some(CursorStyle::from_str(&cursor_name));
     } else {
         return Err("gui_set_cursor can only be applied to Interactive elements".to_string());
+    }
+
+    Ok(element.into_value())
+}
+
+// =============================================================================
+// Widget Event Handlers (on_change, on_submit, on_toggle, on_select)
+// =============================================================================
+
+/// Set on_change callback for form elements (TextField, Slider)
+/// gui_on_change(element, callback_id) -> new_element
+fn gui_on_change(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err("gui_on_change requires 2 arguments (element, callback_id)".to_string());
+    }
+
+    let mut element = clone_gui_element(&args[0])?;
+    let callback_id = get_callback_id(&args[1])?;
+
+    match &mut element.kind {
+        GuiElementKind::TextField(config) => config.on_change = Some(callback_id),
+        GuiElementKind::Slider(config) => config.on_change = Some(callback_id),
+        GuiElementKind::MeasureSelector(config) => config.on_change = Some(callback_id),
+        _ => return Err("gui_on_change can only be applied to TextField, Slider, or MeasureSelector elements".to_string()),
+    }
+
+    Ok(element.into_value())
+}
+
+/// Set on_submit callback for TextField elements (triggered on Enter key)
+/// gui_on_submit(element, callback_id) -> new_element
+fn gui_on_submit(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err("gui_on_submit requires 2 arguments (element, callback_id)".to_string());
+    }
+
+    let mut element = clone_gui_element(&args[0])?;
+    let callback_id = get_callback_id(&args[1])?;
+
+    if let GuiElementKind::TextField(config) = &mut element.kind {
+        config.on_submit = Some(callback_id);
+    } else {
+        return Err("gui_on_submit can only be applied to TextField elements".to_string());
+    }
+
+    Ok(element.into_value())
+}
+
+/// Set on_toggle callback for toggle-based elements (Checkbox, Toggle)
+/// gui_on_toggle(element, callback_id) -> new_element
+fn gui_on_toggle(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err("gui_on_toggle requires 2 arguments (element, callback_id)".to_string());
+    }
+
+    let mut element = clone_gui_element(&args[0])?;
+    let callback_id = get_callback_id(&args[1])?;
+
+    match &mut element.kind {
+        GuiElementKind::Checkbox(config) => config.on_toggle = Some(callback_id),
+        GuiElementKind::Toggle(config) => config.on_toggle = Some(callback_id),
+        _ => return Err("gui_on_toggle can only be applied to Checkbox or Toggle elements".to_string()),
+    }
+
+    Ok(element.into_value())
+}
+
+/// Set on_select callback for selection-based elements (RadioButton, Dropdown, DimensionFilter)
+/// gui_on_select(element, callback_id) -> new_element
+fn gui_on_select(args: &[Value]) -> NativeResult {
+    if args.len() != 2 {
+        return Err("gui_on_select requires 2 arguments (element, callback_id)".to_string());
+    }
+
+    let mut element = clone_gui_element(&args[0])?;
+    let callback_id = get_callback_id(&args[1])?;
+
+    match &mut element.kind {
+        GuiElementKind::RadioButton(config) => config.on_select = Some(callback_id),
+        GuiElementKind::Dropdown(config) => config.on_select = Some(callback_id),
+        GuiElementKind::DimensionFilter(config) => config.on_select = Some(callback_id),
+        _ => return Err("gui_on_select can only be applied to RadioButton, Dropdown, or DimensionFilter elements".to_string()),
     }
 
     Ok(element.into_value())
@@ -4005,6 +4431,177 @@ mod tests {
     }
 
     #[test]
+    fn test_gui_set_theme_valid_preset() {
+        // Clear any pending theme
+        let _ = crate::bindings::take_pending_theme();
+
+        let result = gui_set_theme(&[Value::string("dark")]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Null);
+
+        // Verify theme was requested
+        let pending = crate::bindings::take_pending_theme();
+        assert!(pending.is_some());
+        if let Some(crate::bindings::PendingTheme::Preset(preset)) = pending {
+            assert_eq!(preset.name(), "dark");
+        } else {
+            panic!("Expected preset theme");
+        }
+    }
+
+    #[test]
+    fn test_gui_set_theme_invalid_preset() {
+        let result = gui_set_theme(&[Value::string("nonexistent_theme")]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Unknown theme preset"));
+    }
+
+    #[test]
+    fn test_gui_set_theme_case_insensitive() {
+        // Clear any pending theme
+        let _ = crate::bindings::take_pending_theme();
+
+        // Should work with various casings
+        let result = gui_set_theme(&[Value::string("DRACULA")]);
+        assert!(result.is_ok());
+
+        let pending = crate::bindings::take_pending_theme();
+        assert!(pending.is_some());
+        if let Some(crate::bindings::PendingTheme::Preset(preset)) = pending {
+            assert_eq!(preset.name(), "dracula");
+        }
+    }
+
+    #[test]
+    fn test_gui_custom_theme_with_struct() {
+        use std::cell::RefCell;
+        use std::collections::HashMap;
+        use std::rc::Rc;
+        use stratum_core::bytecode::StructInstance;
+
+        // Clear any pending theme
+        let _ = crate::bindings::take_pending_theme();
+
+        // Create a palette struct with color values as lists
+        let mut palette_fields = HashMap::new();
+        palette_fields.insert(
+            "background".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(40),
+                Value::Int(44),
+                Value::Int(52),
+            ]))),
+        );
+        palette_fields.insert(
+            "text".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(255),
+                Value::Int(255),
+                Value::Int(255),
+            ]))),
+        );
+        palette_fields.insert(
+            "primary".to_string(),
+            Value::String(Rc::new("#61AFEF".to_string())),
+        );
+        palette_fields.insert(
+            "success".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(152),
+                Value::Int(195),
+                Value::Int(121),
+            ]))),
+        );
+        palette_fields.insert(
+            "warning".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(229),
+                Value::Int(192),
+                Value::Int(123),
+            ]))),
+        );
+        palette_fields.insert(
+            "danger".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(224),
+                Value::Int(108),
+                Value::Int(117),
+            ]))),
+        );
+
+        let palette_instance = StructInstance {
+            type_name: "Palette".to_string(),
+            fields: palette_fields,
+        };
+        let palette_value = Value::Struct(Rc::new(RefCell::new(palette_instance)));
+
+        let result = gui_custom_theme(&[
+            Value::string("OneDark"),
+            palette_value,
+        ]);
+        assert!(result.is_ok());
+
+        let pending = crate::bindings::take_pending_theme();
+        assert!(pending.is_some());
+        if let Some(crate::bindings::PendingTheme::Custom { name, palette }) = pending {
+            assert_eq!(name, "OneDark");
+            assert_eq!(palette.background.r, 40);
+            assert_eq!(palette.text.r, 255);
+            assert_eq!(palette.primary.r, 97); // #61 = 97
+        } else {
+            panic!("Expected custom theme");
+        }
+    }
+
+    #[test]
+    fn test_gui_custom_theme_missing_field() {
+        use std::cell::RefCell;
+        use std::collections::HashMap;
+        use std::rc::Rc;
+        use stratum_core::bytecode::StructInstance;
+
+        // Create incomplete palette struct (missing 'danger' field)
+        let mut palette_fields = HashMap::new();
+        palette_fields.insert(
+            "background".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![Value::Int(40), Value::Int(44), Value::Int(52)]))),
+        );
+        palette_fields.insert(
+            "text".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![Value::Int(255), Value::Int(255), Value::Int(255)]))),
+        );
+        palette_fields.insert(
+            "primary".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![Value::Int(97), Value::Int(175), Value::Int(239)]))),
+        );
+        palette_fields.insert(
+            "success".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![Value::Int(152), Value::Int(195), Value::Int(121)]))),
+        );
+        palette_fields.insert(
+            "warning".to_string(),
+            Value::List(Rc::new(RefCell::new(vec![Value::Int(229), Value::Int(192), Value::Int(123)]))),
+        );
+        // 'danger' field intentionally missing
+
+        let palette_instance = StructInstance {
+            type_name: "Palette".to_string(),
+            fields: palette_fields,
+        };
+        let palette_value = Value::Struct(Rc::new(RefCell::new(palette_instance)));
+
+        let result = gui_custom_theme(&[
+            Value::string("Incomplete"),
+            palette_value,
+        ]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("missing required field"));
+        assert!(err.contains("danger"));
+    }
+
+    #[test]
     fn test_gui_set_background_missing_args() {
         let elem = gui_button(&[Value::string("Test")]).unwrap();
         let result = gui_set_background(&[elem, Value::Int(255)]);
@@ -4301,5 +4898,405 @@ mod tests {
 
         let result = gui_set_hierarchy(&[text_elem, Value::string("hier")]);
         assert!(result.is_err());
+    }
+
+    // ==================== Alignment Tests ====================
+
+    #[test]
+    fn test_gui_set_alignment_vstack() {
+        let vstack = gui_vstack(&[]).unwrap();
+        let result = gui_set_alignment(&[vstack, Value::string("left"), Value::string("top")]);
+        assert!(result.is_ok());
+        if let Value::GuiElement(e) = result.unwrap() {
+            if let Some(elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::VStack(c) = &elem.kind {
+                    assert_eq!(c.align, HAlign::Start);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_set_alignment_hstack() {
+        let hstack = gui_hstack(&[]).unwrap();
+        let result = gui_set_alignment(&[hstack, Value::string("center"), Value::string("bottom")]);
+        assert!(result.is_ok());
+        if let Value::GuiElement(e) = result.unwrap() {
+            if let Some(elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::HStack(c) = &elem.kind {
+                    assert_eq!(c.align, VAlign::Bottom);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_set_alignment_grid() {
+        let grid = gui_grid(&[Value::Int(3)]).unwrap();
+        let result = gui_set_alignment(&[grid, Value::string("end"), Value::string("center")]);
+        assert!(result.is_ok());
+        if let Value::GuiElement(e) = result.unwrap() {
+            if let Some(elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Grid(c) = &elem.kind {
+                    assert_eq!(c.cell_align_x, HAlign::End);
+                    assert_eq!(c.cell_align_y, VAlign::Center);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_set_alignment_container() {
+        let container = gui_container(&[]).unwrap();
+        let result = gui_set_alignment(&[container, Value::string("right"), Value::string("top")]);
+        assert!(result.is_ok());
+        if let Value::GuiElement(e) = result.unwrap() {
+            if let Some(elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Container(c) = &elem.kind {
+                    assert_eq!(c.align_x, HAlign::End);
+                    assert_eq!(c.align_y, VAlign::Top);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_set_alignment_invalid_element() {
+        let text = gui_text(&[Value::string("Hello")]).unwrap();
+        let result = gui_set_alignment(&[text, Value::string("center"), Value::string("center")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("can only be set on"));
+    }
+
+    #[test]
+    fn test_gui_set_alignment_invalid_h_align() {
+        let vstack = gui_vstack(&[]).unwrap();
+        let result = gui_set_alignment(&[vstack, Value::string("invalid"), Value::string("center")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid horizontal alignment"));
+    }
+
+    #[test]
+    fn test_gui_set_alignment_invalid_v_align() {
+        let vstack = gui_vstack(&[]).unwrap();
+        let result = gui_set_alignment(&[vstack, Value::string("center"), Value::string("invalid")]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid vertical alignment"));
+    }
+
+    // ==================== Form Event Handler Tests ====================
+
+    #[test]
+    fn test_gui_on_change_text_field() {
+        let elem = gui_text_field(&[]).unwrap();
+        let result = gui_on_change(&[elem, Value::Int(42)]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::TextField(config) = &gui_elem.kind {
+                    assert_eq!(config.on_change, Some(CallbackId::new(42)));
+                } else {
+                    panic!("Expected TextField element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_on_change_slider() {
+        let elem = gui_slider(&[Value::Float(0.0), Value::Float(100.0)]).unwrap();
+        let result = gui_on_change(&[elem, Value::Int(99)]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Slider(config) = &gui_elem.kind {
+                    assert_eq!(config.on_change, Some(CallbackId::new(99)));
+                } else {
+                    panic!("Expected Slider element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_on_change_wrong_element() {
+        let elem = gui_button(&[Value::string("Click")]).unwrap();
+        let result = gui_on_change(&[elem, Value::Int(1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("can only be applied to TextField"));
+    }
+
+    #[test]
+    fn test_gui_on_submit_text_field() {
+        let elem = gui_text_field(&[]).unwrap();
+        let result = gui_on_submit(&[elem, Value::Int(55)]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::TextField(config) = &gui_elem.kind {
+                    assert_eq!(config.on_submit, Some(CallbackId::new(55)));
+                } else {
+                    panic!("Expected TextField element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_on_submit_wrong_element() {
+        let elem = gui_button(&[Value::string("Click")]).unwrap();
+        let result = gui_on_submit(&[elem, Value::Int(1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("can only be applied to TextField"));
+    }
+
+    #[test]
+    fn test_gui_on_toggle_checkbox() {
+        let elem = gui_checkbox(&[Value::string("Check me")]).unwrap();
+        let result = gui_on_toggle(&[elem, Value::Int(77)]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Checkbox(config) = &gui_elem.kind {
+                    assert_eq!(config.on_toggle, Some(CallbackId::new(77)));
+                } else {
+                    panic!("Expected Checkbox element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_on_toggle_toggle() {
+        let elem = gui_toggle(&[Value::string("Enable")]).unwrap();
+        let result = gui_on_toggle(&[elem, Value::Int(88)]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Toggle(config) = &gui_elem.kind {
+                    assert_eq!(config.on_toggle, Some(CallbackId::new(88)));
+                } else {
+                    panic!("Expected Toggle element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_on_toggle_wrong_element() {
+        let elem = gui_text(&[Value::string("Text")]).unwrap();
+        let result = gui_on_toggle(&[elem, Value::Int(1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("can only be applied to Checkbox or Toggle"));
+    }
+
+    #[test]
+    fn test_gui_on_select_dropdown() {
+        let options = Value::list(vec![Value::string("A"), Value::string("B")]);
+        let elem = gui_dropdown(&[options]).unwrap();
+        let result = gui_on_select(&[elem, Value::Int(33)]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Dropdown(config) = &gui_elem.kind {
+                    assert_eq!(config.on_select, Some(CallbackId::new(33)));
+                } else {
+                    panic!("Expected Dropdown element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_on_select_radio_button() {
+        let elem = gui_radio_button(&[Value::string("Option"), Value::string("a")]).unwrap();
+        let result = gui_on_select(&[elem, Value::Int(44)]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::RadioButton(config) = &gui_elem.kind {
+                    assert_eq!(config.on_select, Some(CallbackId::new(44)));
+                } else {
+                    panic!("Expected RadioButton element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_on_select_wrong_element() {
+        let elem = gui_text(&[Value::string("Text")]).unwrap();
+        let result = gui_on_select(&[elem, Value::Int(1)]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("can only be applied to RadioButton, Dropdown"));
+    }
+
+    // ==================== State Binding Tests ====================
+
+    #[test]
+    fn test_gui_text_field_with_state_binding() {
+        // Test that TextField accepts a StateBinding and sets field_path
+        let binding = Value::StateBinding("state.name".to_string());
+        let result = gui_text_field(&[binding]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::TextField(config) = &gui_elem.kind {
+                    assert_eq!(config.field_path, Some("state.name".to_string()));
+                } else {
+                    panic!("Expected TextField element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_text_field_with_string_value() {
+        // Test that TextField still accepts a string value
+        let result = gui_text_field(&[Value::string("initial value")]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::TextField(config) = &gui_elem.kind {
+                    assert_eq!(config.value, "initial value");
+                    assert_eq!(config.field_path, None);
+                } else {
+                    panic!("Expected TextField element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_checkbox_with_state_binding() {
+        // Test that Checkbox accepts a StateBinding and sets field_path
+        let binding = Value::StateBinding("state.agreed".to_string());
+        let result = gui_checkbox(&[Value::string("I agree"), binding]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Checkbox(config) = &gui_elem.kind {
+                    assert_eq!(config.field_path, Some("state.agreed".to_string()));
+                } else {
+                    panic!("Expected Checkbox element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_slider_with_state_binding() {
+        // Test that Slider accepts a StateBinding and sets field_path
+        let binding = Value::StateBinding("state.volume".to_string());
+        let result = gui_slider(&[Value::Float(0.0), Value::Float(100.0), binding]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Slider(config) = &gui_elem.kind {
+                    assert_eq!(config.field_path, Some("state.volume".to_string()));
+                } else {
+                    panic!("Expected Slider element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_dropdown_with_state_binding() {
+        // Test that Dropdown accepts a StateBinding and sets field_path
+        let options = Value::list(vec![Value::string("Red"), Value::string("Green"), Value::string("Blue")]);
+        let binding = Value::StateBinding("state.color".to_string());
+        let result = gui_dropdown(&[options, binding]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Dropdown(config) = &gui_elem.kind {
+                    assert_eq!(config.field_path, Some("state.color".to_string()));
+                } else {
+                    panic!("Expected Dropdown element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_radio_button_with_state_binding() {
+        // Test that RadioButton accepts a StateBinding and sets field_path
+        let binding = Value::StateBinding("state.size".to_string());
+        let result = gui_radio_button(&[Value::string("Small"), Value::string("small"), binding]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::RadioButton(config) = &gui_elem.kind {
+                    assert_eq!(config.field_path, Some("state.size".to_string()));
+                } else {
+                    panic!("Expected RadioButton element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_gui_toggle_with_state_binding() {
+        // Test that Toggle accepts a StateBinding and sets field_path
+        let binding = Value::StateBinding("state.enabled".to_string());
+        let result = gui_toggle(&[Value::string("Enable"), binding]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::Toggle(config) = &gui_elem.kind {
+                    assert_eq!(config.field_path, Some("state.enabled".to_string()));
+                } else {
+                    panic!("Expected Toggle element");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_nested_state_binding_path() {
+        // Test that nested paths like "state.user.profile.name" are preserved
+        let binding = Value::StateBinding("state.user.profile.name".to_string());
+        let result = gui_text_field(&[binding]);
+        assert!(result.is_ok());
+
+        let value = result.unwrap();
+        if let Value::GuiElement(e) = value {
+            if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
+                if let GuiElementKind::TextField(config) = &gui_elem.kind {
+                    assert_eq!(config.field_path, Some("state.user.profile.name".to_string()));
+                } else {
+                    panic!("Expected TextField element");
+                }
+            }
+        }
     }
 }

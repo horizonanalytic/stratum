@@ -695,6 +695,8 @@ pub enum SortDirection {
 pub struct CubeTableConfig {
     /// The Cube to display (stored as Arc for thread-safety)
     pub cube: Option<Arc<stratum_core::data::Cube>>,
+    /// Shared filter context for cross-widget filtering
+    pub filter_context: Option<CubeFilterContext>,
     /// Row dimensions (dimensions to show as row headers)
     pub row_dimensions: Vec<String>,
     /// Column dimensions (dimensions to pivot as column headers)
@@ -721,6 +723,7 @@ impl Default for CubeTableConfig {
     fn default() -> Self {
         Self {
             cube: None,
+            filter_context: None,
             row_dimensions: Vec::new(),
             column_dimensions: Vec::new(),
             measures: Vec::new(),
@@ -756,6 +759,8 @@ impl fmt::Debug for CubeTableConfig {
 pub struct CubeChartConfig {
     /// The Cube to visualize
     pub cube: Option<Arc<stratum_core::data::Cube>>,
+    /// Shared filter context for cross-widget filtering
+    pub filter_context: Option<CubeFilterContext>,
     /// Chart type ("bar", "line", "pie")
     pub chart_type: CubeChartType,
     /// X-axis dimension
@@ -782,6 +787,7 @@ impl Default for CubeChartConfig {
     fn default() -> Self {
         Self {
             cube: None,
+            filter_context: None,
             chart_type: CubeChartType::Bar,
             x_dimension: None,
             y_measure: None,
@@ -832,6 +838,112 @@ impl CubeChartType {
     }
 }
 
+// =============================================================================
+// Shared Cube Filter Context
+// =============================================================================
+
+use std::collections::HashMap;
+
+/// Shared filter context for OLAP cube visualizations
+///
+/// This context allows dimension filters and measure selectors to communicate
+/// their selections to charts and tables, enabling reactive filtering across
+/// all cube widgets that share the same context.
+///
+/// # Example
+/// ```ignore
+/// let filter_context = CubeFilterContext::new();
+///
+/// // Create filters that write to the context
+/// let region_filter = GuiElement::dimension_filter_with_cube(cube.clone(), "region")
+///     .filter_context(filter_context.clone())
+///     .build();
+///
+/// // Create chart that reads from the context
+/// let chart = GuiElement::cube_chart_with_cube(cube.clone())
+///     .filter_context(filter_context.clone())
+///     .x_dimension("product")
+///     .y_measure("revenue")
+///     .build();
+///
+/// // When region_filter selection changes, chart automatically filters data
+/// ```
+#[derive(Clone, Debug)]
+pub struct CubeFilterContext {
+    /// Active dimension filters: dimension_name -> selected_value (None = "All"/no filter)
+    pub dimension_filters: Arc<RwLock<HashMap<String, Option<String>>>>,
+    /// Currently selected/visible measures
+    pub selected_measures: Arc<RwLock<Option<Vec<String>>>>,
+}
+
+impl CubeFilterContext {
+    /// Create a new empty filter context
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            dimension_filters: Arc::new(RwLock::new(HashMap::new())),
+            selected_measures: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Set a dimension filter value
+    pub fn set_dimension_filter(&self, dimension: &str, value: Option<String>) {
+        if let Ok(mut filters) = self.dimension_filters.write() {
+            filters.insert(dimension.to_string(), value);
+        }
+    }
+
+    /// Get a dimension filter value
+    #[must_use]
+    pub fn get_dimension_filter(&self, dimension: &str) -> Option<Option<String>> {
+        self.dimension_filters
+            .read()
+            .ok()
+            .and_then(|filters| filters.get(dimension).cloned())
+    }
+
+    /// Get all active dimension filters (excludes None/"All" values)
+    #[must_use]
+    pub fn get_active_filters(&self) -> HashMap<String, String> {
+        self.dimension_filters
+            .read()
+            .ok()
+            .map(|filters| {
+                filters
+                    .iter()
+                    .filter_map(|(k, v)| v.as_ref().map(|val| (k.clone(), val.clone())))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Set selected measures
+    pub fn set_selected_measures(&self, measures: Vec<String>) {
+        if let Ok(mut sel) = self.selected_measures.write() {
+            *sel = Some(measures);
+        }
+    }
+
+    /// Get selected measures (None means all measures are selected)
+    #[must_use]
+    pub fn get_selected_measures(&self) -> Option<Vec<String>> {
+        self.selected_measures
+            .read()
+            .ok()
+            .and_then(|sel| sel.clone())
+    }
+}
+
+impl Default for CubeFilterContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// =============================================================================
+// OLAP Widget Configurations
+// =============================================================================
+
 /// DimensionFilter configuration
 ///
 /// Dropdown filter for a cube dimension. Populates options from dimension_values()
@@ -848,6 +960,8 @@ pub struct DimensionFilterConfig {
     pub selected_value: Option<String>,
     /// Shared internal selection state (for runtime updates when no callback)
     pub internal_selection: Arc<RwLock<Option<Option<String>>>>,
+    /// Shared filter context for cross-widget communication
+    pub filter_context: Option<CubeFilterContext>,
     /// Whether to show "All" option
     pub show_all_option: bool,
     /// Placeholder text when nothing is selected
@@ -866,6 +980,7 @@ impl Default for DimensionFilterConfig {
             label: None,
             selected_value: None,
             internal_selection: Arc::new(RwLock::new(None)),
+            filter_context: None,
             show_all_option: true,
             placeholder: Some("Select...".to_string()),
             field_path: None,
@@ -943,6 +1058,8 @@ pub struct MeasureSelectorConfig {
     pub selected_measures: Vec<String>,
     /// Shared internal selection state (for runtime updates when no callback)
     pub internal_selection: Arc<RwLock<Option<Vec<String>>>>,
+    /// Shared filter context for cross-widget communication
+    pub filter_context: Option<CubeFilterContext>,
     /// Label to display
     pub label: Option<String>,
     /// State field path for binding selected measures
@@ -957,6 +1074,7 @@ impl Default for MeasureSelectorConfig {
             cube: None,
             selected_measures: Vec::new(),
             internal_selection: Arc::new(RwLock::new(None)),
+            filter_context: None,
             label: None,
             field_path: None,
             on_change: None,
@@ -2792,6 +2910,17 @@ impl GuiElement {
         let on_page_change = config.on_page_change;
         let on_cell_click = config.on_cell_click;
 
+        // Get active filters from filter context
+        let active_filters = config.filter_context
+            .as_ref()
+            .map(|ctx| ctx.get_active_filters())
+            .unwrap_or_default();
+
+        // Get selected measures from filter context (if any)
+        let selected_measures = config.filter_context
+            .as_ref()
+            .and_then(|ctx| ctx.get_selected_measures());
+
         // Get dimensions and measures to display (owned)
         let row_dims: Vec<String> = if config.row_dimensions.is_empty() {
             cube.dimension_names()
@@ -2799,10 +2928,19 @@ impl GuiElement {
             config.row_dimensions.clone()
         };
 
-        let measures: Vec<String> = if config.measures.is_empty() {
-            cube.measure_names()
-        } else {
-            config.measures.clone()
+        // Filter measures based on selected_measures from context
+        let measures: Vec<String> = {
+            let base_measures = if config.measures.is_empty() {
+                cube.measure_names()
+            } else {
+                config.measures.clone()
+            };
+            // If filter context has selected measures, filter to only those
+            if let Some(ref selected) = selected_measures {
+                base_measures.into_iter().filter(|m| selected.contains(m)).collect()
+            } else {
+                base_measures
+            }
         };
 
         if row_dims.is_empty() && measures.is_empty() {
@@ -2872,11 +3010,20 @@ impl GuiElement {
             // Build group by: all dimensions
             let group_by_cols: Vec<String> = row_dims.clone();
 
-            // Create query and execute
-            CubeQuery::new(cube)
+            // Create query
+            let mut query = CubeQuery::new(cube)
                 .select(select_exprs)
-                .group_by(group_by_cols)
-                .limit(page_size * (current_page + 1))
+                .group_by(group_by_cols);
+
+            // Apply dimension filters from context (excluding row dimensions to keep grouping)
+            for (dim, val) in &active_filters {
+                if !row_dims.contains(dim) {
+                    query = query.slice(dim.clone(), val.clone());
+                }
+            }
+
+            // Execute with limit
+            query.limit(page_size * (current_page + 1))
                 .to_dataframe()
         };
 
@@ -3088,6 +3235,12 @@ impl GuiElement {
         let show_legend = config.show_legend;
         let show_grid = config.show_grid;
 
+        // Get active filters from filter context
+        let active_filters = config.filter_context
+            .as_ref()
+            .map(|ctx| ctx.get_active_filters())
+            .unwrap_or_default();
+
         // Get the dimension and measure names (owned)
         let x_dim = config.x_dimension.clone()
             .or_else(|| cube.dimension_names().first().cloned())
@@ -3107,10 +3260,16 @@ impl GuiElement {
             ];
             let group_by_cols = vec![x_dim.clone(), series_dim.clone()];
 
-            CubeQuery::new(cube)
+            let mut query = CubeQuery::new(cube)
                 .select(select_exprs)
-                .group_by(group_by_cols)
-                .to_dataframe()
+                .group_by(group_by_cols);
+            // Apply dimension filters from context (excluding x_dim and series_dim)
+            for (dim, val) in &active_filters {
+                if dim != &x_dim && Some(dim) != series_dimension_opt.as_ref() {
+                    query = query.slice(dim.clone(), val.clone());
+                }
+            }
+            query.to_dataframe()
         } else {
             // Single series: group by x_dim only
             let select_exprs = vec![
@@ -3119,10 +3278,16 @@ impl GuiElement {
             ];
             let group_by_cols = vec![x_dim.clone()];
 
-            CubeQuery::new(cube)
+            let mut query = CubeQuery::new(cube)
                 .select(select_exprs)
-                .group_by(group_by_cols)
-                .to_dataframe()
+                .group_by(group_by_cols);
+            // Apply dimension filters from context (excluding x_dim)
+            for (dim, val) in &active_filters {
+                if dim != &x_dim {
+                    query = query.slice(dim.clone(), val.clone());
+                }
+            }
+            query.to_dataframe()
         };
 
         // Process query results and render chart
@@ -3149,6 +3314,9 @@ impl GuiElement {
                                 data_points.push(DataPoint::new(label, value));
                             }
                         }
+
+                        // Sort by label for consistent ordering across re-renders
+                        data_points.sort_by(|a, b| a.label.cmp(&b.label));
 
                         let bar_config = BarChartConfig {
                             title: title_opt,
@@ -3185,7 +3353,7 @@ impl GuiElement {
                     CubeChartType::Line => {
                         // Create line chart data
                         let num_rows = df.num_rows();
-                        let mut labels: Vec<String> = Vec::new();
+                        let labels: Vec<String>;
                         let mut series_data: Vec<DataSeries> = Vec::new();
 
                         if let Some(ref series_dim) = series_dimension_opt {
@@ -3214,10 +3382,15 @@ impl GuiElement {
                                 }
                             }
 
+                            // Sort x-axis labels for consistent ordering
+                            x_values.sort();
                             labels = x_values.clone();
 
-                            // Convert to DataSeries
-                            for (series_name, points) in series_map {
+                            // Convert to DataSeries (collect into vec first to sort)
+                            let mut series_entries: Vec<_> = series_map.into_iter().collect();
+                            series_entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+                            for (series_name, points) in series_entries {
                                 let mut values: Vec<f64> = vec![0.0; labels.len()];
                                 for (x_val, y_val) in points {
                                     if let Some(idx) = labels.iter().position(|l| l == &x_val) {
@@ -3228,7 +3401,7 @@ impl GuiElement {
                             }
                         } else {
                             // Single series line chart
-                            let mut values: Vec<f64> = Vec::new();
+                            let mut label_value_pairs: Vec<(String, f64)> = Vec::new();
                             if let (Ok(x_series), Ok(y_series)) = (df.column(&x_dim), df.column(&y_measure)) {
                                 for i in 0..num_rows {
                                     let label = x_series.get(i).map(|v| format!("{}", v)).unwrap_or_default();
@@ -3239,10 +3412,13 @@ impl GuiElement {
                                             _ => 0.0,
                                         })
                                         .unwrap_or(0.0);
-                                    labels.push(label);
-                                    values.push(value);
+                                    label_value_pairs.push((label, value));
                                 }
                             }
+                            // Sort by label for consistent ordering
+                            label_value_pairs.sort_by(|a, b| a.0.cmp(&b.0));
+                            let values: Vec<f64> = label_value_pairs.iter().map(|(_, v)| *v).collect();
+                            labels = label_value_pairs.into_iter().map(|(l, _)| l).collect();
                             series_data.push(DataSeries::new(y_measure.clone(), values));
                         }
 
@@ -3298,6 +3474,9 @@ impl GuiElement {
                                 data_points.push(DataPoint::new(label, value));
                             }
                         }
+
+                        // Sort by label for consistent ordering across re-renders
+                        data_points.sort_by(|a, b| a.label.cmp(&b.label));
 
                         let pie_config = PieChartConfig {
                             title: title_opt,
@@ -3365,6 +3544,7 @@ impl GuiElement {
         let on_select = config.on_select;
         let field_path_opt = config.field_path.clone();
         let internal_selection = config.internal_selection.clone();
+        let filter_context = config.filter_context.clone();
 
         // Get dimension values from cube (owned)
         let mut options: Vec<String> = Vec::new();
@@ -3381,20 +3561,42 @@ impl GuiElement {
             }
         }
 
-        // Determine current selection: use internal state if available, otherwise config
+        // Determine current selection: check filter context first, then internal state, then config
         let selected: Option<String> = {
-            let guard = internal_selection.read().unwrap();
-            if let Some(ref sel) = *guard {
-                // Internal state exists - convert Option<String> to display value
-                sel.clone().or_else(|| if show_all_option { Some("All".to_string()) } else { None })
-            } else {
-                // Initialize from config
-                drop(guard);
-                let initial = config.selected_value.clone();
-                if let Ok(mut write_guard) = internal_selection.write() {
-                    *write_guard = Some(initial.clone());
+            // First check if filter context has a value for this dimension
+            if let Some(ref ctx) = filter_context {
+                if let Some(filter_val) = ctx.get_dimension_filter(&dimension) {
+                    // Filter context has a value - use it
+                    filter_val.or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                } else {
+                    // No value in filter context yet - fall through to internal state
+                    let guard = internal_selection.read().unwrap();
+                    if let Some(ref sel) = *guard {
+                        sel.clone().or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                    } else {
+                        drop(guard);
+                        let initial = config.selected_value.clone();
+                        if let Ok(mut write_guard) = internal_selection.write() {
+                            *write_guard = Some(initial.clone());
+                        }
+                        // Also initialize the filter context
+                        ctx.set_dimension_filter(&dimension, initial.clone());
+                        initial.or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                    }
                 }
-                initial.or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+            } else {
+                // No filter context - use internal state
+                let guard = internal_selection.read().unwrap();
+                if let Some(ref sel) = *guard {
+                    sel.clone().or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                } else {
+                    drop(guard);
+                    let initial = config.selected_value.clone();
+                    if let Ok(mut write_guard) = internal_selection.write() {
+                        *write_guard = Some(initial.clone());
+                    }
+                    initial.or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                }
             }
         };
 
@@ -3413,8 +3615,13 @@ impl GuiElement {
         // Create pick_list with selection handler
         let pl = if let Some(callback_id) = on_select {
             let dim_clone = dimension.clone();
+            let filter_ctx_clone = filter_context.clone();
             pick_list(options, selected, move |value: String| {
                 let actual_value = if value == "All" { None } else { Some(value) };
+                // Update filter context if available
+                if let Some(ref ctx) = filter_ctx_clone {
+                    ctx.set_dimension_filter(&dim_clone, actual_value.clone());
+                }
                 Message::CubeDimensionSelect {
                     callback_id,
                     dimension: dim_clone.clone(),
@@ -3425,11 +3632,17 @@ impl GuiElement {
         } else if let Some(field) = field_path_opt.clone() {
             let internal_sel_clone = internal_selection.clone();
             let field_clone = field.clone();
+            let dim_clone = dimension.clone();
+            let filter_ctx_clone = filter_context.clone();
             pick_list(options, selected, move |value: String| {
                 let actual_value = if value == "All" { None } else { Some(value.clone()) };
                 // Update internal selection state directly
                 if let Ok(mut guard) = internal_sel_clone.write() {
                     *guard = Some(actual_value.clone());
+                }
+                // Update filter context if available
+                if let Some(ref ctx) = filter_ctx_clone {
+                    ctx.set_dimension_filter(&dim_clone, actual_value);
                 }
                 Message::SetStringField {
                     field: field_clone.clone(),
@@ -3441,11 +3654,16 @@ impl GuiElement {
             // No callback, no field_path - use internal state management
             let dim_clone = dimension.clone();
             let internal_sel_clone = internal_selection.clone();
+            let filter_ctx_clone = filter_context.clone();
             pick_list(options, selected, move |value: String| {
                 let actual_value = if value == "All" { None } else { Some(value.clone()) };
                 // Update internal selection state directly
                 if let Ok(mut guard) = internal_sel_clone.write() {
                     *guard = Some(actual_value.clone());
+                }
+                // Update filter context if available
+                if let Some(ref ctx) = filter_ctx_clone {
+                    ctx.set_dimension_filter(&dim_clone, actual_value.clone());
                 }
                 Message::InternalDimensionSelect {
                     dimension: dim_clone.clone(),
@@ -3592,6 +3810,7 @@ impl GuiElement {
         let label_opt = config.label.clone();
         let on_change = config.on_change;
         let internal_selection = config.internal_selection.clone();
+        let filter_context = config.filter_context.clone();
 
         // Get all measures from cube
         let all_measures: Vec<String> = if let Some(ref cube) = config.cube {
@@ -3600,24 +3819,49 @@ impl GuiElement {
             Vec::new()
         };
 
-        // Determine current selection: use internal state if available, otherwise config
+        // Determine current selection: check filter context first, then internal state, then config
         let current_selection: Vec<String> = {
-            let guard = internal_selection.read().unwrap();
-            if let Some(ref sel) = *guard {
-                sel.clone()
-            } else {
-                // Initialize from config, defaulting to all measures if empty
-                drop(guard);
-                let initial = if config.selected_measures.is_empty() {
-                    all_measures.clone()
+            // First check if filter context has selected measures
+            if let Some(ref ctx) = filter_context {
+                if let Some(ctx_measures) = ctx.get_selected_measures() {
+                    ctx_measures
                 } else {
-                    config.selected_measures.clone()
-                };
-                // Store the initial selection
-                if let Ok(mut write_guard) = internal_selection.write() {
-                    *write_guard = Some(initial.clone());
+                    // No value in filter context yet - fall through to internal state
+                    let guard = internal_selection.read().unwrap();
+                    if let Some(ref sel) = *guard {
+                        sel.clone()
+                    } else {
+                        drop(guard);
+                        let initial = if config.selected_measures.is_empty() {
+                            all_measures.clone()
+                        } else {
+                            config.selected_measures.clone()
+                        };
+                        if let Ok(mut write_guard) = internal_selection.write() {
+                            *write_guard = Some(initial.clone());
+                        }
+                        // Also initialize the filter context
+                        ctx.set_selected_measures(initial.clone());
+                        initial
+                    }
                 }
-                initial
+            } else {
+                // No filter context - use internal state
+                let guard = internal_selection.read().unwrap();
+                if let Some(ref sel) = *guard {
+                    sel.clone()
+                } else {
+                    drop(guard);
+                    let initial = if config.selected_measures.is_empty() {
+                        all_measures.clone()
+                    } else {
+                        config.selected_measures.clone()
+                    };
+                    if let Ok(mut write_guard) = internal_selection.write() {
+                        *write_guard = Some(initial.clone());
+                    }
+                    initial
+                }
             }
         };
 
@@ -3646,6 +3890,7 @@ impl GuiElement {
                 let cb = if let Some(callback_id) = on_change {
                     let measure_name = measure.clone();
                     let base_selection = current_selection.clone();
+                    let filter_ctx_clone = filter_context.clone();
 
                     checkbox(is_selected)
                         .label(measure_label)
@@ -3659,6 +3904,10 @@ impl GuiElement {
                                 let name = measure_name.clone();
                                 updated.retain(|m| m != &name);
                             }
+                            // Update filter context if available
+                            if let Some(ref ctx) = filter_ctx_clone {
+                                ctx.set_selected_measures(updated.clone());
+                            }
                             Message::CubeMeasureSelect {
                                 callback_id,
                                 measures: updated,
@@ -3669,12 +3918,13 @@ impl GuiElement {
                     let measure_name = measure.clone();
                     let field_path_clone = config.field_path.clone();
                     let internal_sel_clone = internal_selection.clone();
+                    let filter_ctx_clone = filter_context.clone();
 
                     checkbox(is_selected)
                         .label(measure_label)
                         .on_toggle(move |checked| {
                             // Update internal selection state directly
-                            if let Ok(mut guard) = internal_sel_clone.write() {
+                            let updated = if let Ok(mut guard) = internal_sel_clone.write() {
                                 if let Some(ref mut sel) = *guard {
                                     if checked {
                                         if !sel.contains(&measure_name) {
@@ -3683,7 +3933,16 @@ impl GuiElement {
                                     } else {
                                         sel.retain(|m| m != &measure_name);
                                     }
+                                    sel.clone()
+                                } else {
+                                    Vec::new()
                                 }
+                            } else {
+                                Vec::new()
+                            };
+                            // Update filter context if available
+                            if let Some(ref ctx) = filter_ctx_clone {
+                                ctx.set_selected_measures(updated);
                             }
                             Message::InternalMeasureToggle {
                                 measure: measure_name.clone(),
@@ -4740,6 +4999,22 @@ impl GuiElementBuilder {
             GuiElementKind::DimensionFilter(c) => c.label = Some(label.into()),
             GuiElementKind::HierarchyNavigator(c) => c.label = Some(label.into()),
             GuiElementKind::MeasureSelector(c) => c.label = Some(label.into()),
+            _ => {}
+        }
+        self
+    }
+
+    /// Set shared filter context for cross-widget filtering
+    ///
+    /// When a filter context is set, filters will update the context when selections change,
+    /// and charts/tables will read from the context to apply filters when rendering.
+    #[must_use]
+    pub fn filter_context(mut self, context: CubeFilterContext) -> Self {
+        match &mut self.kind {
+            GuiElementKind::CubeTable(c) => c.filter_context = Some(context),
+            GuiElementKind::CubeChart(c) => c.filter_context = Some(context),
+            GuiElementKind::DimensionFilter(c) => c.filter_context = Some(context),
+            GuiElementKind::MeasureSelector(c) => c.filter_context = Some(context),
             _ => {}
         }
         self

@@ -190,6 +190,7 @@ impl TypeChecker {
             "Tcp", "Udp", "WebSocket",
             "Data", "Agg", "Join", "Cube",
             "Async",
+            "Gui",
         ];
         for ns in namespaces {
             self.env.define_var(ns, Type::Namespace(ns.to_string()), false);

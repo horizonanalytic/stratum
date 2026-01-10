@@ -76,6 +76,9 @@ pub use bytecode::Compiler;
 /// Convenience re-export of VM
 pub use vm::VM;
 
+/// Convenience re-export of namespace handler types for external registration
+pub use vm::{NamespaceHandler, ValueMethodHandler, VmMethodHandler};
+
 /// Convenience re-export of output capture utilities
 pub use vm::{with_output_capture, OutputCapture};
 

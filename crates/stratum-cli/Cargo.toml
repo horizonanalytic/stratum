@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 stratum-core = { path = "../stratum-core" }
+stratum-gui = { path = "../stratum-gui" }
 stratum-lsp = { path = "../stratum-lsp" }
 stratum-pkg = { path = "../stratum-pkg" }
 stratum-workshop = { path = "../stratum-workshop" }

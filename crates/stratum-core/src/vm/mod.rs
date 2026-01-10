@@ -86,6 +86,19 @@ struct ExceptionHandler {
 /// Default threshold for hot path detection (number of calls before JIT compilation)
 const DEFAULT_HOT_THRESHOLD: usize = 1000;
 
+/// Type for external namespace method handlers
+/// Takes method name and arguments, returns a result
+pub type NamespaceHandler = fn(&str, &[Value]) -> Result<Value, String>;
+
+/// Type for special method handlers that need VM access
+/// Takes the VM, method name, and arguments
+pub type VmMethodHandler = fn(&mut VM, &str, &[Value]) -> RuntimeResult<Value>;
+
+/// Type for value-type method handlers (e.g., methods on GuiElement)
+/// Takes the receiver value, method name, and arguments
+/// Used to enable method chaining like `element.bold().color(255, 0, 0)`
+pub type ValueMethodHandler = fn(&Value, &str, &[Value]) -> Result<Value, String>;
+
 /// The Stratum Virtual Machine
 pub struct VM {
     /// Value stack
@@ -138,6 +151,18 @@ pub struct VM {
 
     /// Coverage collector (if coverage tracking is enabled)
     coverage: Option<CoverageCollector>,
+
+    /// Registry for external namespace handlers (e.g., Gui namespace from stratum-gui)
+    /// Maps namespace name to handler function
+    external_namespaces: HashMap<String, NamespaceHandler>,
+
+    /// Registry for special methods that need VM access
+    /// Maps (namespace, method) to handler function
+    vm_method_handlers: HashMap<(String, String), VmMethodHandler>,
+
+    /// Registry for value-type method handlers (e.g., GuiElement methods)
+    /// Maps type name to handler function for method chaining support
+    value_method_handlers: HashMap<String, ValueMethodHandler>,
 }
 
 impl Default for VM {
@@ -168,6 +193,9 @@ impl VM {
             gc: CycleCollector::new(),
             pending_spawn: false,
             coverage: None,
+            external_namespaces: HashMap::new(),
+            vm_method_handlers: HashMap::new(),
+            value_method_handlers: HashMap::new(),
         };
 
         // Register built-in functions
@@ -234,6 +262,75 @@ impl VM {
     #[must_use]
     pub fn coverage(&self) -> Option<&CoverageCollector> {
         self.coverage.as_ref()
+    }
+
+    // ============================================================================
+    // External Namespace Registration
+    // ============================================================================
+
+    /// Register an external namespace handler
+    ///
+    /// This allows external crates (like stratum-gui) to register their
+    /// namespace methods with the VM at runtime, avoiding circular dependencies.
+    ///
+    /// # Arguments
+    /// * `namespace` - The namespace name (e.g., "Gui")
+    /// * `handler` - A function that dispatches method calls for this namespace
+    ///
+    /// # Example
+    /// ```ignore
+    /// vm.register_namespace("Gui", gui_method);
+    /// ```
+    pub fn register_namespace(&mut self, namespace: &str, handler: NamespaceHandler) {
+        // Also register the namespace as a global
+        self.globals
+            .insert(namespace.to_string(), Value::NativeNamespace(Box::leak(namespace.to_string().into_boxed_str())));
+        self.external_namespaces
+            .insert(namespace.to_string(), handler);
+    }
+
+    /// Register a VM method handler for a specific namespace method
+    ///
+    /// Some methods need access to the VM (e.g., for callback execution).
+    /// This allows registering handlers that receive &mut VM.
+    ///
+    /// # Arguments
+    /// * `namespace` - The namespace name (e.g., "Gui")
+    /// * `method` - The method name (e.g., "run")
+    /// * `handler` - A function that handles this specific method
+    pub fn register_vm_method(
+        &mut self,
+        namespace: &str,
+        method: &str,
+        handler: VmMethodHandler,
+    ) {
+        self.vm_method_handlers
+            .insert((namespace.to_string(), method.to_string()), handler);
+    }
+
+    /// Register a value-type method handler
+    ///
+    /// This allows external crates to register method handlers for specific value types,
+    /// enabling fluent method chaining syntax like `element.bold().color(255, 0, 0)`.
+    ///
+    /// # Arguments
+    /// * `type_name` - The type name (e.g., "GuiElement")
+    /// * `handler` - A function that handles method calls on this value type
+    ///
+    /// # Example
+    /// ```ignore
+    /// vm.register_value_method_handler("GuiElement", gui_element_method);
+    /// // Now Stratum code can use: element.bold().width(100)
+    /// ```
+    pub fn register_value_method_handler(&mut self, type_name: &str, handler: ValueMethodHandler) {
+        self.value_method_handlers
+            .insert(type_name.to_string(), handler);
+    }
+
+    /// Check if an external namespace is registered
+    #[must_use]
+    pub fn has_namespace(&self, namespace: &str) -> bool {
+        self.external_namespaces.contains_key(namespace)
     }
 
     /// Get or create the JIT compiler (lazy initialization)
@@ -1945,6 +2042,9 @@ impl VM {
 
         // Ref module for weak references
         self.globals.insert("Ref".to_string(), Value::NativeNamespace("Ref"));
+
+        // Note: GUI module is registered at runtime via register_namespace()
+        // This allows stratum-gui to register itself without circular dependencies
     }
 
     /// Define a native function
@@ -3457,7 +3557,7 @@ impl VM {
                 // Try built-in struct methods
                 self.invoke_builtin_method(&receiver, &method_name, arg_count)
             }
-            Value::String(_) | Value::List(_) | Value::Map(_) | Value::Set(_) | Value::NativeNamespace(_) | Value::DbConnection(_) | Value::DataFrame(_) | Value::Series(_) | Value::Rolling(_) | Value::GroupedDataFrame(_) | Value::SqlContext(_) | Value::Cube(_) | Value::CubeBuilder(_) | Value::CubeQuery(_) => {
+            Value::String(_) | Value::List(_) | Value::Map(_) | Value::Set(_) | Value::NativeNamespace(_) | Value::DbConnection(_) | Value::DataFrame(_) | Value::Series(_) | Value::Rolling(_) | Value::GroupedDataFrame(_) | Value::SqlContext(_) | Value::Cube(_) | Value::CubeBuilder(_) | Value::CubeQuery(_) | Value::GuiElement(_) => {
                 self.invoke_builtin_method(&receiver, &method_name, arg_count)
             }
             _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -3491,13 +3591,7 @@ impl VM {
             Value::Map(m) => self.map_method(m, method_name, &args)?,
             Value::Set(s) => self.set_method(s, method_name, &args)?,
             Value::NativeNamespace(ns) => {
-                // Special handling for Test.describe() and Test.it() which need closure execution
-                if *ns == "Test" && (method_name == "describe" || method_name == "it") {
-                    self.test_suite_method(method_name, &args)?
-                } else {
-                    natives::dispatch_namespace_method(ns, method_name, &args)
-                        .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
-                }
+                self.namespace_method_dispatch(ns, method_name, &args)?
             }
             Value::DbConnection(conn) => {
                 natives::db_connection_method(conn, method_name, &args)
@@ -3550,6 +3644,18 @@ impl VM {
             Value::WeakRef(weak) => {
                 natives::weak_ref_method(method_name, &args, weak)
                     .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            }
+            Value::GuiElement(_) => {
+                // Check if a handler is registered for GuiElement
+                if let Some(handler) = self.value_method_handlers.get("GuiElement") {
+                    handler(receiver, method_name, &args)
+                        .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+                } else {
+                    return Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
+                        type_name: "GuiElement".to_string(),
+                        field: method_name.to_string(),
+                    }));
+                }
             }
             _ => {
                 return Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
@@ -7512,6 +7618,39 @@ impl VM {
     }
 
     // ============================================================================
+    // Namespace Method Dispatch
+    // ============================================================================
+
+    /// Dispatch namespace methods, with special handling for methods that need VM access
+    fn namespace_method_dispatch(
+        &mut self,
+        ns: &'static str,
+        method: &str,
+        args: &[Value],
+    ) -> RuntimeResult<Value> {
+        // Special handling for Test.describe() and Test.it() which need closure execution
+        if ns == "Test" && (method == "describe" || method == "it") {
+            return self.test_suite_method(method, args);
+        }
+
+        // Check for registered VM method handlers (methods that need VM access)
+        let key = (ns.to_string(), method.to_string());
+        if let Some(handler) = self.vm_method_handlers.get(&key).copied() {
+            return handler(self, method, args);
+        }
+
+        // Check for registered external namespace handlers
+        if let Some(handler) = self.external_namespaces.get(ns).copied() {
+            return handler(method, args)
+                .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)));
+        }
+
+        // Default: delegate to built-in native namespace dispatch
+        natives::dispatch_namespace_method(ns, method, args)
+            .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))
+    }
+
+    // ============================================================================
     // Test suite methods (Test.describe(), Test.it())
     // ============================================================================
 
@@ -7920,7 +8059,11 @@ impl VM {
 
     // ===== Error handling =====
 
-    fn runtime_error(&self, kind: RuntimeErrorKind) -> RuntimeError {
+    /// Create a runtime error with the current stack trace
+    ///
+    /// This is used by external crates (like stratum-gui) that register
+    /// VM method handlers and need to create proper runtime errors.
+    pub fn runtime_error(&self, kind: RuntimeErrorKind) -> RuntimeError {
         let mut error = RuntimeError::new(kind);
 
         // Build stack trace

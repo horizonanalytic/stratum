@@ -1,0 +1,113 @@
+// Data Dashboard Example - GUI Application with DataFrame and Charts
+// Demonstrates: DataTable, BarChart, LineChart, PieChart, and data manipulation
+
+struct DashboardState {
+    data_loaded: Bool
+}
+
+// Build the dashboard UI
+fx build_dashboard(state: DashboardState) {
+    // Create sample sales data using Data.from_columns()
+    let df = Data.from_columns(
+        "region", ["North", "North", "North", "South", "South", "South", "East", "East", "East", "West", "West", "West"],
+        "product", ["Widgets", "Gadgets", "Gizmos", "Widgets", "Gadgets", "Gizmos", "Widgets", "Gadgets", "Gizmos", "Widgets", "Gadgets", "Gizmos"],
+        "q1_sales", [1200, 850, 420, 980, 720, 380, 1450, 920, 510, 1100, 780, 450],
+        "q2_sales", [1350, 920, 480, 1050, 790, 410, 1580, 980, 560, 1200, 850, 490],
+        "q3_sales", [1500, 1050, 520, 1150, 860, 450, 1720, 1100, 620, 1320, 920, 540],
+        "q4_sales", [1650, 1180, 580, 1280, 950, 510, 1900, 1250, 700, 1480, 1020, 600]
+    );
+
+    // === TITLE ===
+    let title = Gui.text("Sales Dashboard");
+    let title_styled = Gui.set_text_bold(title);
+    let title_final = Gui.set_text_size(title_styled, 28.0);
+
+    let subtitle = Gui.text("Regional Performance Analysis");
+    let subtitle_final = Gui.set_text_size(subtitle, 14.0);
+
+    // === DATA TABLE ===
+    let table_label = Gui.text("Quarterly Sales Data");
+    let table_label_final = Gui.set_text_bold(table_label);
+
+    let table = Gui.data_table(df, 12);
+    let table_sortable = Gui.set_sortable(table, true);
+
+    // === BAR CHART: Revenue by Region ===
+    // Using type-safe API with separate label and value arrays
+    let bar_labels = ["North", "South", "East", "West"];
+    let bar_values = [15650.0, 12530.0, 19290.0, 14950.0];
+
+    let bar_chart = Gui.bar_chart();
+    let bar_with_data = Gui.set_chart_data_arrays(bar_chart, bar_labels, bar_values);
+    let bar_with_title = Gui.set_chart_title(bar_with_data, "Total Revenue by Region");
+    let bar_sized = Gui.set_chart_size(bar_with_title, 380.0, 250.0);
+    let bar_final = Gui.set_show_grid(bar_sized, true);
+
+    // === PIE CHART: Sales by Product Category ===
+    let pie_labels = ["Widgets", "Gadgets", "Gizmos"];
+    let pie_values = [21960.0, 15140.0, 8220.0];
+
+    let pie_chart = Gui.pie_chart();
+    let pie_with_data = Gui.set_chart_data_arrays(pie_chart, pie_labels, pie_values);
+    let pie_with_title = Gui.set_chart_title(pie_with_data, "Sales by Product");
+    let pie_final = Gui.set_chart_size(pie_with_title, 320.0, 250.0);
+
+    // === LINE CHART: Quarterly Trends ===
+    let line_labels = ["Q1", "Q2", "Q3", "Q4"];
+
+    // Calculate totals per quarter per region
+    let line_chart = Gui.line_chart(line_labels,
+        "North", [2470.0, 2750.0, 3070.0, 3410.0],
+        "South", [2080.0, 2250.0, 2460.0, 2740.0],
+        "East", [2880.0, 3120.0, 3440.0, 3850.0],
+        "West", [2330.0, 2540.0, 2780.0, 3100.0]
+    );
+    let line_with_title = Gui.set_chart_title(line_chart, "Quarterly Revenue Trends");
+    let line_with_legend = Gui.set_show_legend(line_with_title, true);
+    let line_sized = Gui.set_chart_size(line_with_legend, 720.0, 280.0);
+    let line_final = Gui.set_show_grid(line_sized, true);
+
+    // === LAYOUT ===
+
+    // Title section
+    let title_section = Gui.vstack();
+    let title_section_1 = Gui.add_child(title_section, title_final);
+    let title_section_2 = Gui.add_child(title_section_1, subtitle_final);
+    let title_section_final = Gui.set_spacing(title_section_2, 4.0);
+
+    // Charts row (bar + pie side by side)
+    let charts_row = Gui.hstack();
+    let charts_row_1 = Gui.add_child(charts_row, bar_final);
+    let charts_row_2 = Gui.add_child(charts_row_1, pie_final);
+    let charts_row_final = Gui.set_spacing(charts_row_2, 24.0);
+
+    // Table section with label
+    let table_section = Gui.vstack();
+    let table_section_1 = Gui.add_child(table_section, table_label_final);
+    let table_section_2 = Gui.add_child(table_section_1, table_sortable);
+    let table_section_final = Gui.set_spacing(table_section_2, 8.0);
+
+    // Main layout
+    let main_layout = Gui.vstack();
+    let main_1 = Gui.add_child(main_layout, title_section_final);
+    let main_2 = Gui.add_child(main_1, charts_row_final);
+    let main_3 = Gui.add_child(main_2, line_final);
+    let main_4 = Gui.add_child(main_3, table_section_final);
+    let main_spaced = Gui.set_spacing(main_4, 20.0);
+    let main_final = Gui.set_padding(main_spaced, 24.0);
+
+    main_final
+}
+
+fx main() {
+    println("Starting Stratum Data Dashboard...");
+    println("Demonstrating: DataFrame, DataTable, BarChart, PieChart, LineChart");
+
+    // Initial state
+    let initial_state = DashboardState { data_loaded: true };
+
+    // Create and run the GUI application
+    Gui.app("Stratum Data Dashboard", initial_state, build_dashboard, 900, 800);
+
+    println("Dashboard closed.");
+}

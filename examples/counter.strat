@@ -1,0 +1,60 @@
+// Counter Example - GUI Application in Pure Stratum
+// Demonstrates: state management, callbacks, layout, and reactive updates
+
+struct CounterState {
+    count: Int
+}
+
+// Build the UI for the counter app
+fx build_ui(state: CounterState) {
+    // Register callbacks for buttons
+    // Callbacks receive the current state and use Gui.update_field() to modify it
+    let dec_id = Gui.register_callback(|s: CounterState| {
+        Gui.update_field("count", s.count - 1);
+    });
+
+    let inc_id = Gui.register_callback(|s: CounterState| {
+        Gui.update_field("count", s.count + 1);
+    });
+
+    // Create the UI elements
+    let title = Gui.text("Stratum Counter");
+    let title_bold = Gui.set_text_bold(title);
+    let title_final = Gui.set_text_size(title_bold, 24.0);
+
+    // Use string interpolation to display the current count from state
+    let count_text = Gui.text("Count: {state.count}");
+    let count_final = Gui.set_text_size(count_text, 32.0);
+
+    let dec_btn = Gui.button("-", dec_id);
+    let inc_btn = Gui.button("+", inc_id);
+
+    // Build button row with HStack
+    let btn_row_base = Gui.hstack();
+    let btn_row_with_dec = Gui.add_child(btn_row_base, dec_btn);
+    let btn_row_with_btns = Gui.add_child(btn_row_with_dec, inc_btn);
+    let btn_row_final = Gui.set_spacing(btn_row_with_btns, 16.0);
+
+    // Build main layout with VStack
+    let layout_base = Gui.vstack();
+    let layout_with_title = Gui.add_child(layout_base, title_final);
+    let layout_with_count = Gui.add_child(layout_with_title, count_final);
+    let layout_with_btns = Gui.add_child(layout_with_count, btn_row_final);
+    let layout_spaced = Gui.set_spacing(layout_with_btns, 20.0);
+    let layout_final = Gui.set_padding(layout_spaced, 40.0);
+
+    layout_final
+}
+
+fx main() {
+    println("Starting Stratum Counter...");
+
+    // Initial state
+    let initial_state = CounterState { count: 0 };
+
+    // Create and run the GUI application
+    // Gui.app(title, initial_state, view_function, width, height)
+    Gui.app("Stratum Counter", initial_state, build_ui, 400, 300);
+
+    println("Counter app closed.");
+}

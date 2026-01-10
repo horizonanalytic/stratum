@@ -51,7 +51,10 @@ pub struct Repl {
 impl Repl {
     /// Create a new REPL instance
     pub fn new() -> Result<Self> {
-        let vm = VM::new();
+        let mut vm = VM::new();
+
+        // Register GUI bindings so REPL users can use Gui.* functions
+        stratum_gui::register_gui(&mut vm);
         let mut editor = DefaultEditor::new()?;
 
         // Load history if available
@@ -71,6 +74,8 @@ impl Repl {
     /// Reset the REPL state (creates new VM, clears defined functions/variables)
     fn reset(&mut self) {
         self.vm = VM::new();
+        // Re-register GUI bindings after reset
+        stratum_gui::register_gui(&mut self.vm);
         self.user_functions.clear();
         self.user_variables.clear();
         println!("REPL state has been reset.");
