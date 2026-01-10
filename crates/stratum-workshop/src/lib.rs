@@ -39,9 +39,12 @@ pub mod workshop;
 pub use panels::{ReplMessage, ReplPanel};
 pub use workshop::{Workshop, WorkshopMessage, WorkshopState};
 
-use iced::{Size, Subscription, Task};
+use iced::{window, Size, Subscription, Task};
 use std::path::PathBuf;
 use std::sync::OnceLock;
+
+/// Embedded application icon (PNG)
+const ICON_PNG: &[u8] = include_bytes!("../../../assets/icon.png");
 
 /// Global storage for initial path to pass to boot function
 static INITIAL_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -72,11 +75,31 @@ pub fn launch(initial_path: Option<PathBuf>) -> iced::Result {
     // Store initial path for boot function to access
     let _ = INITIAL_PATH.set(initial_path);
 
-    iced::application(boot, update, view)
-        .title("Stratum Shell")
+    // Load application icon from embedded PNG
+    let icon = load_icon();
+
+    let mut app = iced::application(boot, update, view)
+        .title("Stratum Workshop")
         .window_size(Size::new(700.0, 500.0))
-        .subscription(subscription)
-        .run()
+        .subscription(subscription);
+
+    // Set window icon if successfully loaded
+    if let Some(icon) = icon {
+        app = app.window(window::Settings {
+            icon: Some(icon),
+            ..Default::default()
+        });
+    }
+
+    app.run()
+}
+
+/// Load the application icon from embedded PNG data
+fn load_icon() -> Option<window::Icon> {
+    let img = image::load_from_memory(ICON_PNG).ok()?.into_rgba8();
+    let (width, height) = img.dimensions();
+    let rgba = img.into_raw();
+    window::icon::from_rgba(rgba, width, height).ok()
 }
 
 /// Boot function - initializes application state

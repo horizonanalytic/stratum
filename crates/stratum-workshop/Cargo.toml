@@ -50,6 +50,9 @@ regex.workspace = true
 # Native file dialogs
 rfd = "0.15"
 
+# Image loading for window icon
+image.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
 
