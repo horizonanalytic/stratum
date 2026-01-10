@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide covers all installation methods for Stratum, including system requirements, platform-specific instructions, and upgrade procedures.
+This guide covers all installation methods for Stratum.
 
 ## System Requirements
 
@@ -8,9 +8,9 @@ This guide covers all installation methods for Stratum, including system require
 
 | Component | Requirement |
 |-----------|-------------|
-| **OS** | macOS 11+, Linux (glibc 2.17+), or Alpine Linux |
+| **OS** | macOS 11+, Linux (glibc 2.17+), or Windows 10+ |
 | **Architecture** | x86_64 or ARM64 (aarch64) |
-| **Disk Space** | 15 MB (Core) to 120 MB (Full) |
+| **Disk Space** | ~150 MB |
 | **RAM** | 512 MB minimum, 2 GB recommended |
 
 ### Platform Support
@@ -21,234 +21,93 @@ This guide covers all installation methods for Stratum, including system require
 | macOS 11+ (Big Sur) | Intel (x86_64) | Fully supported |
 | Linux (glibc 2.17+) | x86_64 | Fully supported |
 | Linux (glibc 2.17+) | ARM64 | Fully supported |
-| Alpine Linux (musl) | x86_64 | Fully supported |
-| Windows | x86_64 | Coming soon (Phase 14) |
-
-## Installation Tiers
-
-Stratum offers tiered installation to minimize download size for your use case:
-
-| Tier | Size | Includes |
-|------|------|----------|
-| **Core** | ~15 MB | CLI, REPL, compiler, type checker, bytecode VM |
-| **Data** | ~45 MB | Core + DataFrame, Arrow integration, SQL support |
-| **GUI** | ~80 MB | Data + GUI framework (iced), native widgets |
-| **Full** | ~120 MB | GUI + Workshop IDE, LSP, DAP debugger |
-
-**Recommended:** Most users should install the **Data** tier (default), which includes the powerful DataFrame operations that make Stratum ideal for data work.
+| Windows 10+ | x86_64 | Fully supported |
 
 ---
 
-## Quick Install (Interactive)
+## Download Pre-built Binaries (Recommended)
 
-The recommended way to install Stratum is using the interactive installer:
+Pre-built binaries are available for all supported platforms:
 
-```bash
-curl -fsSL https://get.stratum-lang.dev | sh
-```
+**[Download Stratum](https://horizonanalytic.com/landing/packages/horizon-stratum)**
 
-This will:
-1. Detect your platform and architecture
-2. Prompt you to select an installation tier
-3. Download and extract the appropriate binaries
-4. Configure your PATH
-5. Install shell completions for your shell(s)
+1. Visit the download page and select the appropriate binary for your platform
+2. Extract the archive to your preferred location
+3. Add the binary location to your PATH
 
-### Non-Interactive Installation
-
-For scripted or automated installations:
+### macOS / Linux
 
 ```bash
-# Install with all defaults (Data tier, default location)
-curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes
+# Extract (adjust filename for your platform)
+tar -xzf stratum-macos-arm64.tar.gz
 
-# Install specific tier
-curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes --tier=full
-
-# Custom installation directory
-curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes --prefix=/opt/stratum
-
-# Skip PATH modification (configure manually)
-curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes --no-path
-
-# Skip shell completions
-curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes --no-completions
-
-# Silent mode (minimal output)
-curl -fsSL https://get.stratum-lang.dev | sh -s -- --yes --quiet
-```
-
----
-
-## Homebrew (macOS / Linux)
-
-Stratum is available via Homebrew for both macOS and Linux.
-
-### Add the Tap
-
-```bash
-brew tap horizon-analytic/stratum
-```
-
-### Install
-
-```bash
-# Install default tier (Data)
-brew install stratum
-
-# Install with GUI framework
-brew install stratum --with-gui
-
-# Install full version (includes Workshop IDE)
-brew install stratum --with-full
-```
-
-### Upgrade
-
-```bash
-brew update
-brew upgrade stratum
-```
-
-### Uninstall
-
-```bash
-brew uninstall stratum
-```
-
----
-
-## Docker
-
-Official Docker images are available for containerized workflows. Images support both amd64 and arm64 architectures.
-
-```bash
-# Run a Stratum script
-docker run --rm -v $(pwd):/app ghcr.io/horizon-analytic/stratum run /app/script.strat
-
-# Start interactive REPL
-docker run --rm -it ghcr.io/horizon-analytic/stratum repl
-
-# Evaluate an expression
-docker run --rm ghcr.io/horizon-analytic/stratum eval "1 + 2 * 3"
-
-# Use specific version
-docker run --rm -it ghcr.io/horizon-analytic/stratum:1.0.0 repl
-```
-
-### Available Tags
-
-| Tag | Description |
-|-----|-------------|
-| `stratum:latest` | Latest stable, Data tier (recommended) |
-| `stratum:core` | Core tier only (Alpine-based, ~50 MB) |
-| `stratum:data` | Data tier (same as core, ~50 MB) |
-| `stratum:full` | Full tier with LSP server (Debian-based, ~100 MB) |
-| `stratum:X.Y.Z` | Specific version |
-| `stratum:X.Y.Z-full` | Specific version with LSP |
-
-### Using as Base Image
-
-```dockerfile
-FROM ghcr.io/horizon-analytic/stratum:data
-
-WORKDIR /app
-COPY . .
-
-CMD ["stratum", "run", "main.strat"]
-```
-
-### LSP Server in Docker
-
-The `full` image includes the LSP server for editor integration:
-
-```bash
-# Start LSP server (connect from editor)
-docker run --rm -i ghcr.io/horizon-analytic/stratum:full lsp --stdio
-```
-
----
-
-## Linux Package Managers
-
-### Debian / Ubuntu (.deb)
-
-```bash
-# Download the package
-wget https://github.com/horizon-analytic/stratum/releases/latest/download/stratum_VERSION_amd64.deb
-
-# Install
-sudo dpkg -i stratum_VERSION_amd64.deb
-
-# Or use apt (resolves dependencies automatically)
-sudo apt install ./stratum_VERSION_amd64.deb
-```
-
-### Fedora / RHEL (.rpm)
-
-```bash
-# Download the package
-wget https://github.com/horizon-analytic/stratum/releases/latest/download/stratum-VERSION-1.x86_64.rpm
-
-# Install
-sudo rpm -i stratum-VERSION-1.x86_64.rpm
-
-# Or use dnf
-sudo dnf install ./stratum-VERSION-1.x86_64.rpm
-```
-
----
-
-## macOS .pkg Installer
-
-A signed and notarized .pkg installer is available for macOS:
-
-```bash
-# Download
-wget https://github.com/horizon-analytic/stratum/releases/latest/download/stratum-VERSION-macos.pkg
-
-# Install (opens GUI installer)
-open stratum-VERSION-macos.pkg
-
-# Or install via command line
-sudo installer -pkg stratum-VERSION-macos.pkg -target /
-```
-
----
-
-## Manual Installation (Tarball)
-
-For manual installation or custom setups:
-
-```bash
-# Download appropriate tarball
-# macOS Universal:
-wget https://github.com/horizon-analytic/stratum/releases/latest/download/stratum-macos-universal-VERSION.tar.gz
-
-# Linux x86_64:
-wget https://github.com/horizon-analytic/stratum/releases/latest/download/stratum-linux-x86_64-VERSION.tar.gz
-
-# Linux ARM64:
-wget https://github.com/horizon-analytic/stratum/releases/latest/download/stratum-linux-aarch64-VERSION.tar.gz
-
-# Linux musl (Alpine):
-wget https://github.com/horizon-analytic/stratum/releases/latest/download/stratum-linux-x86_64-musl-VERSION.tar.gz
-
-# Extract
-tar -xzf stratum-*.tar.gz
-
-# Move to desired location
+# Move to a location in your PATH
 sudo mv stratum /usr/local/bin/
 
 # Verify installation
 stratum --version
 ```
 
+### Windows
+
+1. Extract the `.zip` file
+2. Move `stratum.exe` to a directory in your PATH (e.g., `C:\Program Files\Stratum\`)
+3. Or add the extraction directory to your PATH environment variable
+
+```powershell
+# Verify installation
+stratum --version
+```
+
+---
+
+## Build from Source
+
+Building from source requires Rust 1.75 or later.
+
+### Prerequisites
+
+Install Rust via [rustup](https://rustup.rs/):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+### Build Steps
+
+```bash
+# Clone the repository
+git clone https://github.com/horizonanalytic/stratum.git
+cd stratum
+
+# Build in release mode
+cargo build --release
+
+# The binary will be at target/release/stratum
+./target/release/stratum --version
+
+# Optionally install to your Cargo bin directory
+cargo install --path crates/stratum-cli
+```
+
+### Build Options
+
+```bash
+# Build only the CLI (faster, smaller)
+cargo build --release --bin stratum
+
+# Build with all features
+cargo build --release --all
+
+# Run tests
+cargo test --all
+```
+
 ---
 
 ## Shell Completions
 
-Shell completions are installed automatically by the interactive installer. To install manually:
+Generate shell completions for your preferred shell:
 
 ### Bash
 
@@ -281,133 +140,21 @@ autoload -Uz compinit && compinit
 stratum completions fish > ~/.config/fish/completions/stratum.fish
 ```
 
----
+### PowerShell
 
-## Upgrading
-
-### Using the CLI
-
-```bash
-# Check for updates
-stratum self update --check
-
-# Update to latest version
-stratum self update
-
-# Update to specific version
-stratum self update 1.2.0
-
-# Upgrade tier (e.g., from Data to Full)
-stratum self update --tier=full
-```
-
-### Version Management
-
-Stratum supports multiple versions side-by-side:
-
-```bash
-# Install a specific version
-stratum self install 1.1.0
-
-# List installed versions
-stratum self list
-
-# Switch active version
-stratum self use 1.1.0
-
-# Use specific version for a single command
-stratum +1.1.0 run script.strat
-```
-
-### Upgrading via Package Managers
-
-```bash
-# Homebrew
-brew update && brew upgrade stratum
-
-# apt
-sudo apt update && sudo apt upgrade stratum
-
-# dnf
-sudo dnf upgrade stratum
+```powershell
+stratum completions powershell >> $PROFILE
 ```
 
 ---
 
-## Uninstallation
+## Coming Soon
 
-### Using the CLI
+The following installation methods are planned for future releases:
 
-```bash
-# Remove Stratum (preserves user configuration)
-stratum self uninstall
-
-# Remove everything including configuration
-stratum self uninstall --purge
-```
-
-### Package Managers
-
-```bash
-# Homebrew
-brew uninstall stratum
-
-# apt
-sudo apt remove stratum      # Keep config
-sudo apt purge stratum       # Remove config
-
-# dnf
-sudo dnf remove stratum
-```
-
-### Manual Uninstallation
-
-If the `stratum` binary is unavailable:
-
-```bash
-curl -fsSL https://get.stratum-lang.dev/uninstall.sh | sh
-```
-
-For details on what gets removed, see [Troubleshooting: Uninstallation](troubleshooting.md#uninstallation).
-
----
-
-## Configuration
-
-Stratum stores configuration in:
-
-| Platform | Location |
-|----------|----------|
-| macOS/Linux | `~/.stratum/config.toml` |
-| Windows | `%APPDATA%\stratum\config.toml` |
-
-### Default Configuration
-
-```toml
-# ~/.stratum/config.toml
-
-[general]
-# Default tier for new installations
-tier = "data"
-
-[repl]
-# REPL history file location
-history_file = "~/.stratum/history"
-# Maximum history entries
-history_size = 10000
-
-[compiler]
-# Default optimization level (0-3)
-opt_level = 2
-# Enable debug symbols
-debug = false
-
-[formatter]
-# Indentation style
-indent = 4
-# Line width
-line_width = 100
-```
+- **Homebrew** - `brew install stratum` (in progress)
+- **Docker** - Official container images
+- **Linux packages** - `.deb` and `.rpm` packages
 
 ---
 
@@ -420,19 +167,54 @@ After installation, verify everything is working:
 stratum --version
 
 # Run a quick test
-stratum -c 'print("Hello, Stratum!")'
+stratum eval "1 + 2 * 3"
 
 # Start the REPL
 stratum repl
 
-# Check installed tier
-stratum self info
+# Run a script
+stratum run hello.strat
 ```
+
+---
+
+## Troubleshooting
+
+### "command not found" after installation
+
+Ensure the Stratum binary is in your PATH:
+
+```bash
+# Check if stratum is in PATH
+which stratum
+
+# If not found, add it to your shell profile
+# For bash (~/.bashrc) or zsh (~/.zshrc):
+export PATH="/path/to/stratum:$PATH"
+```
+
+### Permission denied on macOS
+
+macOS may block unsigned binaries. To allow execution:
+
+```bash
+# Remove quarantine attribute
+xattr -d com.apple.quarantine /path/to/stratum
+```
+
+Or go to **System Preferences > Security & Privacy** and click "Allow Anyway".
+
+### Build failures
+
+If building from source fails:
+
+1. Ensure Rust 1.75+ is installed: `rustc --version`
+2. Update Rust: `rustup update`
+3. Clean and rebuild: `cargo clean && cargo build --release`
 
 ---
 
 ## Next Steps
 
-- [Quick Start Guide](index.md) - Write your first Stratum program
+- [Examples](examples/index.md) - Learn from example programs
 - [Standard Library Reference](stdlib/index.md) - Explore built-in functionality
-- [Troubleshooting](troubleshooting.md) - Common issues and solutions
