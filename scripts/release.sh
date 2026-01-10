@@ -58,6 +58,7 @@ PRODUCT_SLUG="horizon-stratum"
 DRY_RUN=false
 LOCAL_ONLY=false
 SKIP_TESTS=false
+REGISTER_ONLY=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -73,16 +74,21 @@ while [[ $# -gt 0 ]]; do
             SKIP_TESTS=true
             shift
             ;;
+        --register-only)
+            REGISTER_ONLY=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Build and publish a Stratum release. Version is read from Cargo.toml."
             echo ""
             echo "Options:"
-            echo "  --dry-run      Build only, don't publish to GitHub"
-            echo "  --local        Build for current platform only"
-            echo "  --skip-tests   Skip running tests"
-            echo "  --help, -h     Show this help message"
+            echo "  --dry-run       Build only, don't publish to GitHub"
+            echo "  --local         Build for current platform only"
+            echo "  --skip-tests    Skip running tests"
+            echo "  --register-only Skip build/sign/package, just upload to S3 and register with backend"
+            echo "  --help, -h      Show this help message"
             echo ""
             echo "Environment variables:"
             echo "  SIGNING_IDENTITY      Override signing identity"
@@ -290,7 +296,6 @@ build_all() {
             # From macOS, cross-compile to Linux
             build_target "x86_64-unknown-linux-gnu" true
             build_target "aarch64-unknown-linux-gnu" true
-            build_target "x86_64-unknown-linux-musl" true
         else
             # From Linux, cross-compile to macOS (requires osxcross)
             if command -v x86_64-apple-darwin-gcc >/dev/null 2>&1; then
@@ -812,7 +817,6 @@ create_tarballs() {
             macos-universal)       archive_name="stratum-macos-universal" ;;
             x86_64-unknown-linux-gnu)   archive_name="stratum-linux-x86_64" ;;
             aarch64-unknown-linux-gnu)  archive_name="stratum-linux-aarch64" ;;
-            x86_64-unknown-linux-musl)  archive_name="stratum-linux-x86_64-musl" ;;
             *)                     continue ;;
         esac
 
@@ -972,6 +976,12 @@ register_with_horizon_backend() {
         return
     fi
 
+    if [[ -z "${HORIZON_PRODUCT_ID:-}" ]]; then
+        log_warn "HORIZON_PRODUCT_ID not set, skipping backend registration"
+        log_info "Set HORIZON_PRODUCT_ID to the product UUID in your .env file"
+        return
+    fi
+
     if ! command -v curl >/dev/null 2>&1; then
         log_warn "curl not installed, skipping backend registration"
         return
@@ -984,145 +994,86 @@ register_with_horizon_backend() {
 
     local api_endpoint="$HORIZON_API_URL/api/v1/admin/releases/bulk"
     local s3_version_prefix="$S3_PREFIX/$VERSION"
-    local releases_json="[]"
 
-    # Build release entries for each platform
+    log_info "Product ID: $HORIZON_PRODUCT_ID"
+    log_info "Registering releases for version $VERSION..."
+
+    # Build release entries for each platform (each needs product_id and version per ReleaseCreate schema)
+    # NOTE: Database has unique constraint on (product_id, version, platform, architecture)
+    # So we can only register ONE artifact per platform/arch combo
     local releases=()
 
-    # macOS universal
-    if [[ -f "$ARTIFACTS_DIR/stratum-macos-universal-${VERSION}.tar.gz" ]]; then
-        releases+=("{
-            \"platform\": \"macos\",
-            \"architecture\": \"universal\",
-            \"s3_key\": \"$s3_version_prefix/stratum-macos-universal-${VERSION}.tar.gz\",
-            \"filename\": \"stratum-macos-universal-${VERSION}.tar.gz\",
-            \"installer_type\": \"tar.gz\"
-        }")
-    fi
-
-    # macOS arm64
-    if [[ -f "$ARTIFACTS_DIR/stratum-macos-arm64-${VERSION}.tar.gz" ]]; then
-        releases+=("{
-            \"platform\": \"macos\",
-            \"architecture\": \"arm64\",
-            \"s3_key\": \"$s3_version_prefix/stratum-macos-arm64-${VERSION}.tar.gz\",
-            \"filename\": \"stratum-macos-arm64-${VERSION}.tar.gz\",
-            \"installer_type\": \"tar.gz\"
-        }")
-    fi
-
-    # macOS x86_64
-    if [[ -f "$ARTIFACTS_DIR/stratum-macos-x86_64-${VERSION}.tar.gz" ]]; then
-        releases+=("{
-            \"platform\": \"macos\",
-            \"architecture\": \"x64\",
-            \"s3_key\": \"$s3_version_prefix/stratum-macos-x86_64-${VERSION}.tar.gz\",
-            \"filename\": \"stratum-macos-x86_64-${VERSION}.tar.gz\",
-            \"installer_type\": \"tar.gz\"
-        }")
-    fi
-
-    # macOS .pkg installer
+    # macOS universal - prefer .pkg installer (better UX than tarball)
     if [[ -f "$ARTIFACTS_DIR/stratum-${VERSION}-macos.pkg" ]]; then
         releases+=("{
+            \"product_id\": \"$HORIZON_PRODUCT_ID\",
+            \"version\": \"$VERSION\",
             \"platform\": \"macos\",
             \"architecture\": \"universal\",
             \"s3_key\": \"$s3_version_prefix/stratum-${VERSION}-macos.pkg\",
             \"filename\": \"stratum-${VERSION}-macos.pkg\",
-            \"installer_type\": \"pkg\"
+            \"installer_type\": \"pkg\",
+            \"is_latest\": true,
+            \"is_active\": true
         }")
     fi
 
-    # Linux x86_64 tarball
+    # Linux x86_64 tarball (most universal format)
     if [[ -f "$ARTIFACTS_DIR/stratum-linux-x86_64-${VERSION}.tar.gz" ]]; then
         releases+=("{
+            \"product_id\": \"$HORIZON_PRODUCT_ID\",
+            \"version\": \"$VERSION\",
             \"platform\": \"linux\",
             \"architecture\": \"x64\",
             \"s3_key\": \"$s3_version_prefix/stratum-linux-x86_64-${VERSION}.tar.gz\",
             \"filename\": \"stratum-linux-x86_64-${VERSION}.tar.gz\",
-            \"installer_type\": \"tar.gz\"
+            \"installer_type\": \"tar.gz\",
+            \"is_latest\": true,
+            \"is_active\": true
         }")
     fi
 
     # Linux aarch64 tarball
     if [[ -f "$ARTIFACTS_DIR/stratum-linux-aarch64-${VERSION}.tar.gz" ]]; then
         releases+=("{
+            \"product_id\": \"$HORIZON_PRODUCT_ID\",
+            \"version\": \"$VERSION\",
             \"platform\": \"linux\",
             \"architecture\": \"arm64\",
             \"s3_key\": \"$s3_version_prefix/stratum-linux-aarch64-${VERSION}.tar.gz\",
             \"filename\": \"stratum-linux-aarch64-${VERSION}.tar.gz\",
-            \"installer_type\": \"tar.gz\"
+            \"installer_type\": \"tar.gz\",
+            \"is_latest\": true,
+            \"is_active\": true
         }")
     fi
 
-    # Linux .deb
-    if [[ -f "$ARTIFACTS_DIR/stratum_${VERSION}_amd64.deb" ]]; then
-        releases+=("{
-            \"platform\": \"linux\",
-            \"architecture\": \"x64\",
-            \"s3_key\": \"$s3_version_prefix/stratum_${VERSION}_amd64.deb\",
-            \"filename\": \"stratum_${VERSION}_amd64.deb\",
-            \"installer_type\": \"deb\"
-        }")
-    fi
-
-    # Linux .rpm
-    if [[ -f "$ARTIFACTS_DIR/stratum-${VERSION}-1.x86_64.rpm" ]]; then
-        releases+=("{
-            \"platform\": \"linux\",
-            \"architecture\": \"x64\",
-            \"s3_key\": \"$s3_version_prefix/stratum-${VERSION}-1.x86_64.rpm\",
-            \"filename\": \"stratum-${VERSION}-1.x86_64.rpm\",
-            \"installer_type\": \"rpm\"
-        }")
-    fi
+    # NOTE: .deb and .rpm are still built and uploaded to S3, but not registered
+    # in the backend due to the unique constraint. Users can still download them directly.
 
     if [[ ${#releases[@]} -eq 0 ]]; then
         log_warn "No release artifacts found to register"
         return
     fi
 
-    # Join releases array into JSON array
+    log_info "Found ${#releases[@]} release artifact(s) to register"
+
+    # Join releases array into JSON object with product_id and version at top level
+    local releases_array
+    releases_array=$(printf '%s,' "${releases[@]}")
+    releases_array="[${releases_array%,}]"
+
     local releases_json
-    releases_json=$(printf '%s,' "${releases[@]}")
-    releases_json="[${releases_json%,}]"
-
-    # Get product ID from backend (or use cached/hardcoded value)
-    # For now, we'll query the product by slug
-    log_info "Fetching product ID for $PRODUCT_SLUG..."
-    local product_response
-    product_response=$(curl -s "$HORIZON_API_URL/api/v1/products/$PRODUCT_SLUG" 2>/dev/null || echo '{}')
-
-    local product_id
-    product_id=$(echo "$product_response" | grep -o '"id":"[^"]*"' | head -1 | sed 's/"id":"\([^"]*\)"/\1/')
-
-    if [[ -z "$product_id" ]]; then
-        log_warn "Could not fetch product ID for $PRODUCT_SLUG, skipping backend registration"
-        log_info "Ensure the product exists in the Horizon Analytic backend"
-        return
-    fi
-
-    log_info "Product ID: $product_id"
-    log_info "Registering ${#releases[@]} release(s) for version $VERSION..."
-
-    # Build bulk request payload
-    local payload
-    payload=$(cat << EOF
-{
-    "product_id": "$product_id",
-    "version": "$VERSION",
-    "releases": $releases_json,
-    "mark_as_latest": true
-}
-EOF
-)
+    releases_json="{\"product_id\": \"$HORIZON_PRODUCT_ID\", \"version\": \"$VERSION\", \"releases\": $releases_array}"
 
     # Send registration request
+    log_info "Sending bulk registration request..."
     local response
     response=$(curl -s -w "\n%{http_code}" -X POST "$api_endpoint" \
+        --connect-timeout 10 --max-time 60 \
         -H "Content-Type: application/json" \
         -H "X-Admin-API-Key: $HORIZON_ADMIN_API_KEY" \
-        -d "$payload" 2>/dev/null)
+        -d "$releases_json" 2>/dev/null || echo -e "\n000")
 
     local http_code
     http_code=$(echo "$response" | tail -1)
@@ -1145,13 +1096,14 @@ publish_to_github() {
         return
     fi
 
-    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-        log_warn "GITHUB_TOKEN not set, skipping GitHub release"
+    if ! command -v gh >/dev/null 2>&1; then
+        log_warn "GitHub CLI (gh) not installed, skipping GitHub release"
         return
     fi
 
-    if ! command -v gh >/dev/null 2>&1; then
-        log_warn "GitHub CLI (gh) not installed, skipping GitHub release"
+    # Check if gh is authenticated (works with gh auth login, no GITHUB_TOKEN needed)
+    if ! gh auth status >/dev/null 2>&1; then
+        log_warn "GitHub CLI not authenticated. Run 'gh auth login' first."
         return
     fi
 
@@ -1246,6 +1198,19 @@ main() {
 
     if [[ "$LOCAL_ONLY" == "true" ]]; then
         log_info "LOCAL MODE - Building for current platform only"
+    fi
+
+    if [[ "$REGISTER_ONLY" == "true" ]]; then
+        log_info "REGISTER ONLY MODE - Skipping build/sign/package steps"
+
+        # S3 and Backend Integration
+        upload_uninstall_script
+        upload_release_artifacts
+        register_with_horizon_backend
+
+        log_step "Registration Complete"
+        log_success "Done!"
+        return
     fi
 
     check_requirements
