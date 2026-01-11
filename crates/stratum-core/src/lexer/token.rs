@@ -85,6 +85,13 @@ pub enum TokenKind {
     Null,
 
     // ========== String tokens (for interpolation support) ==========
+    /// Start of a multiline string: """ (must match before StringStart)
+    #[token("\"\"\"", priority = 10)]
+    MultiLineStringStart,
+
+    /// End of a multiline string: """ (produced by lexer's multiline string mode)
+    MultiLineStringEnd,
+
     /// Start of a regular string: "
     #[token("\"")]
     StringStart,
@@ -341,6 +348,8 @@ impl std::fmt::Display for TokenKind {
             Self::True => write!(f, "true"),
             Self::False => write!(f, "false"),
             Self::Null => write!(f, "null"),
+            Self::MultiLineStringStart => write!(f, "\"\"\""),
+            Self::MultiLineStringEnd => write!(f, "\"\"\""),
             Self::StringStart => write!(f, "\""),
             Self::StringPart => write!(f, "string"),
             Self::StringEnd => write!(f, "\""),

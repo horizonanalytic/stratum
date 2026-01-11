@@ -98,8 +98,12 @@ enum LexerMode {
     Normal,
     /// Inside a string literal
     String,
+    /// Inside a multiline string literal (triple-quoted)
+    MultiLineString,
     /// Inside an interpolation expression within a string
     Interpolation { depth: u32 },
+    /// Inside an interpolation expression within a multiline string
+    MultiLineInterpolation { depth: u32 },
 }
 
 /// The Stratum lexer
@@ -154,7 +158,9 @@ impl<'source> Lexer<'source> {
         match self.mode {
             LexerMode::Normal => self.lex_normal(),
             LexerMode::String => self.lex_string(),
+            LexerMode::MultiLineString => self.lex_multiline_string(),
             LexerMode::Interpolation { .. } => self.lex_interpolation(),
+            LexerMode::MultiLineInterpolation { .. } => self.lex_multiline_interpolation(),
         }
     }
 
@@ -180,9 +186,11 @@ impl<'source> Lexer<'source> {
                 let end = self.position + span_range.end;
                 self.position = end;
 
-                // Handle string start - switch to string mode
+                // Handle string start - switch to appropriate string mode
                 if kind == TokenKind::StringStart {
                     self.mode = LexerMode::String;
+                } else if kind == TokenKind::MultiLineStringStart {
+                    self.mode = LexerMode::MultiLineString;
                 }
 
                 Some(Token::new(
@@ -425,6 +433,247 @@ impl<'source> Lexer<'source> {
                             // Nested string in interpolation
                             self.mode_stack.push(self.mode);
                             self.mode = LexerMode::String;
+                        }
+                        _ => {}
+                    }
+                }
+
+                Some(Token::new(
+                    kind,
+                    Span::new(start as u32, end as u32),
+                    lexeme,
+                ))
+            }
+            Some(Err(())) => {
+                // Error recovery
+                let start = self.position;
+                let invalid_char = remaining.chars().next()?;
+                let char_len = invalid_char.len_utf8();
+                self.position += char_len;
+
+                self.errors.push(SpannedError::new(
+                    LexError::UnexpectedChar,
+                    Span::new(start as u32, self.position as u32),
+                ));
+
+                Some(Token::new(
+                    TokenKind::Error,
+                    Span::new(start as u32, self.position as u32),
+                    &self.source[start..self.position],
+                ))
+            }
+            None => Some(Token::new(
+                TokenKind::Eof,
+                Span::new(self.position as u32, self.position as u32),
+                "",
+            )),
+        }
+    }
+
+    /// Lex inside a multiline string literal (triple-quoted)
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::unnecessary_wraps)]
+    fn lex_multiline_string(&mut self) -> Option<Token> {
+        let start = self.position;
+        let mut content = String::new();
+        let chars: Vec<char> = self.source[self.position..].chars().collect();
+        let mut i = 0;
+
+        while i < chars.len() {
+            let c = chars[i];
+            match c {
+                '"' => {
+                    // Check for end of multiline string (""")
+                    if i + 2 < chars.len() && chars[i + 1] == '"' && chars[i + 2] == '"' {
+                        // End of multiline string
+                        if !content.is_empty() {
+                            // First emit the string part
+                            let token = Token::new(
+                                TokenKind::StringPart,
+                                Span::new(start as u32, self.position as u32),
+                                &content,
+                            );
+                            return Some(token);
+                        }
+                        // Emit multiline string end
+                        self.position += 3;
+                        self.mode = LexerMode::Normal;
+                        return Some(Token::new(
+                            TokenKind::MultiLineStringEnd,
+                            Span::new((self.position - 3) as u32, self.position as u32),
+                            "\"\"\"",
+                        ));
+                    }
+                    // Single or double quote inside multiline string - just include it
+                    content.push(c);
+                    self.position += 1;
+                    i += 1;
+                }
+                '{' => {
+                    // Start of interpolation
+                    if !content.is_empty() {
+                        // First emit the string part
+                        let token = Token::new(
+                            TokenKind::StringPart,
+                            Span::new(start as u32, self.position as u32),
+                            &content,
+                        );
+                        return Some(token);
+                    }
+                    // Emit interpolation start
+                    let interp_start = self.position;
+                    self.position += 1;
+                    self.mode_stack.push(LexerMode::MultiLineString);
+                    self.mode = LexerMode::MultiLineInterpolation { depth: 1 };
+                    return Some(Token::new(
+                        TokenKind::InterpolationStart,
+                        Span::new(interp_start as u32, self.position as u32),
+                        "{",
+                    ));
+                }
+                '\\' => {
+                    // Escape sequence
+                    i += 1;
+                    if i >= chars.len() {
+                        self.errors.push(SpannedError::new(
+                            LexError::UnterminatedString,
+                            Span::new(start as u32, self.source.len() as u32),
+                        ));
+                        self.mode = LexerMode::Normal;
+                        return Some(Token::new(
+                            TokenKind::Error,
+                            Span::new(start as u32, self.source.len() as u32),
+                            &self.source[start..],
+                        ));
+                    }
+                    let escaped = chars[i];
+                    let escape_char = match escaped {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        '\\' => '\\',
+                        '"' => '"',
+                        '{' => '{',
+                        '}' => '}',
+                        '0' => '\0',
+                        _ => {
+                            self.errors.push(SpannedError::new(
+                                LexError::InvalidEscape(escaped),
+                                Span::new(
+                                    (self.position + i - 1) as u32,
+                                    (self.position + i + 1) as u32,
+                                ),
+                            ));
+                            escaped
+                        }
+                    };
+                    content.push(escape_char);
+                    self.position += 1 + escaped.len_utf8();
+                    i += 1;
+                }
+                '\n' => {
+                    // Newlines are allowed in multiline strings
+                    content.push(c);
+                    self.position += 1;
+                    i += 1;
+                }
+                _ => {
+                    content.push(c);
+                    self.position += c.len_utf8();
+                    i += 1;
+                }
+            }
+        }
+
+        // Reached end of input while in string
+        self.errors.push(SpannedError::new(
+            LexError::UnterminatedString,
+            Span::new(start as u32, self.source.len() as u32),
+        ));
+        self.mode = LexerMode::Normal;
+        if content.is_empty() {
+            Some(Token::new(
+                TokenKind::Error,
+                Span::new(start as u32, self.source.len() as u32),
+                "",
+            ))
+        } else {
+            Some(Token::new(
+                TokenKind::StringPart,
+                Span::new(start as u32, self.source.len() as u32),
+                &content,
+            ))
+        }
+    }
+
+    /// Lex inside an interpolation expression within a multiline string
+    fn lex_multiline_interpolation(&mut self) -> Option<Token> {
+        if self.position >= self.source.len() {
+            self.errors.push(SpannedError::new(
+                LexError::UnterminatedString,
+                Span::new(self.position as u32, self.position as u32),
+            ));
+            return Some(Token::new(
+                TokenKind::Eof,
+                Span::new(self.position as u32, self.position as u32),
+                "",
+            ));
+        }
+
+        let remaining = &self.source[self.position..];
+
+        // Check for closing brace
+        if remaining.starts_with('}') {
+            if let LexerMode::MultiLineInterpolation { depth } = self.mode {
+                if depth == 1 {
+                    // End of interpolation
+                    let start = self.position;
+                    self.position += 1;
+                    self.mode = self.mode_stack.pop().unwrap_or(LexerMode::Normal);
+                    return Some(Token::new(
+                        TokenKind::InterpolationEnd,
+                        Span::new(start as u32, self.position as u32),
+                        "}",
+                    ));
+                }
+            }
+        }
+
+        // Use normal lexing for the interpolation content
+        let mut logos_lexer = TokenKind::lexer(remaining);
+
+        match logos_lexer.next() {
+            Some(Ok(kind)) => {
+                let span_range = logos_lexer.span();
+                let lexeme = logos_lexer.slice();
+                let start = self.position + span_range.start;
+                let end = self.position + span_range.end;
+                self.position = end;
+
+                // Track brace depth
+                if let LexerMode::MultiLineInterpolation { depth } = &mut self.mode {
+                    match kind {
+                        TokenKind::LBrace => *depth += 1,
+                        TokenKind::RBrace => {
+                            *depth -= 1;
+                            if *depth == 0 {
+                                self.mode = self.mode_stack.pop().unwrap_or(LexerMode::Normal);
+                                return Some(Token::new(
+                                    TokenKind::InterpolationEnd,
+                                    Span::new(start as u32, end as u32),
+                                    "}",
+                                ));
+                            }
+                        }
+                        TokenKind::StringStart => {
+                            // Nested string in interpolation
+                            self.mode_stack.push(self.mode);
+                            self.mode = LexerMode::String;
+                        }
+                        TokenKind::MultiLineStringStart => {
+                            // Nested multiline string in interpolation
+                            self.mode_stack.push(self.mode);
+                            self.mode = LexerMode::MultiLineString;
                         }
                         _ => {}
                     }
@@ -836,5 +1085,58 @@ mod tests {
         // "y" on line 2
         let y_token = tokens.iter().find(|t| t.lexeme == "y").unwrap();
         assert_eq!(index.location(y_token.span.start), Location::new(2, 5));
+    }
+
+    #[test]
+    fn lex_multiline_string() {
+        let tokens = lex(r#""""hello
+world""""#);
+        assert_eq!(tokens[0].kind, TokenKind::MultiLineStringStart);
+        assert_eq!(tokens[1].kind, TokenKind::StringPart);
+        assert_eq!(tokens[1].lexeme, "hello\nworld");
+        assert_eq!(tokens[2].kind, TokenKind::MultiLineStringEnd);
+    }
+
+    #[test]
+    fn lex_multiline_string_with_quotes() {
+        // Note: The content is "He said 'hello'" - using single quotes to avoid quote counting issues
+        let tokens = lex(r#""""He said 'hello'""""#);
+        assert_eq!(tokens[0].kind, TokenKind::MultiLineStringStart);
+        assert_eq!(tokens[1].kind, TokenKind::StringPart);
+        assert_eq!(tokens[1].lexeme, "He said 'hello'");
+        assert_eq!(tokens[2].kind, TokenKind::MultiLineStringEnd);
+    }
+
+    #[test]
+    fn lex_multiline_string_with_double_quotes() {
+        // Test with double quotes in the middle (not at end)
+        // Unescaped double quotes work in multiline strings as long as there aren't 3 in a row
+        let tokens = lex(r#""""She said "hi" to him""""#);
+        assert_eq!(tokens[0].kind, TokenKind::MultiLineStringStart);
+        assert_eq!(tokens[1].kind, TokenKind::StringPart);
+        assert_eq!(tokens[1].lexeme, "She said \"hi\" to him");
+        assert_eq!(tokens[2].kind, TokenKind::MultiLineStringEnd);
+    }
+
+    #[test]
+    fn lex_multiline_string_interpolation() {
+        let tokens = lex(r#""""Hello {name}!""""#);
+        assert_eq!(tokens[0].kind, TokenKind::MultiLineStringStart);
+        assert_eq!(tokens[1].kind, TokenKind::StringPart);
+        assert_eq!(tokens[1].lexeme, "Hello ");
+        assert_eq!(tokens[2].kind, TokenKind::InterpolationStart);
+        assert_eq!(tokens[3].kind, TokenKind::Ident);
+        assert_eq!(tokens[3].lexeme, "name");
+        assert_eq!(tokens[4].kind, TokenKind::InterpolationEnd);
+        assert_eq!(tokens[5].kind, TokenKind::StringPart);
+        assert_eq!(tokens[5].lexeme, "!");
+        assert_eq!(tokens[6].kind, TokenKind::MultiLineStringEnd);
+    }
+
+    #[test]
+    fn lex_empty_multiline_string() {
+        let tokens = lex(r#""""""""#);
+        assert_eq!(tokens[0].kind, TokenKind::MultiLineStringStart);
+        assert_eq!(tokens[1].kind, TokenKind::MultiLineStringEnd);
     }
 }

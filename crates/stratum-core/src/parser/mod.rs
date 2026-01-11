@@ -1831,8 +1831,8 @@ impl Parser {
                     Err(ParseError::new(ParseErrorKind::ExpectedPattern, span))
                 }
             }
-            TokenKind::StringStart => {
-                // String literal pattern
+            TokenKind::StringStart | TokenKind::MultiLineStringStart => {
+                // String literal pattern (regular or multiline)
                 let lit = self.string_literal()?;
                 let span = lit.span;
                 if let ExprKind::Literal(l) = lit.kind {
@@ -2230,7 +2230,7 @@ impl Parser {
             TokenKind::Float => self.float_literal(),
             TokenKind::True | TokenKind::False => self.bool_literal(),
             TokenKind::Null => self.null_literal(),
-            TokenKind::StringStart => self.string_literal(),
+            TokenKind::StringStart | TokenKind::MultiLineStringStart => self.string_literal(),
 
             // Identifiers and struct init
             TokenKind::Ident | TokenKind::UnicodeIdent => self.ident_or_struct_init(),
@@ -2315,7 +2315,7 @@ impl Parser {
             TokenKind::Float => self.float_literal(),
             TokenKind::True | TokenKind::False => self.bool_literal(),
             TokenKind::Null => self.null_literal(),
-            TokenKind::StringStart => self.string_literal(),
+            TokenKind::StringStart | TokenKind::MultiLineStringStart => self.string_literal(),
             _ => Err(ParseError::new(
                 ParseErrorKind::ExpectedExpression,
                 self.current().span,
@@ -2324,9 +2324,19 @@ impl Parser {
     }
 
     /// Parse a string literal (with interpolation support)
+    /// Handles both regular strings ("...") and multiline strings ("""...""")
     fn string_literal(&mut self) -> ParseResult<Expr> {
         let start = self.current().span.start;
-        self.expect(TokenKind::StringStart)?;
+
+        // Determine if this is a multiline string
+        let is_multiline = self.check(TokenKind::MultiLineStringStart);
+        let end_token_kind = if is_multiline {
+            self.expect(TokenKind::MultiLineStringStart)?;
+            TokenKind::MultiLineStringEnd
+        } else {
+            self.expect(TokenKind::StringStart)?;
+            TokenKind::StringEnd
+        };
 
         let mut parts = Vec::new();
 
@@ -2342,7 +2352,7 @@ impl Parser {
                     parts.push(StringPart::Expr(expr));
                     self.expect(TokenKind::InterpolationEnd)?;
                 }
-                TokenKind::StringEnd => {
+                kind if kind == end_token_kind => {
                     let end_token = self.advance();
                     let end = end_token.span.end;
 
@@ -2787,7 +2797,7 @@ impl Parser {
 
         // Try to detect if this is a map literal
         // Map literals have the form { key: value, ... } where key is usually a string
-        if self.check(TokenKind::StringStart) {
+        if self.check(TokenKind::StringStart) || self.check(TokenKind::MultiLineStringStart) {
             // Likely a map literal
             return self.map_literal_after_brace(start);
         }

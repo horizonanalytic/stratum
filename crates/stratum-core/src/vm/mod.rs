@@ -6825,6 +6825,58 @@ impl VM {
                 Ok(Value::Null)
             }
 
+            // Query methods
+            "query" => {
+                // query() -> CubeQuery (create a new query on this cube)
+                use crate::data::CubeQuery;
+                use std::sync::{Arc, Mutex};
+                let query = CubeQuery::new(cube);
+                Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+            }
+
+            "slice" => {
+                // slice(dimension, value) -> CubeQuery (create a query with a slice)
+                if _args.len() < 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "slice requires 2 arguments: dimension name and value".to_string()
+                    )));
+                }
+                let dim_name = match &_args[0] {
+                    Value::String(s) => (**s).clone(),
+                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: other.type_name(),
+                        operation: "slice",
+                    })),
+                };
+                let value = match &_args[1] {
+                    Value::String(s) => (**s).clone(),
+                    Value::Int(n) => n.to_string(),
+                    Value::Float(n) => n.to_string(),
+                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String, Int, or Float",
+                        got: other.type_name(),
+                        operation: "slice",
+                    })),
+                };
+
+                use crate::data::CubeQuery;
+                use std::sync::{Arc, Mutex};
+                let query = CubeQuery::new(cube).slice(dim_name, value);
+                Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
+            }
+
+            "to_dataframe" => {
+                // to_dataframe() -> DataFrame (convert cube data to DataFrame)
+                // Create a query that selects all and execute
+                use crate::data::CubeQuery;
+                let query = CubeQuery::new(cube);
+                let df = query.to_dataframe().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(df)))
+            }
+
             _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
                 type_name: "Cube".to_string(),
                 field: method.to_string(),
@@ -7220,6 +7272,160 @@ impl VM {
 
                 Ok(q.cube_name().map(Value::string).unwrap_or(Value::Null))
             }
+
+            // OLAP operations
+            "slice" => {
+                // slice(dimension, value) -> CubeQuery
+                if args.len() < 2 {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "slice requires 2 arguments: dimension name and value".to_string()
+                    )));
+                }
+                let dim_name = match &args[0] {
+                    Value::String(s) => (**s).clone(),
+                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String",
+                        got: other.type_name(),
+                        operation: "slice",
+                    })),
+                };
+                let value = match &args[1] {
+                    Value::String(s) => (**s).clone(),
+                    Value::Int(n) => n.to_string(),
+                    Value::Float(n) => n.to_string(),
+                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                        expected: "String, Int, or Float",
+                        got: other.type_name(),
+                        operation: "slice",
+                    })),
+                };
+
+                let mut guard = query
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
+                let inner_query = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+
+                use std::sync::{Arc, Mutex};
+                let new_query = inner_query.slice(dim_name, value);
+                Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+            }
+
+            "cube_select" => {
+                // cube_select(col1, col2, ...) -> CubeQuery
+                if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "cube_select requires at least one column name".to_string()
+                    )));
+                }
+
+                let mut columns = Vec::new();
+                for arg in args {
+                    let col = match arg {
+                        Value::String(s) => (**s).clone(),
+                        other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "cube_select",
+                        })),
+                    };
+                    columns.push(col);
+                }
+
+                let mut guard = query
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
+                let inner_query = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+
+                use std::sync::{Arc, Mutex};
+                let new_query = inner_query.select(columns);
+                Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+            }
+
+            "cube_group_by" => {
+                // cube_group_by(col1, col2, ...) -> CubeQuery
+                if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "cube_group_by requires at least one column name".to_string()
+                    )));
+                }
+
+                let mut columns = Vec::new();
+                for arg in args {
+                    let col = match arg {
+                        Value::String(s) => (**s).clone(),
+                        other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "cube_group_by",
+                        })),
+                    };
+                    columns.push(col);
+                }
+
+                let mut guard = query
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
+                let inner_query = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+
+                use std::sync::{Arc, Mutex};
+                let new_query = inner_query.group_by(columns);
+                Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+            }
+
+            "cube_order_by" => {
+                // cube_order_by(col1, col2, ...) -> CubeQuery (prefix with - for descending)
+                if args.is_empty() {
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                        "cube_order_by requires at least one column name".to_string()
+                    )));
+                }
+
+                let mut columns = Vec::new();
+                for arg in args {
+                    let col = match arg {
+                        Value::String(s) => (**s).clone(),
+                        other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "cube_order_by",
+                        })),
+                    };
+                    columns.push(col);
+                }
+
+                let mut guard = query
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
+                let inner_query = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+
+                use std::sync::{Arc, Mutex};
+                let new_query = inner_query.order_by(columns);
+                Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
+            }
+
+            "execute" => {
+                // execute() -> DataFrame (run the query and return results)
+                let mut guard = query
+                    .lock()
+                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
+                let inner_query = guard
+                    .take()
+                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+
+                let df = inner_query.to_dataframe().map_err(|e| {
+                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                })?;
+                Ok(Value::DataFrame(std::sync::Arc::new(df)))
+            }
+
             _ => Err(self.runtime_error(RuntimeErrorKind::UndefinedField {
                 type_name: "CubeQuery".to_string(),
                 field: method.to_string(),

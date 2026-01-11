@@ -1,0 +1,214 @@
+// Earthquake Analytics - Data Analysis Example
+// Demonstrates: HTTP API fetch, DataFrame operations, OLAP cube, SQL analytics
+//
+// This example downloads real earthquake data from the USGS API,
+// processes it into a DataFrame, builds an OLAP cube for metadata,
+// and runs SQL-based analytical queries.
+
+// Helper function to categorize magnitude
+fx categorize_magnitude(mag: Float) -> String {
+    if mag >= 7.0 {
+        "Major (7.0+)"
+    } else {
+        if mag >= 6.0 {
+            "Strong (6.0-6.9)"
+        } else {
+            if mag >= 5.0 {
+                "Moderate (5.0-5.9)"
+            } else {
+                "Light (4.5-4.9)"
+            }
+        }
+    }
+}
+
+// Helper function to categorize depth
+fx categorize_depth(depth: Float) -> String {
+    if depth >= 300.0 {
+        "Deep (300+ km)"
+    } else {
+        if depth >= 70.0 {
+            "Intermediate (70-300 km)"
+        } else {
+            "Shallow (0-70 km)"
+        }
+    }
+}
+
+fx main() {
+    print("Earthquake Data Analytics");
+    print("=========================");
+    print("");
+
+    // =========================================================================
+    // Step 1: Download earthquake data from USGS API
+    // =========================================================================
+    print("Step 1: Fetching earthquake data from USGS API...");
+
+    // Fetch last 30 days of significant earthquakes (magnitude 4.5+)
+    let api_url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_month.geojson";
+    let response = Http.get(api_url);
+    let geojson = Json.parse(response.body);
+
+    print("  API Response received!");
+
+    // =========================================================================
+    // Step 2: Parse GeoJSON and build DataFrame
+    // =========================================================================
+    print("");
+    print("Step 2: Parsing earthquake data into DataFrame...");
+
+    // Extract features array from GeoJSON
+    let features = geojson.features;
+
+    // Build lists for each column
+    let magnitudes = [];
+    let depths = [];
+    let places = [];
+    let times = [];
+    let mag_categories = [];
+    let depth_categories = [];
+
+    // Process each earthquake
+    for feature in features {
+        let props = feature.properties;
+        let geom = feature.geometry;
+
+        // Extract values directly from JSON
+        let mag = props.mag;
+        let coords = geom.coordinates;
+        let depth = coords[2];
+        let place = props.place;
+        let time_ms = props.time;
+
+        // Format timestamp as date (convert to int for DateTime)
+        let dt = DateTime.from_timestamp(int(time_ms));
+        let date = DateTime.format(dt, "%Y-%m-%d");
+
+        // Categorize using helper functions
+        let mag_cat = categorize_magnitude(mag);
+        let depth_cat = categorize_depth(depth);
+
+        // Append to lists (convert to float to ensure consistent types)
+        magnitudes.push(float(mag));
+        depths.push(float(depth));
+        places.push(place);
+        times.push(date);
+        mag_categories.push(mag_cat);
+        depth_categories.push(depth_cat);
+    }
+
+    // Create DataFrame
+    let earthquakes = Data.from_columns("magnitude", magnitudes, "depth_km", depths, "place", places, "date", times, "mag_category", mag_categories, "depth_category", depth_categories);
+
+    let row_count = earthquakes.rows();
+    print("  Created DataFrame with {row_count} earthquakes");
+
+    // =========================================================================
+    // Step 3: Build OLAP Cube
+    // =========================================================================
+    print("");
+    print("Step 3: Building OLAP Cube...");
+
+    // Add event count column for aggregation
+    let event_counts = [];
+    let i = 0;
+    while i < row_count {
+        event_counts.push(1);
+        i = i + 1;
+    }
+
+    let eq_with_count = Data.from_columns("magnitude", magnitudes, "depth_km", depths, "date", times, "mag_category", mag_categories, "depth_category", depth_categories, "event_count", event_counts);
+
+    // Build cube using method chaining
+    let cube = Cube.from("EarthquakeAnalysis", eq_with_count).dimension("mag_category").dimension("depth_category").dimension("date").measure("magnitude", "mean").measure("depth_km", "mean").measure("event_count", "sum").build();
+
+    print("  OLAP Cube built successfully!");
+    let dims = cube.dimensions();
+    let measures = cube.measures();
+    print("  Dimensions: {dims}");
+    print("  Measures: {measures}");
+
+    // =========================================================================
+    // Step 4: Run Analytical Queries with SQL
+    // =========================================================================
+    print("");
+    print("Step 4: Running Analytical Queries");
+    print("-----------------------------------");
+
+    // Query 1: Earthquake count by magnitude category
+    print("");
+    print("Query 1: Earthquakes by Magnitude Category");
+    let q1 = "SELECT mag_category, COUNT(*) as count, ROUND(AVG(magnitude), 2) as avg_mag FROM df GROUP BY mag_category ORDER BY count DESC";
+    let result1 = Data.sql(earthquakes, q1);
+    print(result1);
+
+    // Query 2: Earthquake count by depth category
+    print("");
+    print("Query 2: Earthquakes by Depth Category");
+    let q2 = "SELECT depth_category, COUNT(*) as count, ROUND(AVG(depth_km), 1) as avg_depth FROM df GROUP BY depth_category ORDER BY count DESC";
+    let result2 = Data.sql(earthquakes, q2);
+    print(result2);
+
+    // Query 3: Cross-tabulation of magnitude vs depth
+    print("");
+    print("Query 3: Magnitude vs Depth Cross-Analysis");
+    let q3 = "SELECT mag_category, depth_category, COUNT(*) as count FROM df GROUP BY mag_category, depth_category ORDER BY mag_category, depth_category";
+    let result3 = Data.sql(earthquakes, q3);
+    print(result3);
+
+    // Query 4: Major earthquakes (7.0+) statistics
+    print("");
+    print("Query 4: Major Earthquakes (7.0+) Statistics");
+    let q4 = "SELECT depth_category, COUNT(*) as count, ROUND(AVG(magnitude), 2) as avg_mag, ROUND(MAX(magnitude), 1) as max_mag FROM df WHERE magnitude >= 7.0 GROUP BY depth_category ORDER BY count DESC";
+    let result4 = Data.sql(earthquakes, q4);
+    print(result4);
+
+    // Query 5: Daily earthquake counts
+    print("");
+    print("Query 5: Daily Earthquake Summary (Last 10 Days)");
+    let q5 = "SELECT date, COUNT(*) as daily_count, ROUND(AVG(magnitude), 2) as avg_mag, ROUND(MAX(magnitude), 1) as max_mag FROM df GROUP BY date ORDER BY date DESC LIMIT 10";
+    let result5 = Data.sql(earthquakes, q5);
+    print(result5);
+
+    // Query 6: Top 10 strongest earthquakes
+    print("");
+    print("Query 6: Top 10 Strongest Earthquakes");
+    let q6 = "SELECT magnitude, depth_km, place, date FROM df ORDER BY magnitude DESC LIMIT 10";
+    let result6 = Data.sql(earthquakes, q6);
+    print(result6);
+
+    // =========================================================================
+    // Step 5: Save processed data
+    // =========================================================================
+    print("");
+    print("Step 5: Saving processed data...");
+
+    // Save earthquake data
+    Data.write_csv(earthquakes, "earthquakes_processed.csv");
+    print("  Saved to earthquakes_processed.csv");
+
+    // Save cube data to parquet
+    let cube_df = cube.to_dataframe();
+    Data.write_parquet(cube_df, "earthquake_cube.parquet");
+    print("  Saved cube data to earthquake_cube.parquet");
+
+    // =========================================================================
+    // Summary
+    // =========================================================================
+    print("");
+    print("=========================");
+    print("Analysis Complete!");
+    print("=========================");
+    print("");
+    print("This example demonstrated:");
+    print("  1. Fetching data from a REST API (USGS Earthquake API)");
+    print("  2. Parsing JSON and building a DataFrame");
+    print("  3. Building an OLAP cube with dimensions and measures");
+    print("  4. SQL-based analytical queries (GROUP BY, ORDER BY, aggregations)");
+    print("  5. Exporting to CSV and Parquet formats");
+    print("");
+    print("Output files:");
+    print("  - earthquakes_processed.csv");
+    print("  - earthquake_cube.parquet");
+}

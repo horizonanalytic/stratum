@@ -1626,6 +1626,14 @@ impl TypeChecker {
                 Type::String
             }
             Type::Error => Type::Error,
+            // Type variables (from dynamic sources like Json.parse) - constrain to list
+            Type::TypeVar(_) => {
+                let elem_type = self.inference.fresh_var();
+                let list_type = Type::list(elem_type.clone());
+                // Try to unify with list type - if it fails, allow anyway for dynamic typing
+                self.inference.unify(&container, &list_type, span);
+                elem_type
+            }
             _ => {
                 self.errors
                     .push(TypeError::not_indexable(container.clone(), span));
