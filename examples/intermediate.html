@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-06b2c33e.js";
+            window.path_to_searchindex_js = "../searchindex-d99b982a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-521f66e1.js"></script>
@@ -345,6 +345,88 @@ Unique words: 16
 <li>Map operations: <code>get()</code>, index assignment <code>counts[word]</code></li>
 <li>Null coalescing: <code>??</code> operator for default values</li>
 <li>String length with <code>len()</code></li>
+</ul>
+<hr>
+<h2 id="pipeline-demo"><a class="header" href="#pipeline-demo">Pipeline Demo</a></h2>
+<p>Demonstrates the <code>|&gt;</code> (pipe) operator for functional data transformation.</p>
+<pre><code class="language-stratum">// Pipeline Operator Demo
+// Showcases the |&gt; (pipe) operator for functional data transformation
+//
+// The pipe operator passes a value through a chain of functions:
+//   value |&gt; f           =&gt;  f(value)
+//   value |&gt; f(x)        =&gt;  f(value, x)
+//   value |&gt; f(_, x)     =&gt;  f(value, x)    (placeholder syntax)
+//   value |&gt; f(x, _)     =&gt;  f(x, value)    (value in second position)
+
+fx double(x: Int) -&gt; Int { x * 2 }
+fx triple(x: Int) -&gt; Int { x * 3 }
+fx add(a: Int, b: Int) -&gt; Int { a + b }
+fx subtract(a: Int, b: Int) -&gt; Int { a - b }
+fx square(x: Int) -&gt; Int { x * x }
+
+fx greet(name: String) -&gt; String {
+    "Hello, " + name + "!"
+}
+
+fx wrap(text: String, prefix: String, suffix: String) -&gt; String {
+    prefix + text + suffix
+}
+
+fx main() {
+    println("=== Pipeline Operator (|&gt;) Demo ===");
+
+    // Basic pipe - passes value as first argument
+    let result1 = 5 |&gt; double;
+    println("5 |&gt; double = " + str(result1));  // 10
+
+    // Pipe with additional arguments
+    let result2 = 10 |&gt; add(5);
+    println("10 |&gt; add(5) = " + str(result2));  // 15
+
+    // Chained pipelines
+    let result3 = 5 |&gt; double |&gt; add(3) |&gt; triple;
+    println("5 |&gt; double |&gt; add(3) |&gt; triple = " + str(result3));  // 39
+
+    // Placeholder syntax for argument positioning
+    let result4 = 10 |&gt; subtract(_, 3);   // subtract(10, 3) = 7
+    let result5 = 10 |&gt; subtract(3, _);   // subtract(3, 10) = -7
+    println("10 |&gt; subtract(_, 3) = " + str(result4));
+    println("10 |&gt; subtract(3, _) = " + str(result5));
+
+    // String pipelines
+    let greeting = "World" |&gt; greet;
+    println(greeting);  // "Hello, World!"
+
+    let wrapped = "content" |&gt; wrap(_, "[", "]");
+    println(wrapped);  // "[content]"
+
+    // Multiple placeholders (value used multiple times)
+    let squared = 7 |&gt; add(_, _);  // add(7, 7) = 14
+    println("7 |&gt; add(_, _) = " + str(squared));
+
+    println("=== All pipeline tests passed! ===");
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>=== Pipeline Operator (|&gt;) Demo ===
+5 |&gt; double = 10
+10 |&gt; add(5) = 15
+5 |&gt; double |&gt; add(3) |&gt; triple = 39
+10 |&gt; subtract(_, 3) = 7
+10 |&gt; subtract(3, _) = -7
+Hello, World!
+[content]
+7 |&gt; add(_, _) = 14
+=== All pipeline tests passed! ===
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li><code>|&gt;</code> operator for passing values through function chains</li>
+<li>Implicit first argument: <code>x |&gt; f(y)</code> becomes <code>f(x, y)</code></li>
+<li>Placeholder <code>_</code> for explicit argument positioning</li>
+<li>Multiple placeholders to use the same value multiple times</li>
+<li>Chaining for readable data transformation pipelines</li>
+<li>Comparison: <code>triple(add(double(5), 10))</code> vs <code>5 |&gt; double |&gt; add(10) |&gt; triple</code></li>
 </ul>
 
                     </main>
