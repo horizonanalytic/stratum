@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-08650236.js";
+            window.path_to_searchindex_js = "../searchindex-06b2c33e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-521f66e1.js"></script>
@@ -393,6 +393,237 @@ Done!
 <li>Iterating over JSON arrays with <code>for</code> loops</li>
 <li>Query parameters in URLs (<code>?userId=1&amp;_limit=3</code>)</li>
 <li>Real-world API integration patterns</li>
+</ul>
+<hr>
+<h2 id="earthquake-analytics"><a class="header" href="#earthquake-analytics">Earthquake Analytics</a></h2>
+<p>A comprehensive data analytics example that fetches real earthquake data from the USGS API, processes it into a DataFrame, builds an OLAP cube, and runs SQL-based analytical queries.</p>
+<pre><code class="language-stratum">// Earthquake Analytics - Data Analysis Example
+// Demonstrates: HTTP API fetch, DataFrame operations, OLAP cube, SQL analytics
+
+// Helper function to categorize magnitude
+fx categorize_magnitude(mag: Float) -&gt; String {
+    if mag &gt;= 7.0 {
+        "Major (7.0+)"
+    } else {
+        if mag &gt;= 6.0 {
+            "Strong (6.0-6.9)"
+        } else {
+            if mag &gt;= 5.0 {
+                "Moderate (5.0-5.9)"
+            } else {
+                "Light (4.5-4.9)"
+            }
+        }
+    }
+}
+
+// Helper function to categorize depth
+fx categorize_depth(depth: Float) -&gt; String {
+    if depth &gt;= 300.0 {
+        "Deep (300+ km)"
+    } else {
+        if depth &gt;= 70.0 {
+            "Intermediate (70-300 km)"
+        } else {
+            "Shallow (0-70 km)"
+        }
+    }
+}
+
+fx main() {
+    print("Earthquake Data Analytics");
+    print("=========================");
+    print("");
+
+    // Step 1: Download earthquake data from USGS API
+    print("Step 1: Fetching earthquake data from USGS API...");
+    let api_url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_month.geojson";
+    let response = Http.get(api_url);
+    let geojson = Json.parse(response.body);
+    print("  API Response received!");
+
+    // Step 2: Parse GeoJSON and build DataFrame
+    print("");
+    print("Step 2: Parsing earthquake data into DataFrame...");
+
+    let features = geojson.features;
+    let magnitudes = [];
+    let depths = [];
+    let places = [];
+    let times = [];
+    let mag_categories = [];
+    let depth_categories = [];
+
+    for feature in features {
+        let props = feature.properties;
+        let geom = feature.geometry;
+        let mag = props.mag;
+        let coords = geom.coordinates;
+        let depth = coords[2];
+        let place = props.place;
+        let time_ms = props.time;
+
+        let dt = DateTime.from_timestamp(int(time_ms));
+        let date = DateTime.format(dt, "%Y-%m-%d");
+
+        let mag_cat = categorize_magnitude(mag);
+        let depth_cat = categorize_depth(depth);
+
+        magnitudes.push(float(mag));
+        depths.push(float(depth));
+        places.push(place);
+        times.push(date);
+        mag_categories.push(mag_cat);
+        depth_categories.push(depth_cat);
+    }
+
+    let earthquakes = Data.from_columns(
+        "magnitude", magnitudes,
+        "depth_km", depths,
+        "place", places,
+        "date", times,
+        "mag_category", mag_categories,
+        "depth_category", depth_categories
+    );
+
+    let row_count = earthquakes.rows();
+    print("  Created DataFrame with {row_count} earthquakes");
+
+    // Step 3: Build OLAP Cube
+    print("");
+    print("Step 3: Building OLAP Cube...");
+
+    let event_counts = [];
+    let i = 0;
+    while i &lt; row_count {
+        event_counts.push(1);
+        i = i + 1;
+    }
+
+    let eq_with_count = Data.from_columns(
+        "magnitude", magnitudes,
+        "depth_km", depths,
+        "date", times,
+        "mag_category", mag_categories,
+        "depth_category", depth_categories,
+        "event_count", event_counts
+    );
+
+    let cube = Cube.from("EarthquakeAnalysis", eq_with_count)
+        .dimension("mag_category")
+        .dimension("depth_category")
+        .dimension("date")
+        .measure("magnitude", "mean")
+        .measure("depth_km", "mean")
+        .measure("event_count", "sum")
+        .build();
+
+    print("  OLAP Cube built successfully!");
+    let dims = cube.dimensions();
+    let measures = cube.measures();
+    print("  Dimensions: {dims}");
+    print("  Measures: {measures}");
+
+    // Step 4: Run Analytical Queries with SQL
+    print("");
+    print("Step 4: Running Analytical Queries");
+    print("-----------------------------------");
+
+    print("");
+    print("Query 1: Earthquakes by Magnitude Category");
+    let q1 = "SELECT mag_category, COUNT(*) as count, ROUND(AVG(magnitude), 2) as avg_mag FROM df GROUP BY mag_category ORDER BY count DESC";
+    let result1 = Data.sql(earthquakes, q1);
+    print(result1);
+
+    print("");
+    print("Query 2: Earthquakes by Depth Category");
+    let q2 = "SELECT depth_category, COUNT(*) as count, ROUND(AVG(depth_km), 1) as avg_depth FROM df GROUP BY depth_category ORDER BY count DESC";
+    let result2 = Data.sql(earthquakes, q2);
+    print(result2);
+
+    print("");
+    print("Query 3: Top 10 Strongest Earthquakes");
+    let q3 = "SELECT magnitude, depth_km, place, date FROM df ORDER BY magnitude DESC LIMIT 10";
+    let result3 = Data.sql(earthquakes, q3);
+    print(result3);
+
+    // Step 5: Save processed data
+    print("");
+    print("Step 5: Saving processed data...");
+    Data.write_csv(earthquakes, "earthquakes_processed.csv");
+    print("  Saved to earthquakes_processed.csv");
+
+    let cube_df = cube.to_dataframe();
+    Data.write_parquet(cube_df, "earthquake_cube.parquet");
+    print("  Saved cube data to earthquake_cube.parquet");
+
+    print("");
+    print("Analysis Complete!");
+}
+</code></pre>
+<p><strong>Output:</strong></p>
+<pre><code>Earthquake Data Analytics
+=========================
+
+Step 1: Fetching earthquake data from USGS API...
+  API Response received!
+
+Step 2: Parsing earthquake data into DataFrame...
+  Created DataFrame with 416 earthquakes
+
+Step 3: Building OLAP Cube...
+  OLAP Cube built successfully!
+  Dimensions: [mag_category, depth_category, date]
+  Measures: [magnitude, depth_km, event_count]
+
+Step 4: Running Analytical Queries
+-----------------------------------
+
+Query 1: Earthquakes by Magnitude Category
++--------------------+-------+---------+
+| mag_category       | count | avg_mag |
++--------------------+-------+---------+
+| Light (4.5-4.9)    | 264   | 4.68    |
+| Moderate (5.0-5.9) | 142   | 5.23    |
+| Strong (6.0-6.9)   | 10    | 6.33    |
++--------------------+-------+---------+
+
+Query 2: Earthquakes by Depth Category
++--------------------------+-------+-----------+
+| depth_category           | count | avg_depth |
++--------------------------+-------+-----------+
+| Shallow (0-70 km)        | 294   | 26.4      |
+| Intermediate (70-300 km) | 89    | 141.7     |
+| Deep (300+ km)           | 33    | 523.9     |
++--------------------------+-------+-----------+
+
+Query 3: Top 10 Strongest Earthquakes
++-----------+----------+---------------------------------------+------------+
+| magnitude | depth_km | place                                 | date       |
++-----------+----------+---------------------------------------+------------+
+| 6.7       | 19.0     | 111 km NE of Kuji, Japan              | 2025-12-12 |
+| 6.6       | 67.534   | 31 km ESE of Yilan, Taiwan            | 2025-12-27 |
+| 6.5       | 35.0     | 4 km NNW of Rancho Viejo, Mexico      | 2026-01-02 |
+| ...       | ...      | ...                                   | ...        |
++-----------+----------+---------------------------------------+------------+
+
+Step 5: Saving processed data...
+  Saved to earthquakes_processed.csv
+  Saved cube data to earthquake_cube.parquet
+
+Analysis Complete!
+</code></pre>
+<p><strong>Key concepts:</strong></p>
+<ul>
+<li>Fetching real-time data from REST APIs (<code>Http.get</code>)</li>
+<li>Parsing GeoJSON with nested property access</li>
+<li>Building DataFrames from column arrays (<code>Data.from_columns</code>)</li>
+<li>Creating OLAP cubes with dimensions and measures (<code>Cube.from().dimension().measure().build()</code>)</li>
+<li>SQL analytics on DataFrames (<code>Data.sql</code>)</li>
+<li>Helper functions with explicit return types</li>
+<li>Type conversion (<code>int()</code>, <code>float()</code>) for JSON values</li>
+<li>DateTime formatting (<code>DateTime.from_timestamp</code>, <code>DateTime.format</code>)</li>
+<li>Exporting to CSV and Parquet formats</li>
 </ul>
 
                     </main>
