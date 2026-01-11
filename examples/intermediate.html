@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-d99b982a.js";
+            window.path_to_searchindex_js = "../searchindex-0d6a328a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-521f66e1.js"></script>
@@ -362,6 +362,7 @@ fx double(x: Int) -&gt; Int { x * 2 }
 fx triple(x: Int) -&gt; Int { x * 3 }
 fx add(a: Int, b: Int) -&gt; Int { a + b }
 fx subtract(a: Int, b: Int) -&gt; Int { a - b }
+fx divide(a: Int, b: Int) -&gt; Int { a / b }
 fx square(x: Int) -&gt; Int { x * x }
 
 fx greet(name: String) -&gt; String {
@@ -393,12 +394,16 @@ fx main() {
     println("10 |&gt; subtract(_, 3) = " + str(result4));
     println("10 |&gt; subtract(3, _) = " + str(result5));
 
+    // Multiline pipelines for readability
+    let transformed = 100
+        |&gt; divide(_, 2)
+        |&gt; subtract(_, 10)
+        |&gt; double;
+    println("Multiline result: " + str(transformed));  // 80
+
     // String pipelines
     let greeting = "World" |&gt; greet;
     println(greeting);  // "Hello, World!"
-
-    let wrapped = "content" |&gt; wrap(_, "[", "]");
-    println(wrapped);  // "[content]"
 
     // Multiple placeholders (value used multiple times)
     let squared = 7 |&gt; add(_, _);  // add(7, 7) = 14
@@ -414,8 +419,8 @@ fx main() {
 5 |&gt; double |&gt; add(3) |&gt; triple = 39
 10 |&gt; subtract(_, 3) = 7
 10 |&gt; subtract(3, _) = -7
+Multiline result: 80
 Hello, World!
-[content]
 7 |&gt; add(_, _) = 14
 === All pipeline tests passed! ===
 </code></pre>
@@ -425,6 +430,7 @@ Hello, World!
 <li>Implicit first argument: <code>x |&gt; f(y)</code> becomes <code>f(x, y)</code></li>
 <li>Placeholder <code>_</code> for explicit argument positioning</li>
 <li>Multiple placeholders to use the same value multiple times</li>
+<li>Multiline pipelines: each <code>|&gt;</code> can start on a new line for readability</li>
 <li>Chaining for readable data transformation pipelines</li>
 <li>Comparison: <code>triple(add(double(5), 10))</code> vs <code>5 |&gt; double |&gt; add(10) |&gt; triple</code></li>
 </ul>
