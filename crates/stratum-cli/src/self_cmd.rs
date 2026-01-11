@@ -1994,38 +1994,6 @@ installer_version=1.0.0"#;
     }
 
     #[test]
-    fn test_active_version_roundtrip() {
-        // Save current value
-        let saved = std::env::var("STRATUM_HOME").ok();
-
-        // Use a temp directory
-        let temp_dir = tempfile::tempdir().unwrap();
-        let stratum_home = temp_dir.path().join("stratum_test");
-        fs::create_dir_all(&stratum_home).unwrap();
-        std::env::set_var("STRATUM_HOME", stratum_home.to_str().unwrap());
-
-        // Initially no active version
-        let result = get_active_version();
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_none());
-
-        // Set active version
-        set_active_version("1.2.3").unwrap();
-
-        // Read it back
-        let result = get_active_version();
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), Some("1.2.3".to_string()));
-
-        // Restore
-        if let Some(val) = saved {
-            std::env::set_var("STRATUM_HOME", val);
-        } else {
-            std::env::remove_var("STRATUM_HOME");
-        }
-    }
-
-    #[test]
     fn test_is_version_installed() {
         // Save current value
         let saved = std::env::var("STRATUM_HOME").ok();

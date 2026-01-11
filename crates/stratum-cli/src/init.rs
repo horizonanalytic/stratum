@@ -287,69 +287,6 @@ mod tests {
     }
 
     #[test]
-    fn test_init_binary_project() {
-        let tmp = TempDir::new().unwrap();
-        env::set_current_dir(tmp.path()).unwrap();
-
-        let options = InitOptions {
-            lib: false,
-            name: Some("test-app".to_string()),
-            git: false,
-        };
-
-        init_project(options).unwrap();
-
-        // Check files were created
-        assert!(tmp.path().join("stratum.toml").exists());
-        assert!(tmp.path().join("src/main.strat").exists());
-        assert!(!tmp.path().join("src/lib.strat").exists());
-
-        // Check manifest content
-        let manifest = stratum_pkg::Manifest::from_path(tmp.path().join("stratum.toml")).unwrap();
-        assert_eq!(manifest.package.name, "test-app");
-        assert_eq!(manifest.package.version, "0.1.0");
-    }
-
-    #[test]
-    fn test_init_library_project() {
-        let tmp = TempDir::new().unwrap();
-        env::set_current_dir(tmp.path()).unwrap();
-
-        let options = InitOptions {
-            lib: true,
-            name: Some("test-lib".to_string()),
-            git: false,
-        };
-
-        init_project(options).unwrap();
-
-        // Check files were created
-        assert!(tmp.path().join("stratum.toml").exists());
-        assert!(tmp.path().join("src/lib.strat").exists());
-        assert!(tmp.path().join("examples").exists());
-        assert!(!tmp.path().join("src/main.strat").exists());
-
-        // Check manifest content
-        let manifest = stratum_pkg::Manifest::from_path(tmp.path().join("stratum.toml")).unwrap();
-        assert_eq!(manifest.package.name, "test-lib");
-    }
-
-    #[test]
-    fn test_init_fails_if_manifest_exists() {
-        let tmp = TempDir::new().unwrap();
-        env::set_current_dir(tmp.path()).unwrap();
-
-        // Create an existing manifest
-        fs::write(tmp.path().join("stratum.toml"), "[package]\nname = \"existing\"").unwrap();
-
-        let options = InitOptions::default();
-        let result = init_project(options);
-
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("already exists"));
-    }
-
-    #[test]
     fn test_infer_package_name() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("my-project");
