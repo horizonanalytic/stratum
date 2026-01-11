@@ -38,6 +38,7 @@ pub fn stratum_to_arrow_type(ty: &Type) -> Option<ArrowDataType> {
         | Type::Unit
         | Type::Never
         | Type::Error
+        | Type::Any
         | Type::Future(..)
         | Type::Range
         | Type::Namespace(_) => None,

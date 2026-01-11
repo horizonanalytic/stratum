@@ -2580,12 +2580,36 @@ impl Parser {
                 return false;
             }
 
-            // If followed by : or , or }, it's struct init
-            // ident: value or ident, (shorthand) or ident } (shorthand last field)
-            matches!(
+            // If followed by : or , it's definitely struct init
+            if matches!(
                 self.tokens[pos].kind,
-                TokenKind::Colon | TokenKind::Comma | TokenKind::RBrace
-            )
+                TokenKind::Colon | TokenKind::Comma
+            ) {
+                return true;
+            }
+
+            // If followed by }, it could be single-field shorthand OR a block
+            // Look ahead past the } to disambiguate:
+            // - If `else` follows, it's a block (if-else expression)
+            // - Otherwise, treat as struct init
+            if self.tokens[pos].kind == TokenKind::RBrace {
+                pos += 1;
+
+                // Skip trivia after }
+                while pos < self.tokens.len() && self.tokens[pos].kind.is_trivia() {
+                    pos += 1;
+                }
+
+                if pos < self.tokens.len() && self.tokens[pos].kind == TokenKind::Else {
+                    // `{ ident } else` - this is a block in an if-else
+                    return false;
+                }
+
+                // No `else` follows - treat as struct init
+                return true;
+            }
+
+            false
         } else {
             // Not an identifier after { - not struct init
             false

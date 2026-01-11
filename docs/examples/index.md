@@ -27,5 +27,5 @@ stratum run examples/simple/hello_world.strat
 | Category | Description | Examples |
 |----------|-------------|----------|
 | [Simple](simple.md) | Basic syntax and language features | Hello World, Variables, FizzBuzz, Fibonacci, Factorial |
-| [Intermediate](intermediate.md) | Standard library and common patterns | Temperature Converter, JSON API, Word Count |
+| [Intermediate](intermediate.md) | Standard library and common patterns | Temperature Converter, JSON API, Word Count, Pipeline Demo |
 | [Advanced](advanced.md) | Real-world applications | Todo App, Data Analysis, CSV Processor, Web Scraper |

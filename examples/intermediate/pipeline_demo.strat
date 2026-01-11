@@ -1,0 +1,233 @@
+// Pipeline Operator Demo
+// Showcases the |> (pipe) operator for functional data transformation
+//
+// The pipe operator passes a value through a chain of functions:
+//   value |> f           =>  f(value)
+//   value |> f(x)        =>  f(value, x)
+//   value |> f(_, x)     =>  f(value, x)    (placeholder syntax)
+//   value |> f(x, _)     =>  f(x, value)    (value in second position)
+
+// ============================================================================
+// Basic Math Functions
+// ============================================================================
+
+fx double(x: Int) -> Int { x * 2 }
+
+fx triple(x: Int) -> Int { x * 3 }
+
+fx add(a: Int, b: Int) -> Int { a + b }
+
+fx subtract(a: Int, b: Int) -> Int { a - b }
+
+fx multiply(a: Int, b: Int) -> Int { a * b }
+
+fx divide(a: Int, b: Int) -> Int { a / b }
+
+fx square(x: Int) -> Int { x * x }
+
+fx negate(x: Int) -> Int { 0 - x }
+
+fx abs(x: Int) -> Int {
+    if x < 0 { 0 - x } else { x + 0 }
+}
+
+fx max(a: Int, b: Int) -> Int {
+    if a > b { a + 0 } else { b + 0 }
+}
+
+fx min(a: Int, b: Int) -> Int {
+    if a < b { a + 0 } else { b + 0 }
+}
+
+// ============================================================================
+// String Functions
+// ============================================================================
+
+fx greet(name: String) -> String {
+    "Hello, " + name + "!"
+}
+
+fx exclaim(text: String) -> String {
+    text + "!"
+}
+
+fx wrap(text: String, prefix: String, suffix: String) -> String {
+    prefix + text + suffix
+}
+
+// ============================================================================
+// Main Demo
+// ============================================================================
+
+fx main() {
+    println("=== Pipeline Operator (|>) Demo ===");
+    println("");
+
+    // -------------------------------------------------------------------------
+    // Example 1: Basic pipe - passes value as first argument
+    // -------------------------------------------------------------------------
+    println("1. Basic pipe (value |> function):");
+
+    let result1 = 5 |> double;
+    println("   5 |> double = " + str(result1));
+    assert(result1 == 10);
+
+    let result2 = 7 |> triple;
+    println("   7 |> triple = " + str(result2));
+    assert(result2 == 21);
+
+    // -------------------------------------------------------------------------
+    // Example 2: Pipe with additional arguments
+    // -------------------------------------------------------------------------
+    println("");
+    println("2. Pipe with arguments (value |> function(arg)):");
+
+    let result3 = 10 |> add(5);
+    println("   10 |> add(5) = " + str(result3));
+    assert(result3 == 15);
+
+    let result4 = 20 |> multiply(3);
+    println("   20 |> multiply(3) = " + str(result4));
+    assert(result4 == 60);
+
+    // -------------------------------------------------------------------------
+    // Example 3: Chained pipelines
+    // -------------------------------------------------------------------------
+    println("");
+    println("3. Chained pipelines (value |> f |> g |> h):");
+
+    let result5 = 5 |> double |> add(3) |> triple;
+    println("   5 |> double |> add(3) |> triple = " + str(result5));
+    println("   (5 * 2 = 10, 10 + 3 = 13, 13 * 3 = 39)");
+    assert(result5 == 39);
+
+    let result6 = 2 |> square |> square |> add(1);
+    println("   2 |> square |> square |> add(1) = " + str(result6));
+    println("   (2^2 = 4, 4^2 = 16, 16 + 1 = 17)");
+    assert(result6 == 17);
+
+    // -------------------------------------------------------------------------
+    // Example 4: Placeholder syntax for argument positioning
+    // -------------------------------------------------------------------------
+    println("");
+    println("4. Placeholder syntax (value |> function(_, arg)):");
+
+    // Subtract 3 from 10: subtract(10, 3) = 7
+    let result7 = 10 |> subtract(_, 3);
+    println("   10 |> subtract(_, 3) = " + str(result7));
+    assert(result7 == 7);
+
+    // Subtract 10 from 3: subtract(3, 10) = -7
+    let result8 = 10 |> subtract(3, _);
+    println("   10 |> subtract(3, _) = " + str(result8));
+    assert(result8 == -7);
+
+    // Divide 100 by 5: divide(100, 5) = 20
+    let result9 = 100 |> divide(_, 5);
+    println("   100 |> divide(_, 5) = " + str(result9));
+    assert(result9 == 20);
+
+    // Divide 100 by 5 (5 in second position): divide(100, 5) = 20
+    let result10 = 5 |> divide(100, _);
+    println("   5 |> divide(100, _) = " + str(result10));
+    assert(result10 == 20);
+
+    // -------------------------------------------------------------------------
+    // Example 5: Using helper functions in pipelines
+    // -------------------------------------------------------------------------
+    println("");
+    println("5. Helper functions in pipelines:");
+
+    let result11 = 0 - 42 |> abs;
+    println("   -42 |> abs = " + str(result11));
+    assert(result11 == 42);
+
+    let result12 = 10 |> max(_, 5);
+    println("   10 |> max(_, 5) = " + str(result12));
+    assert(result12 == 10);
+
+    let result13 = 3 |> max(_, 7);
+    println("   3 |> max(_, 7) = " + str(result13));
+    assert(result13 == 7);
+
+    let result14 = 10 |> min(_, 5);
+    println("   10 |> min(_, 5) = " + str(result14));
+    assert(result14 == 5);
+
+    // -------------------------------------------------------------------------
+    // Example 6: String pipelines
+    // -------------------------------------------------------------------------
+    println("");
+    println("6. String pipelines:");
+
+    let greeting = "World" |> greet;
+    println("   \"World\" |> greet = \"" + greeting + "\"");
+    assert(greeting == "Hello, World!");
+
+    let excited = "Wow" |> exclaim |> exclaim |> exclaim;
+    println("   \"Wow\" |> exclaim |> exclaim |> exclaim = \"" + excited + "\"");
+    assert(excited == "Wow!!!");
+
+    let wrapped = "content" |> wrap(_, "[", "]");
+    println("   \"content\" |> wrap(_, \"[\", \"]\") = \"" + wrapped + "\"");
+    assert(wrapped == "[content]");
+
+    // -------------------------------------------------------------------------
+    // Example 7: Complex pipeline showing real-world usage
+    // -------------------------------------------------------------------------
+    println("");
+    println("7. Complex data transformation pipeline:");
+
+    // Calculate: ((input * 2) + 10) * 3
+    let input = 5;
+    let transformed = input
+        |> double
+        |> add(10)
+        |> triple;
+
+    println("   Input: " + str(input));
+    println("   Pipeline: double -> add(10) -> triple");
+    println("   Steps: 5 -> 10 -> 20 -> 60");
+    println("   Result: " + str(transformed));
+    assert(transformed == 60);
+
+    // -------------------------------------------------------------------------
+    // Example 8: Comparison - with vs without pipes
+    // -------------------------------------------------------------------------
+    println("");
+    println("8. Comparison - nested calls vs pipeline:");
+
+    // Without pipes (nested, hard to read):
+    let nested_result = triple(add(double(5), 10));
+    println("   Nested: triple(add(double(5), 10))");
+
+    // With pipes (linear, easy to read):
+    let piped_result = 5 |> double |> add(10) |> triple;
+    println("   Piped:  5 |> double |> add(10) |> triple");
+
+    let are_equal = if nested_result == piped_result { "true" } else { "false" + "" };
+    println("   Both equal: " + are_equal);
+    assert(nested_result == piped_result);
+    assert(piped_result == 60);
+
+    // -------------------------------------------------------------------------
+    // Example 9: Multiple placeholders (same value used multiple times)
+    // -------------------------------------------------------------------------
+    println("");
+    println("9. Multiple placeholders (value used multiple times):");
+
+    // add(5, 5) = 10
+    let result15 = 5 |> add(_, _);
+    println("   5 |> add(_, _) = " + str(result15));
+    println("   (same as 5 + 5 = 10)");
+    assert(result15 == 10);
+
+    // multiply(7, 7) = 49 (squaring via pipeline)
+    let result16 = 7 |> multiply(_, _);
+    println("   7 |> multiply(_, _) = " + str(result16));
+    println("   (same as 7 * 7 = 49)");
+    assert(result16 == 49);
+
+    println("");
+    println("=== All pipeline tests passed! ===");
+}

@@ -150,6 +150,10 @@ pub enum Type {
     /// An error type (used to continue type checking after errors)
     Error,
 
+    /// The "any" type - accepts any value (used for polymorphic builtins like str, len)
+    /// This is a top type that unifies with any other type.
+    Any,
+
     /// Future type (result of async functions)
     /// Future<T> represents an asynchronous computation that will produce a value of type T
     Future(Box<Type>),
@@ -264,6 +268,12 @@ impl Type {
         matches!(self, Type::Never)
     }
 
+    /// Returns true if this is the any type (top type for polymorphic builtins)
+    #[must_use]
+    pub const fn is_any(&self) -> bool {
+        matches!(self, Type::Any)
+    }
+
     /// Returns true if this is a future type
     #[must_use]
     pub const fn is_future(&self) -> bool {
@@ -351,6 +361,7 @@ impl fmt::Display for Type {
             Type::Unit => write!(f, "()"),
             Type::Never => write!(f, "!"),
             Type::Error => write!(f, "<error>"),
+            Type::Any => write!(f, "Any"),
             Type::TypeVar(id) => write!(f, "{id}"),
             Type::List(t) => write!(f, "List<{t}>"),
             Type::Map(k, v) => write!(f, "Map<{k}, {v}>"),

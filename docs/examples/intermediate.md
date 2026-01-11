@@ -180,3 +180,91 @@ Unique words: 16
 - Map operations: `get()`, index assignment `counts[word]`
 - Null coalescing: `??` operator for default values
 - String length with `len()`
+
+---
+
+## Pipeline Demo
+
+Demonstrates the `|>` (pipe) operator for functional data transformation.
+
+```stratum
+// Pipeline Operator Demo
+// Showcases the |> (pipe) operator for functional data transformation
+//
+// The pipe operator passes a value through a chain of functions:
+//   value |> f           =>  f(value)
+//   value |> f(x)        =>  f(value, x)
+//   value |> f(_, x)     =>  f(value, x)    (placeholder syntax)
+//   value |> f(x, _)     =>  f(x, value)    (value in second position)
+
+fx double(x: Int) -> Int { x * 2 }
+fx triple(x: Int) -> Int { x * 3 }
+fx add(a: Int, b: Int) -> Int { a + b }
+fx subtract(a: Int, b: Int) -> Int { a - b }
+fx square(x: Int) -> Int { x * x }
+
+fx greet(name: String) -> String {
+    "Hello, " + name + "!"
+}
+
+fx wrap(text: String, prefix: String, suffix: String) -> String {
+    prefix + text + suffix
+}
+
+fx main() {
+    println("=== Pipeline Operator (|>) Demo ===");
+
+    // Basic pipe - passes value as first argument
+    let result1 = 5 |> double;
+    println("5 |> double = " + str(result1));  // 10
+
+    // Pipe with additional arguments
+    let result2 = 10 |> add(5);
+    println("10 |> add(5) = " + str(result2));  // 15
+
+    // Chained pipelines
+    let result3 = 5 |> double |> add(3) |> triple;
+    println("5 |> double |> add(3) |> triple = " + str(result3));  // 39
+
+    // Placeholder syntax for argument positioning
+    let result4 = 10 |> subtract(_, 3);   // subtract(10, 3) = 7
+    let result5 = 10 |> subtract(3, _);   // subtract(3, 10) = -7
+    println("10 |> subtract(_, 3) = " + str(result4));
+    println("10 |> subtract(3, _) = " + str(result5));
+
+    // String pipelines
+    let greeting = "World" |> greet;
+    println(greeting);  // "Hello, World!"
+
+    let wrapped = "content" |> wrap(_, "[", "]");
+    println(wrapped);  // "[content]"
+
+    // Multiple placeholders (value used multiple times)
+    let squared = 7 |> add(_, _);  // add(7, 7) = 14
+    println("7 |> add(_, _) = " + str(squared));
+
+    println("=== All pipeline tests passed! ===");
+}
+```
+
+**Output:**
+```
+=== Pipeline Operator (|>) Demo ===
+5 |> double = 10
+10 |> add(5) = 15
+5 |> double |> add(3) |> triple = 39
+10 |> subtract(_, 3) = 7
+10 |> subtract(3, _) = -7
+Hello, World!
+[content]
+7 |> add(_, _) = 14
+=== All pipeline tests passed! ===
+```
+
+**Key concepts:**
+- `|>` operator for passing values through function chains
+- Implicit first argument: `x |> f(y)` becomes `f(x, y)`
+- Placeholder `_` for explicit argument positioning
+- Multiple placeholders to use the same value multiple times
+- Chaining for readable data transformation pipelines
+- Comparison: `triple(add(double(5), 10))` vs `5 |> double |> add(10) |> triple`

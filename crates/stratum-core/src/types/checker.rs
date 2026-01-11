@@ -144,25 +144,25 @@ impl TypeChecker {
         );
 
         // len: returns the length of strings, lists, and maps
-        let len_type = self.inference.fresh_var();
+        // Uses Type::Any so it can accept any iterable type
         self.env
-            .define_var("len", Type::function(vec![len_type], Type::Int), false);
+            .define_var("len", Type::function(vec![Type::Any], Type::Int), false);
 
         // str: converts any value to string
-        let str_type = self.inference.fresh_var();
+        // Uses Type::Any so it can accept Int, Bool, Float, etc.
         self.env
-            .define_var("str", Type::function(vec![str_type], Type::String), false);
+            .define_var("str", Type::function(vec![Type::Any], Type::String), false);
 
         // int: converts a value to integer
-        let int_type = self.inference.fresh_var();
+        // Uses Type::Any so it can accept String, Float, Bool, etc.
         self.env
-            .define_var("int", Type::function(vec![int_type], Type::Int), false);
+            .define_var("int", Type::function(vec![Type::Any], Type::Int), false);
 
         // float: converts a value to float
-        let float_type = self.inference.fresh_var();
+        // Uses Type::Any so it can accept String, Int, Bool, etc.
         self.env.define_var(
             "float",
-            Type::function(vec![float_type], Type::Float),
+            Type::function(vec![Type::Any], Type::Float),
             false,
         );
 
@@ -2453,7 +2453,7 @@ impl TypeChecker {
                     .map(|a| Self::substitute_type_vars(a, old_ids, new_types))
                     .collect(),
             ),
-            // Primitive types and namespaces don't need substitution
+            // Primitive types, Any, and namespaces don't need substitution
             Type::Int
             | Type::Float
             | Type::Bool
@@ -2462,6 +2462,7 @@ impl TypeChecker {
             | Type::Unit
             | Type::Never
             | Type::Error
+            | Type::Any
             | Type::Range
             | Type::Namespace(_) => ty.clone(),
         }

@@ -81,6 +81,11 @@ impl TypeInference {
             return true;
         }
 
+        // Any type unifies with anything (it's the top type for polymorphic builtins)
+        if t1.is_any() || t2.is_any() {
+            return true;
+        }
+
         match (t1, t2) {
             // Same primitive types
             (Type::Int, Type::Int)
