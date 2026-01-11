@@ -17,50 +17,39 @@ fn main() {
     let regions = Series::from_strings(
         "region",
         vec![
-            "North", "North", "North", "North",
-            "South", "South", "South", "South",
-            "East", "East", "East", "East",
-            "West", "West", "West", "West",
+            "North", "North", "North", "North", "South", "South", "South", "South", "East", "East",
+            "East", "East", "West", "West", "West", "West",
         ],
     );
 
     let products = Series::from_strings(
         "product",
         vec![
-            "Widgets", "Gadgets", "Widgets", "Gadgets",
-            "Widgets", "Gadgets", "Widgets", "Gadgets",
-            "Widgets", "Gadgets", "Widgets", "Gadgets",
-            "Widgets", "Gadgets", "Widgets", "Gadgets",
+            "Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets",
+            "Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets", "Widgets", "Gadgets",
         ],
     );
 
     let quarters = Series::from_strings(
         "quarter",
         vec![
-            "Q1", "Q1", "Q2", "Q2",
-            "Q1", "Q1", "Q2", "Q2",
-            "Q1", "Q1", "Q2", "Q2",
-            "Q1", "Q1", "Q2", "Q2",
+            "Q1", "Q1", "Q2", "Q2", "Q1", "Q1", "Q2", "Q2", "Q1", "Q1", "Q2", "Q2", "Q1", "Q1",
+            "Q2", "Q2",
         ],
     );
 
     let revenue = Series::from_floats(
         "revenue",
         vec![
-            1200.0, 800.0, 1500.0, 950.0,
-            900.0, 650.0, 1100.0, 780.0,
-            1400.0, 920.0, 1650.0, 1050.0,
-            1000.0, 700.0, 1250.0, 850.0,
+            1200.0, 800.0, 1500.0, 950.0, 900.0, 650.0, 1100.0, 780.0, 1400.0, 920.0, 1650.0,
+            1050.0, 1000.0, 700.0, 1250.0, 850.0,
         ],
     );
 
     let units = Series::from_ints(
         "units",
         vec![
-            120, 80, 150, 95,
-            90, 65, 110, 78,
-            140, 92, 165, 105,
-            100, 70, 125, 85,
+            120, 80, 150, 95, 90, 65, 110, 78, 140, 92, 165, 105, 100, 70, 125, 85,
         ],
     );
 
@@ -106,9 +95,7 @@ fn main() {
         .build();
 
     // Sidebar header
-    let filters_label = GuiElement::text("Filters")
-        .bold()
-        .build();
+    let filters_label = GuiElement::text("Filters").bold().build();
 
     // Dimension Filter for region - connected to filter context
     let region_filter = GuiElement::dimension_filter_with_cube(cube_arc.clone(), "region")
@@ -125,9 +112,7 @@ fn main() {
         .build();
 
     // Measure Selector
-    let measures_label = GuiElement::text("Measures")
-        .bold()
-        .build();
+    let measures_label = GuiElement::text("Measures").bold().build();
 
     // Measure Selector - connected to filter context
     let measure_selector = GuiElement::measure_selector_with_cube(cube_arc.clone())

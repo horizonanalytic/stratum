@@ -34,7 +34,11 @@ fn main() {
     let df = read_parquet(parquet_path).expect("Failed to read parquet file");
     let load_time = start.elapsed();
 
-    println!("Loaded DataFrame with {} rows in {:.2?}", df.num_rows(), load_time);
+    println!(
+        "Loaded DataFrame with {} rows in {:.2?}",
+        df.num_rows(),
+        load_time
+    );
 
     // Build the OLAP Cube
     println!("Building OLAP Cube...");
@@ -87,9 +91,7 @@ fn main() {
         .build();
 
     // Sidebar header
-    let filters_label = GuiElement::text("Filters")
-        .bold()
-        .build();
+    let filters_label = GuiElement::text("Filters").bold().build();
 
     // Dimension Filters
     let region_filter = GuiElement::dimension_filter_with_cube(cube_arc.clone(), "region")
@@ -117,9 +119,7 @@ fn main() {
         .build();
 
     // Measure Selector
-    let measures_label = GuiElement::text("Measures")
-        .bold()
-        .build();
+    let measures_label = GuiElement::text("Measures").bold().build();
 
     let measure_selector = GuiElement::measure_selector_with_cube(cube_arc.clone())
         .cube_label("Visible")
@@ -167,7 +167,11 @@ fn main() {
     // CubeTable showing aggregated data
     let cube_table = GuiElement::cube_table_with_cube(cube_arc.clone())
         .row_dimensions(vec!["region".to_string(), "product".to_string()])
-        .measures(vec!["revenue".to_string(), "units".to_string(), "cost".to_string()])
+        .measures(vec![
+            "revenue".to_string(),
+            "units".to_string(),
+            "cost".to_string(),
+        ])
         .page_size(Some(15))
         .show_drill_controls(true)
         .filter_context(filter_context.clone())

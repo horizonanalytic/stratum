@@ -203,7 +203,11 @@ impl Lockfile {
             return Err(LockError::OutOfSync {
                 reason: format!(
                     "new dependencies not in lock file: {}",
-                    added.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                    added
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             });
         }
@@ -214,7 +218,11 @@ impl Lockfile {
             return Err(LockError::OutOfSync {
                 reason: format!(
                     "lock file contains removed dependencies: {}",
-                    removed.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                    removed
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             });
         }
@@ -263,12 +271,24 @@ impl LockedPackage {
     #[must_use]
     pub fn from_resolved(dep: &ResolvedDependency) -> Self {
         let (source, version, path, git, branch, tag, rev) = match &dep.source {
-            DependencySource::Registry { version_req } => {
-                ("registry".to_string(), Some(version_req.to_string()), None, None, None, None, None)
-            }
-            DependencySource::Path { path } => {
-                ("path".to_string(), None, Some(path.clone()), None, None, None, None)
-            }
+            DependencySource::Registry { version_req } => (
+                "registry".to_string(),
+                Some(version_req.to_string()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+            DependencySource::Path { path } => (
+                "path".to_string(),
+                None,
+                Some(path.clone()),
+                None,
+                None,
+                None,
+                None,
+            ),
             DependencySource::Git { url, reference } => {
                 let (branch, tag, rev) = match reference {
                     GitReference::Branch(b) => (Some(b.clone()), None, None),
@@ -276,7 +296,15 @@ impl LockedPackage {
                     GitReference::Rev(r) => (None, None, Some(r.clone())),
                     GitReference::DefaultBranch => (None, None, None),
                 };
-                ("git".to_string(), None, None, Some(url.clone()), branch, tag, rev)
+                (
+                    "git".to_string(),
+                    None,
+                    None,
+                    Some(url.clone()),
+                    branch,
+                    tag,
+                    rev,
+                )
             }
         };
 
@@ -356,9 +384,7 @@ mod tests {
 
     #[test]
     fn test_lockfile_serialize_parse() {
-        let manifest = make_manifest(vec![
-            ("http", DependencySpec::Simple("^1.0".to_string())),
-        ]);
+        let manifest = make_manifest(vec![("http", DependencySpec::Simple("^1.0".to_string()))]);
 
         let lockfile = Lockfile::generate(&manifest, false).unwrap();
         let toml_str = lockfile.to_toml_string().unwrap();
@@ -425,9 +451,7 @@ mod tests {
 
     #[test]
     fn test_lockfile_check_sync_ok() {
-        let manifest = make_manifest(vec![
-            ("http", DependencySpec::Simple("^1.0".to_string())),
-        ]);
+        let manifest = make_manifest(vec![("http", DependencySpec::Simple("^1.0".to_string()))]);
 
         let lockfile = Lockfile::generate(&manifest, false).unwrap();
         assert!(lockfile.check_sync(&manifest).is_ok());
@@ -435,9 +459,7 @@ mod tests {
 
     #[test]
     fn test_lockfile_check_sync_added_dep() {
-        let manifest1 = make_manifest(vec![
-            ("http", DependencySpec::Simple("^1.0".to_string())),
-        ]);
+        let manifest1 = make_manifest(vec![("http", DependencySpec::Simple("^1.0".to_string()))]);
         let lockfile = Lockfile::generate(&manifest1, false).unwrap();
 
         // Add a new dependency
@@ -461,9 +483,7 @@ mod tests {
         let lockfile = Lockfile::generate(&manifest1, false).unwrap();
 
         // Remove a dependency
-        let manifest2 = make_manifest(vec![
-            ("http", DependencySpec::Simple("^1.0".to_string())),
-        ]);
+        let manifest2 = make_manifest(vec![("http", DependencySpec::Simple("^1.0".to_string()))]);
 
         let result = lockfile.check_sync(&manifest2);
         assert!(result.is_err());
@@ -473,15 +493,11 @@ mod tests {
 
     #[test]
     fn test_lockfile_check_sync_changed_version() {
-        let manifest1 = make_manifest(vec![
-            ("http", DependencySpec::Simple("^1.0".to_string())),
-        ]);
+        let manifest1 = make_manifest(vec![("http", DependencySpec::Simple("^1.0".to_string()))]);
         let lockfile = Lockfile::generate(&manifest1, false).unwrap();
 
         // Change version requirement
-        let manifest2 = make_manifest(vec![
-            ("http", DependencySpec::Simple("^2.0".to_string())),
-        ]);
+        let manifest2 = make_manifest(vec![("http", DependencySpec::Simple("^2.0".to_string()))]);
 
         let result = lockfile.check_sync(&manifest2);
         assert!(result.is_err());
@@ -491,9 +507,7 @@ mod tests {
 
     #[test]
     fn test_lockfile_toml_format() {
-        let manifest = make_manifest(vec![
-            ("http", DependencySpec::Simple("^1.0".to_string())),
-        ]);
+        let manifest = make_manifest(vec![("http", DependencySpec::Simple("^1.0".to_string()))]);
 
         let lockfile = Lockfile::generate(&manifest, false).unwrap();
         let toml_str = lockfile.to_toml_string().unwrap();

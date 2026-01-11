@@ -272,7 +272,8 @@ impl Workshop {
                     for line in source.lines() {
                         let trimmed = line.trim();
                         if !trimmed.is_empty() && !trimmed.starts_with("//") {
-                            self.repl.update(ReplMessage::InputChanged(line.to_string()));
+                            self.repl
+                                .update(ReplMessage::InputChanged(line.to_string()));
                             self.repl.update(ReplMessage::Submit);
                         }
                     }
@@ -377,7 +378,10 @@ impl Workshop {
     }
 
     /// Create a menu button
-    fn menu_button(label: &'static str, message: WorkshopMessage) -> Element<'static, WorkshopMessage> {
+    fn menu_button(
+        label: &'static str,
+        message: WorkshopMessage,
+    ) -> Element<'static, WorkshopMessage> {
         button(text(label).size(12))
             .on_press(message)
             .padding([4, 10])
@@ -423,10 +427,13 @@ impl Workshop {
             .size(13)
             .height(Length::FillPortion(1));
 
-        container(column![header, scrollable(editor_widget).height(Length::FillPortion(1))])
-            .width(Length::Fill)
-            .height(Length::FillPortion(1))
-            .into()
+        container(column![
+            header,
+            scrollable(editor_widget).height(Length::FillPortion(1))
+        ])
+        .width(Length::Fill)
+        .height(Length::FillPortion(1))
+        .into()
     }
 
     /// Render the status bar

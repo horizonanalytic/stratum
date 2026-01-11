@@ -22,14 +22,14 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::ast::ExecutionMode;
-use crate::coverage::CoverageCollector;
-use crate::gc::CycleCollector;
 use crate::bytecode::{
     Chunk, Closure, CoroutineState, EnumVariantInstance, ExpectationState, Function, FutureStatus,
     HashableValue, NativeFunction, OpCode, Range, SavedCallFrame, SavedExceptionHandler,
     StructInstance, Upvalue, Value,
 };
+use crate::coverage::CoverageCollector;
 use crate::data::{AggSpec, DataFrame, GroupedDataFrame, Rolling, Series};
+use crate::gc::CycleCollector;
 use crate::jit::{call_jit_function, CompiledFunction, JitCompiler, JitContext};
 
 /// Maximum call stack depth
@@ -283,8 +283,10 @@ impl VM {
     /// ```
     pub fn register_namespace(&mut self, namespace: &str, handler: NamespaceHandler) {
         // Also register the namespace as a global
-        self.globals
-            .insert(namespace.to_string(), Value::NativeNamespace(Box::leak(namespace.to_string().into_boxed_str())));
+        self.globals.insert(
+            namespace.to_string(),
+            Value::NativeNamespace(Box::leak(namespace.to_string().into_boxed_str())),
+        );
         self.external_namespaces
             .insert(namespace.to_string(), handler);
     }
@@ -298,12 +300,7 @@ impl VM {
     /// * `namespace` - The namespace name (e.g., "Gui")
     /// * `method` - The method name (e.g., "run")
     /// * `handler` - A function that handles this specific method
-    pub fn register_vm_method(
-        &mut self,
-        namespace: &str,
-        method: &str,
-        handler: VmMethodHandler,
-    ) {
+    pub fn register_vm_method(&mut self, namespace: &str, method: &str, handler: VmMethodHandler) {
         self.vm_method_handlers
             .insert((namespace.to_string(), method.to_string()), handler);
     }
@@ -402,9 +399,7 @@ impl VM {
         });
 
         // Type inspection
-        self.define_native("type_of", 1, |args| {
-            Ok(Value::string(args[0].type_name()))
-        });
+        self.define_native("type_of", 1, |args| Ok(Value::string(args[0].type_name())));
 
         // Assertions
         self.define_native("assert", 1, |args| {
@@ -419,10 +414,7 @@ impl VM {
             if args[0] == args[1] {
                 Ok(Value::Null)
             } else {
-                Err(format!(
-                    "assertion failed: {:?} != {:?}",
-                    args[0], args[1]
-                ))
+                Err(format!("assertion failed: {:?} != {:?}", args[0], args[1]))
             }
         });
 
@@ -435,9 +427,7 @@ impl VM {
         });
 
         // String conversion
-        self.define_native("str", 1, |args| {
-            Ok(Value::string(format!("{}", args[0])))
-        });
+        self.define_native("str", 1, |args| Ok(Value::string(format!("{}", args[0]))));
 
         // Int conversion
         self.define_native("int", 1, |args| match &args[0] {
@@ -466,7 +456,12 @@ impl VM {
         self.define_native("range", 2, |args| {
             let start = match &args[0] {
                 Value::Int(i) => *i,
-                other => return Err(format!("range start must be Int, got {}", other.type_name())),
+                other => {
+                    return Err(format!(
+                        "range start must be Int, got {}",
+                        other.type_name()
+                    ))
+                }
             };
             let end = match &args[1] {
                 Value::Int(i) => *i,
@@ -572,12 +567,22 @@ impl VM {
             }
             let gdf = match &args[0] {
                 Value::GroupedDataFrame(gdf) => gdf,
-                other => return Err(format!("count expects GroupedDataFrame, got {}", other.type_name())),
+                other => {
+                    return Err(format!(
+                        "count expects GroupedDataFrame, got {}",
+                        other.type_name()
+                    ))
+                }
             };
             let output = if args.len() > 1 {
                 match &args[1] {
                     Value::String(s) => Some(s.as_str()),
-                    other => return Err(format!("count output name must be string, got {}", other.type_name())),
+                    other => {
+                        return Err(format!(
+                            "count output name must be string, got {}",
+                            other.type_name()
+                        ))
+                    }
                 }
             } else {
                 None
@@ -601,13 +606,21 @@ impl VM {
             }
             let gdf = match &args[0] {
                 Value::GroupedDataFrame(gdf) => gdf,
-                other => return Err(format!("agg expects GroupedDataFrame, got {}", other.type_name())),
+                other => {
+                    return Err(format!(
+                        "agg expects GroupedDataFrame, got {}",
+                        other.type_name()
+                    ))
+                }
             };
             let specs: Result<Vec<AggSpec>, String> = args[1..]
                 .iter()
                 .map(|v| match v {
                     Value::AggSpec(spec) => Ok((**spec).clone()),
-                    other => Err(format!("agg arguments must be AggSpec, got {}", other.type_name())),
+                    other => Err(format!(
+                        "agg arguments must be AggSpec, got {}",
+                        other.type_name()
+                    )),
                 })
                 .collect();
             let specs = specs?;
@@ -884,7 +897,9 @@ impl VM {
         // Used in pipelines: df |> rename("old", "new")
         self.define_native("rename", 3, |args| {
             if args.len() != 3 {
-                return Err("rename requires 3 arguments: DataFrame, old_name, new_name".to_string());
+                return Err(
+                    "rename requires 3 arguments: DataFrame, old_name, new_name".to_string()
+                );
             }
 
             let df = match &args[0] {
@@ -917,7 +932,9 @@ impl VM {
                 }
             };
 
-            let result = df.rename_column(old_name, new_name).map_err(|e| e.to_string())?;
+            let result = df
+                .rename_column(old_name, new_name)
+                .map_err(|e| e.to_string())?;
             Ok(Value::DataFrame(std::sync::Arc::new(result)))
         });
 
@@ -965,7 +982,9 @@ impl VM {
             }
 
             // Return a new CubeBuilder with the result
-            Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+            Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(
+                result_builder,
+            )))))
         });
 
         // measure(cube_builder, name, agg_func) -> CubeBuilder
@@ -1054,7 +1073,9 @@ impl VM {
 
             let result_builder = builder.measure(name, agg_func).map_err(|e| e.to_string())?;
 
-            Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+            Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(
+                result_builder,
+            )))))
         });
 
         // hierarchy(cube_builder, name, levels) -> CubeBuilder
@@ -1123,7 +1144,9 @@ impl VM {
                         .hierarchy(name, &levels_refs)
                         .map_err(|e| e.to_string())?;
 
-                    return Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))));
+                    return Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(
+                        result_builder,
+                    )))));
                 }
                 other => {
                     return Err(format!(
@@ -1199,12 +1222,8 @@ impl VM {
                     Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
                 }
                 Value::CubeQuery(query_arc) => {
-                    let mut guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
-                    let query = guard
-                        .take()
-                        .ok_or("CubeQuery has already been consumed")?;
+                    let mut guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard.take().ok_or("CubeQuery has already been consumed")?;
                     let new_query = query.slice(dimension, value);
                     Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
                 }
@@ -1264,12 +1283,8 @@ impl VM {
                     Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
                 }
                 Value::CubeQuery(query_arc) => {
-                    let mut guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
-                    let mut query = guard
-                        .take()
-                        .ok_or("CubeQuery has already been consumed")?;
+                    let mut guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
+                    let mut query = guard.take().ok_or("CubeQuery has already been consumed")?;
                     for (dim, val) in filters {
                         query = query.slice(dim, val);
                     }
@@ -1290,7 +1305,10 @@ impl VM {
             use std::sync::{Arc, Mutex};
 
             if args.len() < 2 {
-                return Err("drill_down requires at least 2 arguments: cube/query and hierarchy name".to_string());
+                return Err(
+                    "drill_down requires at least 2 arguments: cube/query and hierarchy name"
+                        .to_string(),
+                );
             }
 
             let hierarchy = match &args[1] {
@@ -1335,21 +1353,15 @@ impl VM {
                         .ok_or_else(|| format!("hierarchy '{}' not found in cube", hierarchy))?;
 
                     // Take the appropriate number of levels for drill-down
-                    let target_levels: Vec<String> = levels
-                        .into_iter()
-                        .take(levels_to_drill + 1)
-                        .collect();
+                    let target_levels: Vec<String> =
+                        levels.into_iter().take(levels_to_drill + 1).collect();
 
                     let query = CubeQuery::new(cube).drill_down(hierarchy, target_levels);
                     Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(query)))))
                 }
                 Value::CubeQuery(query_arc) => {
-                    let mut guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
-                    let query = guard
-                        .take()
-                        .ok_or("CubeQuery has already been consumed")?;
+                    let mut guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard.take().ok_or("CubeQuery has already been consumed")?;
 
                     // For CubeQuery, we pass the hierarchy name and empty levels
                     // The actual level resolution happens during query execution
@@ -1447,24 +1459,25 @@ impl VM {
             use std::sync::Arc;
 
             if args.len() < 4 {
-                return Err("pivot requires at least 4 arguments: cube/query, rows, col_dim, value_col".to_string());
+                return Err(
+                    "pivot requires at least 4 arguments: cube/query, rows, col_dim, value_col"
+                        .to_string(),
+                );
             }
 
             // Extract row dimensions (array of strings)
             let row_dims: Vec<String> = match &args[1] {
-                Value::List(items) => {
-                    items
-                        .borrow()
-                        .iter()
-                        .map(|v| match v {
-                            Value::String(s) => Ok(s.to_string()),
-                            other => Err(format!(
-                                "pivot row dimensions must be strings, got {}",
-                                other.type_name()
-                            )),
-                        })
-                        .collect::<Result<Vec<_>, _>>()?
-                }
+                Value::List(items) => items
+                    .borrow()
+                    .iter()
+                    .map(|v| match v {
+                        Value::String(s) => Ok(s.to_string()),
+                        other => Err(format!(
+                            "pivot row dimensions must be strings, got {}",
+                            other.type_name()
+                        )),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
                 other => {
                     return Err(format!(
                         "pivot rows must be an array of strings, got {}",
@@ -1505,10 +1518,7 @@ impl VM {
                         "max" => AggFunc::Max,
                         "count" => AggFunc::Count,
                         other => {
-                            return Err(format!(
-                                "pivot unknown aggregation function: {}",
-                                other
-                            ))
+                            return Err(format!("pivot unknown aggregation function: {}", other))
                         }
                     },
                     other => {
@@ -1532,9 +1542,7 @@ impl VM {
                     Ok(Value::DataFrame(Arc::new(df)))
                 }
                 Value::CubeQuery(query_arc) => {
-                    let guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
                     let query = guard
                         .as_ref()
                         .ok_or("CubeQuery has already been consumed")?;
@@ -1588,9 +1596,7 @@ impl VM {
                     Ok(Value::DataFrame(Arc::new(df)))
                 }
                 Value::CubeQuery(query_arc) => {
-                    let guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
                     let query = guard
                         .as_ref()
                         .ok_or("CubeQuery has already been consumed")?;
@@ -1611,9 +1617,7 @@ impl VM {
 
             match &args[0] {
                 Value::CubeQuery(query_arc) => {
-                    let guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
                     let query = guard
                         .as_ref()
                         .ok_or("CubeQuery has already been consumed")?;
@@ -1681,12 +1685,8 @@ impl VM {
 
             match &args[0] {
                 Value::CubeQuery(query_arc) => {
-                    let mut guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
-                    let query = guard
-                        .take()
-                        .ok_or("CubeQuery has already been consumed")?;
+                    let mut guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard.take().ok_or("CubeQuery has already been consumed")?;
                     let new_query = query.select(exprs);
                     Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
                 }
@@ -1721,12 +1721,8 @@ impl VM {
 
             match &args[0] {
                 Value::CubeQuery(query_arc) => {
-                    let mut guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
-                    let query = guard
-                        .take()
-                        .ok_or("CubeQuery has already been consumed")?;
+                    let mut guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard.take().ok_or("CubeQuery has already been consumed")?;
                     let new_query = query.where_clause(condition);
                     Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
                 }
@@ -1767,12 +1763,8 @@ impl VM {
 
             match &args[0] {
                 Value::CubeQuery(query_arc) => {
-                    let mut guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
-                    let query = guard
-                        .take()
-                        .ok_or("CubeQuery has already been consumed")?;
+                    let mut guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard.take().ok_or("CubeQuery has already been consumed")?;
                     let new_query = query.group_by(cols);
                     Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
                 }
@@ -1822,12 +1814,8 @@ impl VM {
 
             match &args[0] {
                 Value::CubeQuery(query_arc) => {
-                    let mut guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
-                    let query = guard
-                        .take()
-                        .ok_or("CubeQuery has already been consumed")?;
+                    let mut guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard.take().ok_or("CubeQuery has already been consumed")?;
                     let new_query = query.order_by(cols);
                     Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
                 }
@@ -1867,12 +1855,8 @@ impl VM {
 
             match &args[0] {
                 Value::CubeQuery(query_arc) => {
-                    let mut guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
-                    let query = guard
-                        .take()
-                        .ok_or("CubeQuery has already been consumed")?;
+                    let mut guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
+                    let query = guard.take().ok_or("CubeQuery has already been consumed")?;
                     let new_query = query.limit(count);
                     Ok(Value::CubeQuery(Arc::new(Mutex::new(Some(new_query)))))
                 }
@@ -1896,9 +1880,7 @@ impl VM {
 
             match &args[0] {
                 Value::CubeQuery(query_arc) => {
-                    let guard = query_arc
-                        .lock()
-                        .map_err(|_| "CubeQuery lock poisoned")?;
+                    let guard = query_arc.lock().map_err(|_| "CubeQuery lock poisoned")?;
                     let query = guard
                         .as_ref()
                         .ok_or("CubeQuery has already been consumed")?;
@@ -1964,84 +1946,122 @@ impl VM {
         });
 
         // Register native namespace modules
-        self.globals.insert("File".to_string(), Value::NativeNamespace("File"));
-        self.globals.insert("Dir".to_string(), Value::NativeNamespace("Dir"));
-        self.globals.insert("Path".to_string(), Value::NativeNamespace("Path"));
-        self.globals.insert("Env".to_string(), Value::NativeNamespace("Env"));
-        self.globals.insert("Args".to_string(), Value::NativeNamespace("Args"));
-        self.globals.insert("Shell".to_string(), Value::NativeNamespace("Shell"));
-        self.globals.insert("Http".to_string(), Value::NativeNamespace("Http"));
+        self.globals
+            .insert("File".to_string(), Value::NativeNamespace("File"));
+        self.globals
+            .insert("Dir".to_string(), Value::NativeNamespace("Dir"));
+        self.globals
+            .insert("Path".to_string(), Value::NativeNamespace("Path"));
+        self.globals
+            .insert("Env".to_string(), Value::NativeNamespace("Env"));
+        self.globals
+            .insert("Args".to_string(), Value::NativeNamespace("Args"));
+        self.globals
+            .insert("Shell".to_string(), Value::NativeNamespace("Shell"));
+        self.globals
+            .insert("Http".to_string(), Value::NativeNamespace("Http"));
 
         // Data encoding modules
-        self.globals.insert("Json".to_string(), Value::NativeNamespace("Json"));
-        self.globals.insert("Toml".to_string(), Value::NativeNamespace("Toml"));
-        self.globals.insert("Yaml".to_string(), Value::NativeNamespace("Yaml"));
-        self.globals.insert("Base64".to_string(), Value::NativeNamespace("Base64"));
-        self.globals.insert("Url".to_string(), Value::NativeNamespace("Url"));
+        self.globals
+            .insert("Json".to_string(), Value::NativeNamespace("Json"));
+        self.globals
+            .insert("Toml".to_string(), Value::NativeNamespace("Toml"));
+        self.globals
+            .insert("Yaml".to_string(), Value::NativeNamespace("Yaml"));
+        self.globals
+            .insert("Base64".to_string(), Value::NativeNamespace("Base64"));
+        self.globals
+            .insert("Url".to_string(), Value::NativeNamespace("Url"));
 
         // Compression modules
-        self.globals.insert("Gzip".to_string(), Value::NativeNamespace("Gzip"));
-        self.globals.insert("Zip".to_string(), Value::NativeNamespace("Zip"));
+        self.globals
+            .insert("Gzip".to_string(), Value::NativeNamespace("Gzip"));
+        self.globals
+            .insert("Zip".to_string(), Value::NativeNamespace("Zip"));
 
         // DateTime and Time modules
-        self.globals.insert("DateTime".to_string(), Value::NativeNamespace("DateTime"));
-        self.globals.insert("Duration".to_string(), Value::NativeNamespace("Duration"));
-        self.globals.insert("Time".to_string(), Value::NativeNamespace("Time"));
+        self.globals
+            .insert("DateTime".to_string(), Value::NativeNamespace("DateTime"));
+        self.globals
+            .insert("Duration".to_string(), Value::NativeNamespace("Duration"));
+        self.globals
+            .insert("Time".to_string(), Value::NativeNamespace("Time"));
 
         // Regex module
-        self.globals.insert("Regex".to_string(), Value::NativeNamespace("Regex"));
+        self.globals
+            .insert("Regex".to_string(), Value::NativeNamespace("Regex"));
 
         // Hashing, UUID, and Random modules
-        self.globals.insert("Hash".to_string(), Value::NativeNamespace("Hash"));
-        self.globals.insert("Uuid".to_string(), Value::NativeNamespace("Uuid"));
-        self.globals.insert("Random".to_string(), Value::NativeNamespace("Random"));
+        self.globals
+            .insert("Hash".to_string(), Value::NativeNamespace("Hash"));
+        self.globals
+            .insert("Uuid".to_string(), Value::NativeNamespace("Uuid"));
+        self.globals
+            .insert("Random".to_string(), Value::NativeNamespace("Random"));
 
         // Math module (constants and functions)
-        self.globals.insert("Math".to_string(), Value::NativeNamespace("Math"));
+        self.globals
+            .insert("Math".to_string(), Value::NativeNamespace("Math"));
 
         // User Input module
-        self.globals.insert("Input".to_string(), Value::NativeNamespace("Input"));
+        self.globals
+            .insert("Input".to_string(), Value::NativeNamespace("Input"));
 
         // Logging module
-        self.globals.insert("Log".to_string(), Value::NativeNamespace("Log"));
+        self.globals
+            .insert("Log".to_string(), Value::NativeNamespace("Log"));
 
         // System info module
-        self.globals.insert("System".to_string(), Value::NativeNamespace("System"));
+        self.globals
+            .insert("System".to_string(), Value::NativeNamespace("System"));
 
         // Process module (non-blocking process spawn and control)
-        self.globals.insert("Process".to_string(), Value::NativeNamespace("Process"));
+        self.globals
+            .insert("Process".to_string(), Value::NativeNamespace("Process"));
 
         // Signal module (signal handling)
-        self.globals.insert("Signal".to_string(), Value::NativeNamespace("Signal"));
+        self.globals
+            .insert("Signal".to_string(), Value::NativeNamespace("Signal"));
 
         // Database module
-        self.globals.insert("Db".to_string(), Value::NativeNamespace("Db"));
+        self.globals
+            .insert("Db".to_string(), Value::NativeNamespace("Db"));
 
         // Network modules (TCP/UDP/WebSocket)
-        self.globals.insert("Tcp".to_string(), Value::NativeNamespace("Tcp"));
-        self.globals.insert("Udp".to_string(), Value::NativeNamespace("Udp"));
-        self.globals.insert("WebSocket".to_string(), Value::NativeNamespace("WebSocket"));
+        self.globals
+            .insert("Tcp".to_string(), Value::NativeNamespace("Tcp"));
+        self.globals
+            .insert("Udp".to_string(), Value::NativeNamespace("Udp"));
+        self.globals
+            .insert("WebSocket".to_string(), Value::NativeNamespace("WebSocket"));
 
         // Data operations module (DataFrame, Series)
-        self.globals.insert("Data".to_string(), Value::NativeNamespace("Data"));
+        self.globals
+            .insert("Data".to_string(), Value::NativeNamespace("Data"));
 
         // Aggregation builder module (for group_by + aggregate)
-        self.globals.insert("Agg".to_string(), Value::NativeNamespace("Agg"));
+        self.globals
+            .insert("Agg".to_string(), Value::NativeNamespace("Agg"));
 
         // Join builder module (for DataFrame joins)
-        self.globals.insert("Join".to_string(), Value::NativeNamespace("Join"));
+        self.globals
+            .insert("Join".to_string(), Value::NativeNamespace("Join"));
 
         // Cube module (OLAP cube for multi-dimensional analysis)
-        self.globals.insert("Cube".to_string(), Value::NativeNamespace("Cube"));
+        self.globals
+            .insert("Cube".to_string(), Value::NativeNamespace("Cube"));
 
         // Set module for creating sets
-        self.globals.insert("Set".to_string(), Value::NativeNamespace("Set"));
+        self.globals
+            .insert("Set".to_string(), Value::NativeNamespace("Set"));
 
         // Test module for testing framework
-        self.globals.insert("Test".to_string(), Value::NativeNamespace("Test"));
+        self.globals
+            .insert("Test".to_string(), Value::NativeNamespace("Test"));
 
         // Ref module for weak references
-        self.globals.insert("Ref".to_string(), Value::NativeNamespace("Ref"));
+        self.globals
+            .insert("Ref".to_string(), Value::NativeNamespace("Ref"));
 
         // Note: GUI module is registered at runtime via register_namespace()
         // This allows stratum-gui to register itself without circular dependencies
@@ -2110,9 +2130,11 @@ impl VM {
                 return Ok(result);
             }
 
-            let instruction = chunk
-                .read_byte(frame.ip)
-                .ok_or_else(|| self.runtime_error(RuntimeErrorKind::Internal("unexpected end of bytecode".to_string())))?;
+            let instruction = chunk.read_byte(frame.ip).ok_or_else(|| {
+                self.runtime_error(RuntimeErrorKind::Internal(
+                    "unexpected end of bytecode".to_string(),
+                ))
+            })?;
             let opcode = OpCode::try_from(instruction)
                 .map_err(|op| self.runtime_error(RuntimeErrorKind::InvalidOpcode(op)))?;
 
@@ -2379,7 +2401,11 @@ impl VM {
 
     /// Resume a suspended coroutine with a value (the result of the awaited future).
     /// Returns Ok(()) if resumption was successful and execution should continue.
-    pub fn resume_coroutine(&mut self, coro: &CoroutineState, resume_value: Value) -> RuntimeResult<()> {
+    pub fn resume_coroutine(
+        &mut self,
+        coro: &CoroutineState,
+        resume_value: Value,
+    ) -> RuntimeResult<()> {
         // Restore frames
         self.frames = coro
             .frames
@@ -2639,7 +2665,11 @@ impl VM {
 
     /// Call a closure with arguments and execute until it returns, collecting the result.
     /// This is used for higher-order functions like map, filter, reduce.
-    fn call_closure_sync(&mut self, closure: Rc<Closure>, args: Vec<Value>) -> RuntimeResult<Value> {
+    fn call_closure_sync(
+        &mut self,
+        closure: Rc<Closure>,
+        args: Vec<Value>,
+    ) -> RuntimeResult<Value> {
         let arity = closure.function.arity;
         if args.len() as u8 != arity {
             return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
@@ -2668,9 +2698,10 @@ impl VM {
         loop {
             iterations += 1;
             if iterations > MAX_ITERATIONS {
-                return Err(self.runtime_error(RuntimeErrorKind::Internal(
-                    format!("call_closure_sync exceeded {} iterations - likely infinite loop", MAX_ITERATIONS),
-                )));
+                return Err(self.runtime_error(RuntimeErrorKind::Internal(format!(
+                    "call_closure_sync exceeded {} iterations - likely infinite loop",
+                    MAX_ITERATIONS
+                ))));
             }
 
             // Check for exception propagation
@@ -2692,18 +2723,18 @@ impl VM {
 
             if frame.ip >= chunk.len() {
                 // Unexpected end of bytecode
-                return Err(self.runtime_error(RuntimeErrorKind::Internal(
-                    format!("unexpected end of bytecode in closure: ip={}, len={}", frame.ip, chunk.len()),
-                )));
+                return Err(self.runtime_error(RuntimeErrorKind::Internal(format!(
+                    "unexpected end of bytecode in closure: ip={}, len={}",
+                    frame.ip,
+                    chunk.len()
+                ))));
             }
 
-            let instruction = chunk
-                .read_byte(frame.ip)
-                .ok_or_else(|| {
-                    self.runtime_error(RuntimeErrorKind::Internal(
-                        "unexpected end of bytecode".to_string(),
-                    ))
-                })?;
+            let instruction = chunk.read_byte(frame.ip).ok_or_else(|| {
+                self.runtime_error(RuntimeErrorKind::Internal(
+                    "unexpected end of bytecode".to_string(),
+                ))
+            })?;
             let opcode = OpCode::try_from(instruction)
                 .map_err(|op| self.runtime_error(RuntimeErrorKind::InvalidOpcode(op)))?;
 
@@ -2786,11 +2817,10 @@ impl VM {
             OpCode::LoadGlobal => {
                 let name_index = self.read_u16() as usize;
                 let name = self.get_constant_string(name_index)?;
-                let value = self
-                    .globals
-                    .get(&name)
-                    .cloned()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UndefinedVariable(name)))?;
+                let value =
+                    self.globals.get(&name).cloned().ok_or_else(|| {
+                        self.runtime_error(RuntimeErrorKind::UndefinedVariable(name))
+                    })?;
                 self.push(value)?;
             }
 
@@ -2832,29 +2862,24 @@ impl VM {
             // Arithmetic operations
             OpCode::Add => self.binary_op(|a, b| match (a, b) {
                 // Series operations
-                (Value::Series(s1), Value::Series(s2)) => {
-                    s1.add(&s2)
-                        .map(|s| Value::Series(std::sync::Arc::new(s)))
-                        .map_err(|e| RuntimeErrorKind::DataError(e.to_string()))
-                }
-                (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => {
-                    s.add_scalar(&scalar)
-                        .map(|s| Value::Series(std::sync::Arc::new(s)))
-                        .map_err(|e| RuntimeErrorKind::DataError(e.to_string()))
-                }
-                (scalar @ (Value::Int(_) | Value::Float(_)), Value::Series(s)) => {
-                    s.add_scalar(&scalar)
-                        .map(|s| Value::Series(std::sync::Arc::new(s)))
-                        .map_err(|e| RuntimeErrorKind::DataError(e.to_string()))
-                }
+                (Value::Series(s1), Value::Series(s2)) => s1
+                    .add(&s2)
+                    .map(|s| Value::Series(std::sync::Arc::new(s)))
+                    .map_err(|e| RuntimeErrorKind::DataError(e.to_string())),
+                (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => s
+                    .add_scalar(&scalar)
+                    .map(|s| Value::Series(std::sync::Arc::new(s)))
+                    .map_err(|e| RuntimeErrorKind::DataError(e.to_string())),
+                (scalar @ (Value::Int(_) | Value::Float(_)), Value::Series(s)) => s
+                    .add_scalar(&scalar)
+                    .map(|s| Value::Series(std::sync::Arc::new(s)))
+                    .map_err(|e| RuntimeErrorKind::DataError(e.to_string())),
                 // Scalar operations
                 (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
                 (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x + y)),
                 (Value::Int(x), Value::Float(y)) => Ok(Value::Float(x as f64 + y)),
                 (Value::Float(x), Value::Int(y)) => Ok(Value::Float(x + y as f64)),
-                (Value::String(x), Value::String(y)) => {
-                    Ok(Value::string(format!("{}{}", *x, *y)))
-                }
+                (Value::String(x), Value::String(y)) => Ok(Value::string(format!("{}{}", *x, *y))),
                 (Value::String(x), other) => Ok(Value::string(format!("{}{}", *x, other))),
                 (other, Value::String(y)) => Ok(Value::string(format!("{}{}", other, *y))),
                 (l, _) => Err(RuntimeErrorKind::TypeError {
@@ -2869,23 +2894,28 @@ impl VM {
                 let left = self.pop()?;
                 let result = match (&left, &right) {
                     // Series operations
-                    (Value::Series(s1), Value::Series(s2)) => {
-                        s1.sub(s2)
-                            .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
-                    }
-                    (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => {
-                        s.sub_scalar(scalar)
-                            .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
-                    }
+                    (Value::Series(s1), Value::Series(s2)) => s1
+                        .sub(s2)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                        })?,
+                    (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => s
+                        .sub_scalar(scalar)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                        })?,
                     // Scalar - Series: need to negate and add
                     (scalar @ (Value::Int(_) | Value::Float(_)), Value::Series(s)) => {
-                        let neg = s.neg()
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                        let neg = s.neg().map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                        })?;
                         neg.add_scalar(scalar)
                             .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                            })?
                     }
                     // Scalar operations
                     (Value::Int(x), Value::Int(y)) => Value::Int(x - y),
@@ -2908,21 +2938,24 @@ impl VM {
                 let left = self.pop()?;
                 let result = match (&left, &right) {
                     // Series operations
-                    (Value::Series(s1), Value::Series(s2)) => {
-                        s1.mul(s2)
-                            .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
-                    }
-                    (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => {
-                        s.mul_scalar(scalar)
-                            .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
-                    }
-                    (scalar @ (Value::Int(_) | Value::Float(_)), Value::Series(s)) => {
-                        s.mul_scalar(scalar)
-                            .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
-                    }
+                    (Value::Series(s1), Value::Series(s2)) => s1
+                        .mul(s2)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                        })?,
+                    (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => s
+                        .mul_scalar(scalar)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                        })?,
+                    (scalar @ (Value::Int(_) | Value::Float(_)), Value::Series(s)) => s
+                        .mul_scalar(scalar)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                        })?,
                     // Scalar operations
                     (Value::Int(x), Value::Int(y)) => Value::Int(x * y),
                     (Value::Float(x), Value::Float(y)) => Value::Float(x * y),
@@ -2944,16 +2977,18 @@ impl VM {
                 let left = self.pop()?;
                 let result = match (&left, &right) {
                     // Series operations
-                    (Value::Series(s1), Value::Series(s2)) => {
-                        s1.div(s2)
-                            .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
-                    }
-                    (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => {
-                        s.div_scalar(scalar)
-                            .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
-                    }
+                    (Value::Series(s1), Value::Series(s2)) => s1
+                        .div(s2)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                        })?,
+                    (Value::Series(s), scalar @ (Value::Int(_) | Value::Float(_))) => s
+                        .div_scalar(scalar)
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                        })?,
                     // Note: scalar / Series is not supported (would need element-wise reciprocal)
                     // Scalar operations with zero checks
                     (Value::Int(_), Value::Int(0)) | (Value::Float(_), Value::Int(0)) => {
@@ -3005,11 +3040,12 @@ impl VM {
             OpCode::Neg => {
                 let value = self.pop()?;
                 let result = match value {
-                    Value::Series(s) => {
-                        s.neg()
-                            .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?
-                    }
+                    Value::Series(s) => s
+                        .neg()
+                        .map(|s| Value::Series(std::sync::Arc::new(s)))
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                        })?,
                     Value::Int(x) => Value::Int(-x),
                     Value::Float(x) => Value::Float(-x),
                     _ => {
@@ -3030,21 +3066,30 @@ impl VM {
                 match (&left, &right) {
                     // Series operations
                     (Value::Series(s1), Value::Series(s2)) => {
-                        let result = s1.eq(s2)
+                        let result = s1
+                            .eq(s2)
                             .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                            })?;
                         self.push(result)?;
                     }
                     (Value::Series(s), scalar) => {
-                        let result = s.eq_scalar(scalar)
+                        let result = s
+                            .eq_scalar(scalar)
                             .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                            })?;
                         self.push(result)?;
                     }
                     (scalar, Value::Series(s)) => {
-                        let result = s.eq_scalar(scalar)
+                        let result = s
+                            .eq_scalar(scalar)
                             .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                            })?;
                         self.push(result)?;
                     }
                     _ => self.push(Value::Bool(left == right))?,
@@ -3057,39 +3102,79 @@ impl VM {
                 match (&left, &right) {
                     // Series operations
                     (Value::Series(s1), Value::Series(s2)) => {
-                        let result = s1.neq(s2)
+                        let result = s1
+                            .neq(s2)
                             .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                            })?;
                         self.push(result)?;
                     }
                     (Value::Series(s), scalar) => {
-                        let result = s.neq_scalar(scalar)
+                        let result = s
+                            .neq_scalar(scalar)
                             .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                            })?;
                         self.push(result)?;
                     }
                     (scalar, Value::Series(s)) => {
-                        let result = s.neq_scalar(scalar)
+                        let result = s
+                            .neq_scalar(scalar)
                             .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                            })?;
                         self.push(result)?;
                     }
                     _ => self.push(Value::Bool(left != right))?,
                 }
             }
 
-            OpCode::Lt => self.series_comparison_op("<", Series::lt, Series::lt_scalar, Series::gt_scalar, |x, y| x < y, |x, y| x < y)?,
-            OpCode::Le => self.series_comparison_op("<=", Series::le, Series::le_scalar, Series::ge_scalar, |x, y| x <= y, |x, y| x <= y)?,
-            OpCode::Gt => self.series_comparison_op(">", Series::gt, Series::gt_scalar, Series::lt_scalar, |x, y| x > y, |x, y| x > y)?,
-            OpCode::Ge => self.series_comparison_op(">=", Series::ge, Series::ge_scalar, Series::le_scalar, |x, y| x >= y, |x, y| x >= y)?,
+            OpCode::Lt => self.series_comparison_op(
+                "<",
+                Series::lt,
+                Series::lt_scalar,
+                Series::gt_scalar,
+                |x, y| x < y,
+                |x, y| x < y,
+            )?,
+            OpCode::Le => self.series_comparison_op(
+                "<=",
+                Series::le,
+                Series::le_scalar,
+                Series::ge_scalar,
+                |x, y| x <= y,
+                |x, y| x <= y,
+            )?,
+            OpCode::Gt => self.series_comparison_op(
+                ">",
+                Series::gt,
+                Series::gt_scalar,
+                Series::lt_scalar,
+                |x, y| x > y,
+                |x, y| x > y,
+            )?,
+            OpCode::Ge => self.series_comparison_op(
+                ">=",
+                Series::ge,
+                Series::ge_scalar,
+                Series::le_scalar,
+                |x, y| x >= y,
+                |x, y| x >= y,
+            )?,
 
             OpCode::Not => {
                 let value = self.pop()?;
                 match value {
                     Value::Series(s) => {
-                        let result = s.not()
+                        let result = s
+                            .not()
                             .map(|s| Value::Series(std::sync::Arc::new(s)))
-                            .map_err(|e| self.runtime_error(RuntimeErrorKind::DataError(e.to_string())))?;
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::DataError(e.to_string()))
+                            })?;
                         self.push(result)?;
                     }
                     _ => self.push(Value::Bool(!value.is_truthy()))?,
@@ -3280,10 +3365,7 @@ impl VM {
                         Value::String(s) => (*s).clone(),
                         _ => {
                             return Err(self.runtime_error(RuntimeErrorKind::InvalidOperation(
-                                format!(
-                                    "expected string for field name, got {}",
-                                    name.type_name()
-                                ),
+                                format!("expected string for field name, got {}", name.type_name()),
                             )));
                         }
                     };
@@ -3311,9 +3393,8 @@ impl VM {
                         }
                     }
                     _ => {
-                        return Err(self.runtime_error(RuntimeErrorKind::NotIterable(
-                            iter_value.type_name(),
-                        )));
+                        return Err(self
+                            .runtime_error(RuntimeErrorKind::NotIterable(iter_value.type_name())));
                     }
                 }
             }
@@ -3512,7 +3593,9 @@ impl VM {
                                 // Future failed - throw an exception
                                 let err_msg = err.clone();
                                 drop(fut_ref);
-                                return Err(self.runtime_error(RuntimeErrorKind::AsyncError(err_msg)));
+                                return Err(
+                                    self.runtime_error(RuntimeErrorKind::AsyncError(err_msg))
+                                );
                             }
                         }
                     }
@@ -3557,7 +3640,21 @@ impl VM {
                 // Try built-in struct methods
                 self.invoke_builtin_method(&receiver, &method_name, arg_count)
             }
-            Value::String(_) | Value::List(_) | Value::Map(_) | Value::Set(_) | Value::NativeNamespace(_) | Value::DbConnection(_) | Value::DataFrame(_) | Value::Series(_) | Value::Rolling(_) | Value::GroupedDataFrame(_) | Value::SqlContext(_) | Value::Cube(_) | Value::CubeBuilder(_) | Value::CubeQuery(_) | Value::GuiElement(_) => {
+            Value::String(_)
+            | Value::List(_)
+            | Value::Map(_)
+            | Value::Set(_)
+            | Value::NativeNamespace(_)
+            | Value::DbConnection(_)
+            | Value::DataFrame(_)
+            | Value::Series(_)
+            | Value::Rolling(_)
+            | Value::GroupedDataFrame(_)
+            | Value::SqlContext(_)
+            | Value::Cube(_)
+            | Value::CubeBuilder(_)
+            | Value::CubeQuery(_)
+            | Value::GuiElement(_) => {
                 self.invoke_builtin_method(&receiver, &method_name, arg_count)
             }
             _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -3590,29 +3687,19 @@ impl VM {
             Value::List(l) => self.list_method(l, method_name, &args)?,
             Value::Map(m) => self.map_method(m, method_name, &args)?,
             Value::Set(s) => self.set_method(s, method_name, &args)?,
-            Value::NativeNamespace(ns) => {
-                self.namespace_method_dispatch(ns, method_name, &args)?
-            }
-            Value::DbConnection(conn) => {
-                natives::db_connection_method(conn, method_name, &args)
-                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
-            }
-            Value::TcpStream(stream) => {
-                natives::tcp_stream_method(stream, method_name, &args)
-                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
-            }
+            Value::NativeNamespace(ns) => self.namespace_method_dispatch(ns, method_name, &args)?,
+            Value::DbConnection(conn) => natives::db_connection_method(conn, method_name, &args)
+                .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?,
+            Value::TcpStream(stream) => natives::tcp_stream_method(stream, method_name, &args)
+                .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?,
             Value::TcpListener(listener) => {
                 natives::tcp_listener_method(listener, method_name, &args)
                     .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
             }
-            Value::UdpSocket(socket) => {
-                natives::udp_socket_method(socket, method_name, &args)
-                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
-            }
-            Value::WebSocket(ws) => {
-                natives::websocket_method(ws, method_name, &args)
-                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
-            }
+            Value::UdpSocket(socket) => natives::udp_socket_method(socket, method_name, &args)
+                .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?,
+            Value::WebSocket(ws) => natives::websocket_method(ws, method_name, &args)
+                .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?,
             Value::WebSocketServer(server) => {
                 natives::websocket_server_method(server, method_name, &args)
                     .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
@@ -3624,27 +3711,21 @@ impl VM {
             Value::DataFrame(df) => self.dataframe_method(df, method_name, &args)?,
             Value::Series(s) => self.series_method(s, method_name, &args)?,
             Value::Rolling(r) => self.rolling_method(r, method_name, &args)?,
-            Value::GroupedDataFrame(gdf) => self.grouped_dataframe_method(gdf, method_name, &args)?,
-            Value::SqlContext(ctx) => {
-                natives::sql_context_method(ctx, method_name, &args)
-                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
+            Value::GroupedDataFrame(gdf) => {
+                self.grouped_dataframe_method(gdf, method_name, &args)?
             }
+            Value::SqlContext(ctx) => natives::sql_context_method(ctx, method_name, &args)
+                .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?,
             Value::Cube(cube) => self.cube_method(cube, method_name, &args)?,
             Value::CubeBuilder(builder) => self.cubebuilder_method(builder, method_name, &args)?,
             Value::CubeQuery(query) => self.cubequery_method(query, method_name, &args)?,
             Value::Expectation(exp) => self.expectation_method(exp, method_name, &args)?,
-            Value::XmlDocument(doc) => {
-                natives::xml_document_method(doc, method_name, &args)
-                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
-            }
-            Value::Image(img) => {
-                natives::image_method(img, method_name, &args)
-                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
-            }
-            Value::WeakRef(weak) => {
-                natives::weak_ref_method(method_name, &args, weak)
-                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?
-            }
+            Value::XmlDocument(doc) => natives::xml_document_method(doc, method_name, &args)
+                .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?,
+            Value::Image(img) => natives::image_method(img, method_name, &args)
+                .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?,
+            Value::WeakRef(weak) => natives::weak_ref_method(method_name, &args, weak)
+                .map_err(|msg| self.runtime_error(RuntimeErrorKind::UserError(msg)))?,
             Value::GuiElement(_) => {
                 // Check if a handler is registered for GuiElement
                 if let Some(handler) = self.value_method_handlers.get("GuiElement") {
@@ -3668,12 +3749,7 @@ impl VM {
         self.push(result)
     }
 
-    fn string_method(
-        &self,
-        s: &Rc<String>,
-        method: &str,
-        args: &[Value],
-    ) -> RuntimeResult<Value> {
+    fn string_method(&self, s: &Rc<String>, method: &str, args: &[Value]) -> RuntimeResult<Value> {
         match method {
             "length" | "len" => Ok(Value::Int(s.len() as i64)),
             "is_empty" => Ok(Value::Bool(s.is_empty())),
@@ -3779,7 +3855,11 @@ impl VM {
                 } else {
                     s.chars().count()
                 };
-                let result: String = s.chars().skip(start).take(end.saturating_sub(start)).collect();
+                let result: String = s
+                    .chars()
+                    .skip(start)
+                    .take(end.saturating_sub(start))
+                    .collect();
                 Ok(Value::string(result))
             }
             "split" => {
@@ -3791,8 +3871,7 @@ impl VM {
                 }
                 match &args[0] {
                     Value::String(sep) => {
-                        let parts: Vec<Value> =
-                            s.split(sep.as_str()).map(Value::string).collect();
+                        let parts: Vec<Value> = s.split(sep.as_str()).map(Value::string).collect();
                         Ok(Value::list(parts))
                     }
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -3846,32 +3925,24 @@ impl VM {
                 list.borrow_mut().push(args[0].clone());
                 Ok(Value::Null)
             }
-            "pop" => {
-                list.borrow_mut()
-                    .pop()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::IndexOutOfBounds {
-                        index: 0,
-                        length: 0,
-                    }))
-            }
-            "first" => {
-                list.borrow()
-                    .first()
-                    .cloned()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::IndexOutOfBounds {
-                        index: 0,
-                        length: 0,
-                    }))
-            }
-            "last" => {
-                list.borrow()
-                    .last()
-                    .cloned()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::IndexOutOfBounds {
-                        index: 0,
-                        length: 0,
-                    }))
-            }
+            "pop" => list.borrow_mut().pop().ok_or_else(|| {
+                self.runtime_error(RuntimeErrorKind::IndexOutOfBounds {
+                    index: 0,
+                    length: 0,
+                })
+            }),
+            "first" => list.borrow().first().cloned().ok_or_else(|| {
+                self.runtime_error(RuntimeErrorKind::IndexOutOfBounds {
+                    index: 0,
+                    length: 0,
+                })
+            }),
+            "last" => list.borrow().last().cloned().ok_or_else(|| {
+                self.runtime_error(RuntimeErrorKind::IndexOutOfBounds {
+                    index: 0,
+                    length: 0,
+                })
+            }),
             "reverse" => {
                 list.borrow_mut().reverse();
                 Ok(Value::Null)
@@ -4028,15 +4099,13 @@ impl VM {
                 let mut items = list.borrow().clone();
                 if args.is_empty() {
                     // Default sort - compare values directly
-                    items.sort_by(|a, b| {
-                        match (a, b) {
-                            (Value::Int(x), Value::Int(y)) => x.cmp(y),
-                            (Value::Float(x), Value::Float(y)) => {
-                                x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
-                            }
-                            (Value::String(x), Value::String(y)) => x.cmp(y),
-                            _ => std::cmp::Ordering::Equal,
+                    items.sort_by(|a, b| match (a, b) {
+                        (Value::Int(x), Value::Int(y)) => x.cmp(y),
+                        (Value::Float(x), Value::Float(y)) => {
+                            x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
                         }
+                        (Value::String(x), Value::String(y)) => x.cmp(y),
+                        _ => std::cmp::Ordering::Equal,
                     });
                     Ok(Value::list(items))
                 } else if args.len() == 1 {
@@ -4081,7 +4150,8 @@ impl VM {
                     if let Some(e) = error {
                         return Err(e);
                     }
-                    let sorted: Vec<Value> = indices.into_iter().map(|i| items[i].clone()).collect();
+                    let sorted: Vec<Value> =
+                        indices.into_iter().map(|i| items[i].clone()).collect();
                     Ok(Value::list(sorted))
                 } else {
                     Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
@@ -4382,9 +4452,7 @@ impl VM {
                     }));
                 }
                 match &args[0] {
-                    Value::Set(other) => {
-                        Ok(Value::Bool(set.borrow().is_subset(&other.borrow())))
-                    }
+                    Value::Set(other) => Ok(Value::Bool(set.borrow().is_subset(&other.borrow()))),
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
                         expected: "Set",
                         got: args[0].type_name(),
@@ -4400,9 +4468,7 @@ impl VM {
                     }));
                 }
                 match &args[0] {
-                    Value::Set(other) => {
-                        Ok(Value::Bool(set.borrow().is_superset(&other.borrow())))
-                    }
+                    Value::Set(other) => Ok(Value::Bool(set.borrow().is_superset(&other.borrow()))),
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
                         expected: "Set",
                         got: args[0].type_name(),
@@ -4419,11 +4485,8 @@ impl VM {
                 }
                 match &args[0] {
                     Value::Set(other) => {
-                        let result: std::collections::HashSet<HashableValue> = set
-                            .borrow()
-                            .union(&other.borrow())
-                            .cloned()
-                            .collect();
+                        let result: std::collections::HashSet<HashableValue> =
+                            set.borrow().union(&other.borrow()).cloned().collect();
                         Ok(Value::set(result))
                     }
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -4465,11 +4528,8 @@ impl VM {
                 }
                 match &args[0] {
                     Value::Set(other) => {
-                        let result: std::collections::HashSet<HashableValue> = set
-                            .borrow()
-                            .difference(&other.borrow())
-                            .cloned()
-                            .collect();
+                        let result: std::collections::HashSet<HashableValue> =
+                            set.borrow().difference(&other.borrow()).cloned().collect();
                         Ok(Value::set(result))
                     }
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -4583,16 +4643,18 @@ impl VM {
                 } else {
                     match &args[0] {
                         Value::Int(n) => *n as usize,
-                        _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                            expected: "Int",
-                            got: args[0].type_name(),
-                            operation: "head",
-                        })),
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "Int",
+                                got: args[0].type_name(),
+                                operation: "head",
+                            }))
+                        }
                     }
                 };
-                let result = df.head(n).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .head(n)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "tail" => {
@@ -4601,30 +4663,34 @@ impl VM {
                 } else {
                     match &args[0] {
                         Value::Int(n) => *n as usize,
-                        _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                            expected: "Int",
-                            got: args[0].type_name(),
-                            operation: "tail",
-                        })),
+                        _ => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "Int",
+                                got: args[0].type_name(),
+                                operation: "tail",
+                            }))
+                        }
                     }
                 };
-                let result = df.tail(n).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .tail(n)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "sample" => {
                 let n = match &args[0] {
                     Value::Int(n) => *n as usize,
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "Int",
-                        got: args[0].type_name(),
-                        operation: "sample",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Int",
+                            got: args[0].type_name(),
+                            operation: "sample",
+                        }))
+                    }
                 };
-                let result = df.sample(n).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .sample(n)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -4663,9 +4729,9 @@ impl VM {
                     })
                     .collect();
                 let col_names = col_names?;
-                let result = df.select(&col_names).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .select(&col_names)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "drop" | "drop_columns" => {
@@ -4681,9 +4747,8 @@ impl VM {
                     })
                     .collect();
                 let col_names = col_names?;
-                let result = DataFrame::drop(df, &col_names).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = DataFrame::drop(df, &col_names)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "rename" => {
@@ -4742,13 +4807,12 @@ impl VM {
 
                 if col_names.is_empty() {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "group_by requires at least one column name".to_string()
+                        "group_by requires at least one column name".to_string(),
                     )));
                 }
 
-                let grouped = GroupedDataFrame::new(df.clone(), col_names).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let grouped = GroupedDataFrame::new(df.clone(), col_names)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::GroupedDataFrame(std::sync::Arc::new(grouped)))
             }
 
@@ -4784,9 +4848,9 @@ impl VM {
                     }
                 };
 
-                let result = df.join(&right_df, &spec).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .join(&right_df, &spec)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -4823,9 +4887,9 @@ impl VM {
                     )));
                 }
 
-                let result = df.sort_by(&sort_cols).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .sort_by(&sort_cols)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -4848,9 +4912,9 @@ impl VM {
                         }
                     }
                 };
-                let result = df.take_rows(n).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .take_rows(n)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -4885,23 +4949,23 @@ impl VM {
 
             // Statistical methods
             "describe" => {
-                let result = df.describe().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .describe()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
             "corr" | "correlation" => {
-                let result = df.corr().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .corr()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
             "cov" | "covariance" => {
-                let result = df.cov().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .cov()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -5009,9 +5073,9 @@ impl VM {
                     // df.to_cube("name") - with name
                     match &args[0] {
                         Value::String(name) => {
-                            CubeBuilder::from_dataframe_with_name(name.as_str(), df).map_err(|e| {
-                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                            })?
+                            CubeBuilder::from_dataframe_with_name(name.as_str(), df).map_err(
+                                |e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())),
+                            )?
                         }
                         _ => {
                             return Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -5104,9 +5168,9 @@ impl VM {
 
             // Reshape operations
             "transpose" | "T" => {
-                let result = df.transpose().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .transpose()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -5163,9 +5227,9 @@ impl VM {
                 let id_refs: Vec<&str> = id_vars.iter().map(String::as_str).collect();
                 let val_refs: Vec<&str> = value_vars.iter().map(String::as_str).collect();
 
-                let result = df.melt(&id_refs, &val_refs, None, None).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .melt(&id_refs, &val_refs, None, None)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -5183,9 +5247,9 @@ impl VM {
                     })
                     .collect();
                 let col_names = col_names?;
-                let result = df.stack(&col_names).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .stack(&col_names)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -5199,9 +5263,11 @@ impl VM {
                 }
                 match (&args[0], &args[1], &args[2]) {
                     (Value::String(index), Value::String(columns), Value::String(values)) => {
-                        let result = df.unstack(index.as_str(), columns.as_str(), values.as_str()).map_err(|e| {
-                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                        })?;
+                        let result = df
+                            .unstack(index.as_str(), columns.as_str(), values.as_str())
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                            })?;
                         Ok(Value::DataFrame(std::sync::Arc::new(result)))
                     }
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -5222,9 +5288,11 @@ impl VM {
                 }
                 match (&args[0], &args[1], &args[2]) {
                     (Value::String(index), Value::String(columns), Value::String(values)) => {
-                        let result = df.pivot(index.as_str(), columns.as_str(), values.as_str()).map_err(|e| {
-                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                        })?;
+                        let result = df
+                            .pivot(index.as_str(), columns.as_str(), values.as_str())
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                            })?;
                         Ok(Value::DataFrame(std::sync::Arc::new(result)))
                     }
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -5244,15 +5312,22 @@ impl VM {
                     }));
                 }
                 match (&args[0], &args[1], &args[2], &args[3]) {
-                    (Value::String(index), Value::String(columns), Value::String(values), Value::String(aggfunc)) => {
-                        let result = df.pivot_table(
-                            index.as_str(),
-                            columns.as_str(),
-                            values.as_str(),
-                            aggfunc.as_str()
-                        ).map_err(|e| {
-                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                        })?;
+                    (
+                        Value::String(index),
+                        Value::String(columns),
+                        Value::String(values),
+                        Value::String(aggfunc),
+                    ) => {
+                        let result = df
+                            .pivot_table(
+                                index.as_str(),
+                                columns.as_str(),
+                                values.as_str(),
+                                aggfunc.as_str(),
+                            )
+                            .map_err(|e| {
+                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                            })?;
                         Ok(Value::DataFrame(std::sync::Arc::new(result)))
                     }
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -5266,7 +5341,6 @@ impl VM {
             // =========================================================
             // Column Operations (11.5.1, 11.5.2)
             // =========================================================
-
             "add_column" => {
                 // df.add_column(name, values) or df.add_column(name, closure)
                 if args.len() != 2 {
@@ -5332,7 +5406,6 @@ impl VM {
             // =========================================================
             // Apply/Transform (11.5.3, 11.5.4)
             // =========================================================
-
             "apply" => {
                 // df.apply(closure) - apply function to each row
                 if args.len() != 1 {
@@ -5399,9 +5472,9 @@ impl VM {
                 };
 
                 // Get the column to transform
-                let series = df.column(&col_name).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let series = df
+                    .column(&col_name)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
 
                 // Transform each value
                 let mut new_values: Vec<Value> = Vec::with_capacity(series.len());
@@ -5414,9 +5487,8 @@ impl VM {
                 }
 
                 // Create new Series and replace in DataFrame
-                let new_series = Series::from_values(&col_name, &new_values).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let new_series = Series::from_values(&col_name, &new_values)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
 
                 // Build new DataFrame with transformed column
                 let mut columns: Vec<Series> = Vec::new();
@@ -5431,16 +5503,14 @@ impl VM {
                     }
                 }
 
-                let result = DataFrame::from_series(columns).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = DataFrame::from_series(columns)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
             // =========================================================
             // Append (11.5.6)
             // =========================================================
-
             "append" => {
                 // df.append(other_df)
                 if args.len() != 1 {
@@ -5461,16 +5531,15 @@ impl VM {
                     }
                 };
 
-                let result = df.append(&other_df).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .append(&other_df)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
             // =========================================================
             // Merge (11.5.7)
             // =========================================================
-
             "merge" => {
                 // df.merge(other, on_columns, how, [left_suffix], [right_suffix])
                 // Minimum 3 args: other, on, how
@@ -5497,13 +5566,16 @@ impl VM {
                     Value::String(s) => vec![s.to_string()],
                     Value::List(list) => {
                         let borrowed = list.borrow();
-                        borrowed.iter().filter_map(|v| {
-                            if let Value::String(s) = v {
-                                Some(s.to_string())
-                            } else {
-                                None
-                            }
-                        }).collect()
+                        borrowed
+                            .iter()
+                            .filter_map(|v| {
+                                if let Value::String(s) = v {
+                                    Some(s.to_string())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect()
                     }
                     _ => {
                         return Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -5544,16 +5616,15 @@ impl VM {
                 };
 
                 let on_refs: Vec<&str> = on_columns.iter().map(String::as_str).collect();
-                let result = df.merge(&other_df, &on_refs, &how, (&left_suffix, &right_suffix)).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .merge(&other_df, &on_refs, &how, (&left_suffix, &right_suffix))
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
             // =========================================================
             // Cross Join (11.5.8)
             // =========================================================
-
             "cross_join" => {
                 // df.cross_join(other_df)
                 if args.len() != 1 {
@@ -5574,21 +5645,20 @@ impl VM {
                     }
                 };
 
-                let result = df.cross_join(&other_df).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .cross_join(&other_df)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
             // =========================================================
             // Index Operations (11.5.9, 11.5.10)
             // =========================================================
-
             "reset_index" => {
                 // df.reset_index()
-                let result = df.reset_index().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .reset_index()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -5612,9 +5682,9 @@ impl VM {
                     }
                 };
 
-                let result = df.set_index(&column).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = df
+                    .set_index(&column)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -5628,9 +5698,11 @@ impl VM {
                 }
                 match (&args[0], &args[1]) {
                     (Value::String(column), Value::String(target_type)) => {
-                        let result = df.cast(column.as_str(), target_type.as_str()).map_err(|e| {
-                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                        })?;
+                        let result =
+                            df.cast(column.as_str(), target_type.as_str())
+                                .map_err(|e| {
+                                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                                })?;
                         Ok(Value::DataFrame(std::sync::Arc::new(result)))
                     }
                     (Value::String(_), _) => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -5679,9 +5751,8 @@ impl VM {
         // Iterate over rows and collect indices where predicate returns true
         let mut matching_indices = Vec::new();
         for (idx, row_result) in df.iter_rows().enumerate() {
-            let row = row_result.map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            })?;
+            let row = row_result
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
             let result = self.call_closure_sync(closure.clone(), vec![row])?;
             if result.is_truthy() {
                 matching_indices.push(idx);
@@ -5689,9 +5760,9 @@ impl VM {
         }
 
         // Create filtered DataFrame
-        let filtered_df = df.filter_by_indices(&matching_indices).map_err(|e| {
-            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-        })?;
+        let filtered_df = df
+            .filter_by_indices(&matching_indices)
+            .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
 
         Ok(Value::DataFrame(std::sync::Arc::new(filtered_df)))
     }
@@ -5745,11 +5816,9 @@ impl VM {
                     }));
                 }
                 match &args[0] {
-                    Value::Int(idx) => {
-                        series.get(*idx as usize).map_err(|e| {
-                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                        })
-                    }
+                    Value::Int(idx) => series.get(*idx as usize).map_err(|e| {
+                        self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                    }),
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
                         expected: "Int",
                         got: args[0].type_name(),
@@ -5775,36 +5844,36 @@ impl VM {
             }
 
             // Aggregations
-            "sum" => series.sum().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
-            "mean" | "avg" => series.mean().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
-            "min" => series.min().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
-            "max" => series.max().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
-            "std" | "stddev" => series.std().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
-            "var" | "variance" => series.var().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
-            "median" => series.median().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
-            "mode" => series.mode().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
-            "skew" | "skewness" => series.skew().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
-            "kurtosis" => series.kurtosis().map_err(|e| {
-                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-            }),
+            "sum" => series
+                .sum()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
+            "mean" | "avg" => series
+                .mean()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
+            "min" => series
+                .min()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
+            "max" => series
+                .max()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
+            "std" | "stddev" => series
+                .std()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
+            "var" | "variance" => series
+                .var()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
+            "median" => series
+                .median()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
+            "mode" => series
+                .mode()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
+            "skew" | "skewness" => series
+                .skew()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
+            "kurtosis" => series
+                .kurtosis()
+                .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))),
             "quantile" => {
                 if args.len() != 1 {
                     return Err(self.runtime_error(RuntimeErrorKind::ArityMismatch {
@@ -5823,9 +5892,9 @@ impl VM {
                         }));
                     }
                 };
-                series.quantile(q).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })
+                series
+                    .quantile(q)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))
             }
             "percentile" => {
                 if args.len() != 1 {
@@ -5845,16 +5914,16 @@ impl VM {
                         }));
                     }
                 };
-                series.percentile(p).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })
+                series
+                    .percentile(p)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))
             }
 
             // Conversion
             "to_list" | "to_values" => {
-                let values = series.to_values().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let values = series
+                    .to_values()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::list(values))
             }
 
@@ -5883,9 +5952,9 @@ impl VM {
             "is_string" => Ok(Value::Bool(series.is_string())),
 
             "str_len" => {
-                let result = series.str_len().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .str_len()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
@@ -5956,37 +6025,37 @@ impl VM {
             }
 
             "str_to_lowercase" | "to_lowercase" | "lower" => {
-                let result = series.str_to_lowercase().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .str_to_lowercase()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
             "str_to_uppercase" | "to_uppercase" | "upper" => {
-                let result = series.str_to_uppercase().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .str_to_uppercase()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
             "str_trim" | "trim" => {
-                let result = series.str_trim().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .str_trim()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
             "str_trim_start" | "trim_start" | "ltrim" => {
-                let result = series.str_trim_start().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .str_trim_start()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
             "str_trim_end" | "trim_end" | "rtrim" => {
-                let result = series.str_trim_end().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .str_trim_end()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
@@ -6084,11 +6153,12 @@ impl VM {
                 match (&args[0], &args[1], &args[2]) {
                     (Value::Int(width), Value::String(side), Value::String(pad_char)) => {
                         let ch = pad_char.chars().next().unwrap_or(' ');
-                        let result = series
-                            .str_pad(*width as usize, side.as_str(), ch)
-                            .map_err(|e| {
-                                self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                            })?;
+                        let result =
+                            series
+                                .str_pad(*width as usize, side.as_str(), ch)
+                                .map_err(|e| {
+                                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                                })?;
                         Ok(Value::Series(std::sync::Arc::new(result)))
                     }
                     _ => Err(self.runtime_error(RuntimeErrorKind::TypeError {
@@ -6203,27 +6273,27 @@ impl VM {
 
             // ===== Window Functions: Cumulative Operations =====
             "cumsum" => {
-                let result = series.cumsum().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .cumsum()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             "cummax" => {
-                let result = series.cummax().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .cummax()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             "cummin" => {
-                let result = series.cummin().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .cummin()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             "cumprod" => {
-                let result = series.cumprod().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .cumprod()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
@@ -6306,9 +6376,9 @@ impl VM {
                         }
                     }
                 };
-                let result = series.diff(n).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .diff(n)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             "pct_change" => {
@@ -6326,9 +6396,9 @@ impl VM {
                         }
                     }
                 };
-                let result = series.pct_change(n).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .pct_change(n)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
@@ -6360,9 +6430,9 @@ impl VM {
 
             // ===== Missing Data Handling =====
             "dropna" => {
-                let result = series.dropna().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .dropna()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
@@ -6397,38 +6467,38 @@ impl VM {
             }
 
             "interpolate" => {
-                let result = series.interpolate().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .interpolate()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
             // ===== Type Conversion Methods =====
             "to_int" | "to_integer" | "as_int" => {
-                let result = series.to_int().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .to_int()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
             "to_float" | "to_double" | "as_float" => {
-                let result = series.to_float().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .to_float()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
             "to_str" | "to_string" | "as_string" => {
-                let result = series.to_str().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .to_str()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
             "to_bool" | "to_boolean" | "as_bool" => {
-                let result = series.to_bool().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = series
+                    .to_bool()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
 
@@ -6470,39 +6540,39 @@ impl VM {
         match method {
             // Rolling aggregation methods - all return Series
             "sum" => {
-                let result = rolling.sum().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = rolling
+                    .sum()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             "mean" | "avg" => {
-                let result = rolling.mean().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = rolling
+                    .mean()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             "min" => {
-                let result = rolling.min().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = rolling
+                    .min()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             "max" => {
-                let result = rolling.max().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = rolling
+                    .max()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             "std" | "stddev" => {
-                let result = rolling.std().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = rolling
+                    .std()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             "var" | "variance" => {
-                let result = rolling.var().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = rolling
+                    .var()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::Series(std::sync::Arc::new(result)))
             }
             // Info methods
@@ -6536,30 +6606,30 @@ impl VM {
             // Simple aggregation methods (return DataFrame)
             "sum" => {
                 let (column, output) = self.parse_simple_agg_args(args, "sum")?;
-                let result = gdf.sum(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .sum(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "mean" | "avg" => {
                 let (column, output) = self.parse_simple_agg_args(args, "mean")?;
-                let result = gdf.mean(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .mean(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "min" => {
                 let (column, output) = self.parse_simple_agg_args(args, "min")?;
-                let result = gdf.min(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .min(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "max" => {
                 let (column, output) = self.parse_simple_agg_args(args, "max")?;
-                let result = gdf.max(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .max(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "count" => {
@@ -6577,58 +6647,58 @@ impl VM {
                         }
                     }
                 };
-                let result = gdf.count(output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .count(output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "first" => {
                 let (column, output) = self.parse_simple_agg_args(args, "first")?;
-                let result = gdf.first(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .first(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "last" => {
                 let (column, output) = self.parse_simple_agg_args(args, "last")?;
-                let result = gdf.last(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .last(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "std" | "stddev" => {
                 let (column, output) = self.parse_simple_agg_args(args, "std")?;
-                let result = gdf.std(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .std(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "var" | "variance" => {
                 let (column, output) = self.parse_simple_agg_args(args, "var")?;
-                let result = gdf.var(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .var(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "median" => {
                 let (column, output) = self.parse_simple_agg_args(args, "median")?;
-                let result = gdf.median(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .median(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "mode" => {
                 let (column, output) = self.parse_simple_agg_args(args, "mode")?;
-                let result = gdf.mode(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .mode(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
             "count_distinct" | "nunique" => {
                 let (column, output) = self.parse_simple_agg_args(args, "count_distinct")?;
-                let result = gdf.count_distinct(&column, output.as_deref()).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .count_distinct(&column, output.as_deref())
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -6636,7 +6706,7 @@ impl VM {
             "agg" | "aggregate" => {
                 if args.is_empty() {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "agg requires at least one aggregation spec".to_string()
+                        "agg requires at least one aggregation spec".to_string(),
                     )));
                 }
 
@@ -6654,9 +6724,9 @@ impl VM {
                     .collect();
                 let specs = specs?;
 
-                let result = gdf.aggregate(&specs).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let result = gdf
+                    .aggregate(&specs)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(result)))
             }
 
@@ -6668,7 +6738,11 @@ impl VM {
     }
 
     /// Parse arguments for simple aggregation methods like sum, mean, etc.
-    fn parse_simple_agg_args(&self, args: &[Value], method: &'static str) -> RuntimeResult<(String, Option<String>)> {
+    fn parse_simple_agg_args(
+        &self,
+        args: &[Value],
+        method: &'static str,
+    ) -> RuntimeResult<(String, Option<String>)> {
         if args.is_empty() || args.len() > 2 {
             return Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
                 "{method} expects 1 or 2 arguments (column, optional output_name)"
@@ -6718,11 +6792,19 @@ impl VM {
             "row_count" | "rows" => Ok(Value::Int(cube.row_count() as i64)),
             "batch_count" => Ok(Value::Int(cube.batch_count() as i64)),
             "dimensions" => {
-                let dims: Vec<Value> = cube.dimension_names().into_iter().map(Value::string).collect();
+                let dims: Vec<Value> = cube
+                    .dimension_names()
+                    .into_iter()
+                    .map(Value::string)
+                    .collect();
                 Ok(Value::list(dims))
             }
             "measures" => {
-                let measures: Vec<Value> = cube.measure_names().into_iter().map(Value::string).collect();
+                let measures: Vec<Value> = cube
+                    .measure_names()
+                    .into_iter()
+                    .map(Value::string)
+                    .collect();
                 Ok(Value::list(measures))
             }
             "hierarchies" => {
@@ -6745,29 +6827,32 @@ impl VM {
                 // dimension_values(dim_name) -> List of unique values
                 if _args.is_empty() {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "dimension_values requires a dimension name argument".to_string()
+                        "dimension_values requires a dimension name argument".to_string(),
                     )));
                 }
                 let dim_name = match &_args[0] {
                     Value::String(s) => (**s).clone(),
-                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String",
-                        got: other.type_name(),
-                        operation: "dimension_values",
-                    })),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "dimension_values",
+                        }))
+                    }
                 };
 
                 // Check if dimension exists
                 if !cube.has_dimension(&dim_name) {
-                    return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        format!("dimension '{}' not found in cube", dim_name)
-                    )));
+                    return Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "dimension '{}' not found in cube",
+                        dim_name
+                    ))));
                 }
 
                 // Get unique values using a query
-                let values = cube.dimension_values(&dim_name).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let values = cube
+                    .dimension_values(&dim_name)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
 
                 Ok(Value::list(values))
             }
@@ -6775,24 +6860,27 @@ impl VM {
                 // current_level(hierarchy_name) -> String (the current level in the hierarchy)
                 if _args.is_empty() {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "current_level requires a hierarchy name argument".to_string()
+                        "current_level requires a hierarchy name argument".to_string(),
                     )));
                 }
                 let hierarchy_name = match &_args[0] {
                     Value::String(s) => (**s).clone(),
-                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String",
-                        got: other.type_name(),
-                        operation: "current_level",
-                    })),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "current_level",
+                        }))
+                    }
                 };
 
                 // Get the current level (for Cube, this is the first level of the hierarchy)
                 match cube.current_level(&hierarchy_name) {
                     Some(level) => Ok(Value::string(level)),
-                    None => Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        format!("hierarchy '{}' not found in cube", hierarchy_name)
-                    ))),
+                    None => Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "hierarchy '{}' not found in cube",
+                        hierarchy_name
+                    )))),
                 }
             }
 
@@ -6809,10 +6897,22 @@ impl VM {
                 match cube.cache_stats() {
                     Some(stats) => {
                         let mut map = HashMap::new();
-                        map.insert(HashableValue::String(Rc::new("hits".to_string())), Value::Int(stats.hits as i64));
-                        map.insert(HashableValue::String(Rc::new("misses".to_string())), Value::Int(stats.misses as i64));
-                        map.insert(HashableValue::String(Rc::new("hit_rate".to_string())), Value::Float(stats.hit_rate));
-                        map.insert(HashableValue::String(Rc::new("entries".to_string())), Value::Int(stats.entries as i64));
+                        map.insert(
+                            HashableValue::String(Rc::new("hits".to_string())),
+                            Value::Int(stats.hits as i64),
+                        );
+                        map.insert(
+                            HashableValue::String(Rc::new("misses".to_string())),
+                            Value::Int(stats.misses as i64),
+                        );
+                        map.insert(
+                            HashableValue::String(Rc::new("hit_rate".to_string())),
+                            Value::Float(stats.hit_rate),
+                        );
+                        map.insert(
+                            HashableValue::String(Rc::new("entries".to_string())),
+                            Value::Int(stats.entries as i64),
+                        );
                         Ok(Value::Map(Rc::new(RefCell::new(map))))
                     }
                     None => Ok(Value::Null),
@@ -6838,26 +6938,30 @@ impl VM {
                 // slice(dimension, value) -> CubeQuery (create a query with a slice)
                 if _args.len() < 2 {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "slice requires 2 arguments: dimension name and value".to_string()
+                        "slice requires 2 arguments: dimension name and value".to_string(),
                     )));
                 }
                 let dim_name = match &_args[0] {
                     Value::String(s) => (**s).clone(),
-                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String",
-                        got: other.type_name(),
-                        operation: "slice",
-                    })),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "slice",
+                        }))
+                    }
                 };
                 let value = match &_args[1] {
                     Value::String(s) => (**s).clone(),
                     Value::Int(n) => n.to_string(),
                     Value::Float(n) => n.to_string(),
-                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String, Int, or Float",
-                        got: other.type_name(),
-                        operation: "slice",
-                    })),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String, Int, or Float",
+                            got: other.type_name(),
+                            operation: "slice",
+                        }))
+                    }
                 };
 
                 use crate::data::CubeQuery;
@@ -6871,9 +6975,9 @@ impl VM {
                 // Create a query that selects all and execute
                 use crate::data::CubeQuery;
                 let query = CubeQuery::new(cube);
-                let df = query.to_dataframe().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
-                })?;
+                let df = query
+                    .to_dataframe()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(df)))
             }
 
@@ -6896,12 +7000,16 @@ impl VM {
         match method {
             // dimension(name, ...) - add one or more dimensions
             "dimension" => {
-                let mut guard = builder
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
-                let inner_builder = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
+                let mut guard = builder.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder lock poisoned".to_string(),
+                    ))
+                })?;
+                let inner_builder = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder has already been consumed (built)".to_string(),
+                    ))
+                })?;
 
                 let mut result_builder = inner_builder;
                 for arg in args {
@@ -6920,14 +7028,17 @@ impl VM {
                     })?;
                 }
 
-                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(
+                    result_builder,
+                )))))
             }
 
             // measure(name, agg_func) - add a measure with aggregation
             "measure" => {
                 if args.len() < 2 {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "measure requires 2 arguments: column_name and aggregation_function".to_string()
+                        "measure requires 2 arguments: column_name and aggregation_function"
+                            .to_string(),
                     )));
                 }
 
@@ -6984,25 +7095,31 @@ impl VM {
                     }
                 };
 
-                let mut guard = builder
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
-                let inner_builder = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
-
-                let result_builder = inner_builder.measure(name, agg_func).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                let mut guard = builder.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder lock poisoned".to_string(),
+                    ))
+                })?;
+                let inner_builder = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder has already been consumed (built)".to_string(),
+                    ))
                 })?;
 
-                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+                let result_builder = inner_builder
+                    .measure(name, agg_func)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
+
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(
+                    result_builder,
+                )))))
             }
 
             // hierarchy(name, levels) - add a hierarchy
             "hierarchy" => {
                 if args.len() != 2 {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "hierarchy requires 2 arguments: name and list of levels".to_string()
+                        "hierarchy requires 2 arguments: name and list of levels".to_string(),
                     )));
                 }
 
@@ -7018,19 +7135,18 @@ impl VM {
                 };
 
                 let levels: Vec<String> = match &args[1] {
-                    Value::List(list) => {
-                        list.borrow()
-                            .iter()
-                            .map(|v| match v {
-                                Value::String(s) => Ok((**s).clone()),
-                                other => Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                                    expected: "String",
-                                    got: other.type_name(),
-                                    operation: "hierarchy level",
-                                })),
-                            })
-                            .collect::<RuntimeResult<Vec<_>>>()?
-                    }
+                    Value::List(list) => list
+                        .borrow()
+                        .iter()
+                        .map(|v| match v {
+                            Value::String(s) => Ok((**s).clone()),
+                            other => Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: other.type_name(),
+                                operation: "hierarchy level",
+                            })),
+                        })
+                        .collect::<RuntimeResult<Vec<_>>>()?,
                     other => {
                         return Err(self.runtime_error(RuntimeErrorKind::TypeError {
                             expected: "List",
@@ -7040,19 +7156,25 @@ impl VM {
                     }
                 };
 
-                let mut guard = builder
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
-                let inner_builder = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
-
-                let levels_refs: Vec<&str> = levels.iter().map(|s| s.as_str()).collect();
-                let result_builder = inner_builder.hierarchy(&name, &levels_refs).map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                let mut guard = builder.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder lock poisoned".to_string(),
+                    ))
+                })?;
+                let inner_builder = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder has already been consumed (built)".to_string(),
+                    ))
                 })?;
 
-                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+                let levels_refs: Vec<&str> = levels.iter().map(|s| s.as_str()).collect();
+                let result_builder = inner_builder
+                    .hierarchy(&name, &levels_refs)
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
+
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(
+                    result_builder,
+                )))))
             }
 
             // calculated_measure(name, expression) or calculated_measure(name, expression, type, agg)
@@ -7060,7 +7182,8 @@ impl VM {
             "calculated_measure" => {
                 if args.len() < 2 {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "calculated_measure requires at least 2 arguments: name and expression".to_string()
+                        "calculated_measure requires at least 2 arguments: name and expression"
+                            .to_string(),
                     )));
                 }
 
@@ -7086,25 +7209,33 @@ impl VM {
                     }
                 };
 
-                let mut guard = builder
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
-                let inner_builder = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
+                let mut guard = builder.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder lock poisoned".to_string(),
+                    ))
+                })?;
+                let inner_builder = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder has already been consumed (built)".to_string(),
+                    ))
+                })?;
 
                 let result_builder = if args.len() >= 4 {
                     // Full version: calculated_measure(name, expr, type, agg)
                     let data_type = match &args[2] {
                         Value::String(s) => match s.to_lowercase().as_str() {
-                            "float64" | "float" | "f64" | "double" => arrow::datatypes::DataType::Float64,
+                            "float64" | "float" | "f64" | "double" => {
+                                arrow::datatypes::DataType::Float64
+                            }
                             "float32" | "f32" => arrow::datatypes::DataType::Float32,
                             "int64" | "int" | "i64" => arrow::datatypes::DataType::Int64,
                             "int32" | "i32" => arrow::datatypes::DataType::Int32,
                             other => {
-                                return Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
-                                    "unsupported data type for calculated_measure: {other}"
-                                ))))
+                                return Err(self.runtime_error(RuntimeErrorKind::UserError(
+                                    format!(
+                                        "unsupported data type for calculated_measure: {other}"
+                                    ),
+                                )))
                             }
                         },
                         other => {
@@ -7158,22 +7289,30 @@ impl VM {
                         }
                     };
 
-                    inner_builder.calculated_measure_with_type(&name, &expression, data_type, agg_func)
-                        .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?
+                    inner_builder
+                        .calculated_measure_with_type(&name, &expression, data_type, agg_func)
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?
                 } else {
                     // Simple version: calculated_measure(name, expr) - uses Float64 and Sum defaults
-                    inner_builder.calculated_measure(&name, &expression)
-                        .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?
+                    inner_builder
+                        .calculated_measure(&name, &expression)
+                        .map_err(|e| {
+                            self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                        })?
                 };
 
-                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(
+                    result_builder,
+                )))))
             }
 
             // cache_enabled(size) - enable query caching with specified size
             "cache_enabled" => {
                 if args.is_empty() {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "cache_enabled requires a cache size argument".to_string()
+                        "cache_enabled requires a cache size argument".to_string(),
                     )));
                 }
 
@@ -7188,30 +7327,40 @@ impl VM {
                     }
                 };
 
-                let mut guard = builder
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
-                let inner_builder = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
+                let mut guard = builder.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder lock poisoned".to_string(),
+                    ))
+                })?;
+                let inner_builder = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder has already been consumed (built)".to_string(),
+                    ))
+                })?;
 
                 let result_builder = inner_builder.cache_enabled(cache_size);
 
-                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(result_builder)))))
+                Ok(Value::CubeBuilder(Arc::new(Mutex::new(Some(
+                    result_builder,
+                )))))
             }
 
             // build() - finalize the cube
             "build" => {
-                let mut guard = builder
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder lock poisoned".to_string())))?;
-                let inner_builder = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeBuilder has already been consumed (built)".to_string())))?;
-
-                let cube = inner_builder.build().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                let mut guard = builder.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder lock poisoned".to_string(),
+                    ))
                 })?;
+                let inner_builder = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeBuilder has already been consumed (built)".to_string(),
+                    ))
+                })?;
+
+                let cube = inner_builder
+                    .build()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
 
                 Ok(Value::Cube(std::sync::Arc::new(cube)))
             }
@@ -7234,41 +7383,52 @@ impl VM {
                 // current_level(hierarchy_name) -> String (the current level in the hierarchy)
                 if args.is_empty() {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "current_level requires a hierarchy name argument".to_string()
+                        "current_level requires a hierarchy name argument".to_string(),
                     )));
                 }
                 let hierarchy_name = match &args[0] {
                     Value::String(s) => (**s).clone(),
-                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String",
-                        got: other.type_name(),
-                        operation: "current_level",
-                    })),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "current_level",
+                        }))
+                    }
                 };
 
                 // Get the query without consuming it
-                let guard = query
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
-                let q = guard
-                    .as_ref()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+                let guard = query.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery lock poisoned".to_string(),
+                    ))
+                })?;
+                let q = guard.as_ref().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery has already been consumed".to_string(),
+                    ))
+                })?;
 
                 // Get the current level from the query
                 match q.current_level(&hierarchy_name) {
                     Some(level) => Ok(Value::string(level)),
-                    None => Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        format!("hierarchy '{}' not found in cube", hierarchy_name)
-                    ))),
+                    None => Err(self.runtime_error(RuntimeErrorKind::UserError(format!(
+                        "hierarchy '{}' not found in cube",
+                        hierarchy_name
+                    )))),
                 }
             }
             "cube_name" => {
-                let guard = query
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
-                let q = guard
-                    .as_ref()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+                let guard = query.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery lock poisoned".to_string(),
+                    ))
+                })?;
+                let q = guard.as_ref().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery has already been consumed".to_string(),
+                    ))
+                })?;
 
                 Ok(q.cube_name().map(Value::string).unwrap_or(Value::Null))
             }
@@ -7278,34 +7438,42 @@ impl VM {
                 // slice(dimension, value) -> CubeQuery
                 if args.len() < 2 {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "slice requires 2 arguments: dimension name and value".to_string()
+                        "slice requires 2 arguments: dimension name and value".to_string(),
                     )));
                 }
                 let dim_name = match &args[0] {
                     Value::String(s) => (**s).clone(),
-                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String",
-                        got: other.type_name(),
-                        operation: "slice",
-                    })),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: other.type_name(),
+                            operation: "slice",
+                        }))
+                    }
                 };
                 let value = match &args[1] {
                     Value::String(s) => (**s).clone(),
                     Value::Int(n) => n.to_string(),
                     Value::Float(n) => n.to_string(),
-                    other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String, Int, or Float",
-                        got: other.type_name(),
-                        operation: "slice",
-                    })),
+                    other => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String, Int, or Float",
+                            got: other.type_name(),
+                            operation: "slice",
+                        }))
+                    }
                 };
 
-                let mut guard = query
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
-                let inner_query = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+                let mut guard = query.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery lock poisoned".to_string(),
+                    ))
+                })?;
+                let inner_query = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery has already been consumed".to_string(),
+                    ))
+                })?;
 
                 use std::sync::{Arc, Mutex};
                 let new_query = inner_query.slice(dim_name, value);
@@ -7316,7 +7484,7 @@ impl VM {
                 // cube_select(col1, col2, ...) -> CubeQuery
                 if args.is_empty() {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "cube_select requires at least one column name".to_string()
+                        "cube_select requires at least one column name".to_string(),
                     )));
                 }
 
@@ -7324,21 +7492,27 @@ impl VM {
                 for arg in args {
                     let col = match arg {
                         Value::String(s) => (**s).clone(),
-                        other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                            expected: "String",
-                            got: other.type_name(),
-                            operation: "cube_select",
-                        })),
+                        other => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: other.type_name(),
+                                operation: "cube_select",
+                            }))
+                        }
                     };
                     columns.push(col);
                 }
 
-                let mut guard = query
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
-                let inner_query = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+                let mut guard = query.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery lock poisoned".to_string(),
+                    ))
+                })?;
+                let inner_query = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery has already been consumed".to_string(),
+                    ))
+                })?;
 
                 use std::sync::{Arc, Mutex};
                 let new_query = inner_query.select(columns);
@@ -7349,7 +7523,7 @@ impl VM {
                 // cube_group_by(col1, col2, ...) -> CubeQuery
                 if args.is_empty() {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "cube_group_by requires at least one column name".to_string()
+                        "cube_group_by requires at least one column name".to_string(),
                     )));
                 }
 
@@ -7357,21 +7531,27 @@ impl VM {
                 for arg in args {
                     let col = match arg {
                         Value::String(s) => (**s).clone(),
-                        other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                            expected: "String",
-                            got: other.type_name(),
-                            operation: "cube_group_by",
-                        })),
+                        other => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: other.type_name(),
+                                operation: "cube_group_by",
+                            }))
+                        }
                     };
                     columns.push(col);
                 }
 
-                let mut guard = query
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
-                let inner_query = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+                let mut guard = query.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery lock poisoned".to_string(),
+                    ))
+                })?;
+                let inner_query = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery has already been consumed".to_string(),
+                    ))
+                })?;
 
                 use std::sync::{Arc, Mutex};
                 let new_query = inner_query.group_by(columns);
@@ -7382,7 +7562,7 @@ impl VM {
                 // cube_order_by(col1, col2, ...) -> CubeQuery (prefix with - for descending)
                 if args.is_empty() {
                     return Err(self.runtime_error(RuntimeErrorKind::UserError(
-                        "cube_order_by requires at least one column name".to_string()
+                        "cube_order_by requires at least one column name".to_string(),
                     )));
                 }
 
@@ -7390,21 +7570,27 @@ impl VM {
                 for arg in args {
                     let col = match arg {
                         Value::String(s) => (**s).clone(),
-                        other => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                            expected: "String",
-                            got: other.type_name(),
-                            operation: "cube_order_by",
-                        })),
+                        other => {
+                            return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                                expected: "String",
+                                got: other.type_name(),
+                                operation: "cube_order_by",
+                            }))
+                        }
                     };
                     columns.push(col);
                 }
 
-                let mut guard = query
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
-                let inner_query = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
+                let mut guard = query.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery lock poisoned".to_string(),
+                    ))
+                })?;
+                let inner_query = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery has already been consumed".to_string(),
+                    ))
+                })?;
 
                 use std::sync::{Arc, Mutex};
                 let new_query = inner_query.order_by(columns);
@@ -7413,16 +7599,20 @@ impl VM {
 
             "execute" => {
                 // execute() -> DataFrame (run the query and return results)
-                let mut guard = query
-                    .lock()
-                    .map_err(|_| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery lock poisoned".to_string())))?;
-                let inner_query = guard
-                    .take()
-                    .ok_or_else(|| self.runtime_error(RuntimeErrorKind::UserError("CubeQuery has already been consumed".to_string())))?;
-
-                let df = inner_query.to_dataframe().map_err(|e| {
-                    self.runtime_error(RuntimeErrorKind::UserError(e.to_string()))
+                let mut guard = query.lock().map_err(|_| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery lock poisoned".to_string(),
+                    ))
                 })?;
+                let inner_query = guard.take().ok_or_else(|| {
+                    self.runtime_error(RuntimeErrorKind::UserError(
+                        "CubeQuery has already been consumed".to_string(),
+                    ))
+                })?;
+
+                let df = inner_query
+                    .to_dataframe()
+                    .map_err(|e| self.runtime_error(RuntimeErrorKind::UserError(e.to_string())))?;
                 Ok(Value::DataFrame(std::sync::Arc::new(df)))
             }
 
@@ -7581,11 +7771,13 @@ impl VM {
                 }
                 let expected_type = match &args[0] {
                     Value::String(s) => s.as_str(),
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String",
-                        got: args[0].type_name(),
-                        operation: "to_be_type",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: args[0].type_name(),
+                            operation: "to_be_type",
+                        }))
+                    }
                 };
                 let actual_type = actual.type_name();
                 let passes = actual_type.eq_ignore_ascii_case(expected_type);
@@ -7745,22 +7937,26 @@ impl VM {
                 }
                 let expected_len = match &args[0] {
                     Value::Int(n) => *n as usize,
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "Int",
-                        got: args[0].type_name(),
-                        operation: "to_have_length",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Int",
+                            got: args[0].type_name(),
+                            operation: "to_have_length",
+                        }))
+                    }
                 };
                 let actual_len = match actual {
                     Value::String(s) => s.len(),
                     Value::List(list) => list.borrow().len(),
                     Value::Map(map) => map.borrow().len(),
                     Value::Set(set) => set.borrow().len(),
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String, List, Map, or Set",
-                        got: actual.type_name(),
-                        operation: "to_have_length",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String, List, Map, or Set",
+                            got: actual.type_name(),
+                            operation: "to_have_length",
+                        }))
+                    }
                 };
                 let passes = actual_len == expected_len;
                 let passes = if negated { !passes } else { passes };
@@ -7786,22 +7982,26 @@ impl VM {
                 }
                 let actual_str = match actual {
                     Value::String(s) => s.as_str(),
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String",
-                        got: actual.type_name(),
-                        operation: "to_match",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: actual.type_name(),
+                            operation: "to_match",
+                        }))
+                    }
                 };
                 let passes = match &args[0] {
-                    Value::String(pattern) => {
-                        regex::Regex::new(pattern).map(|re| re.is_match(actual_str)).unwrap_or(false)
-                    }
+                    Value::String(pattern) => regex::Regex::new(pattern)
+                        .map(|re| re.is_match(actual_str))
+                        .unwrap_or(false),
                     Value::Regex(re) => re.is_match(actual_str),
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String or Regex",
-                        got: args[0].type_name(),
-                        operation: "to_match",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String or Regex",
+                            got: args[0].type_name(),
+                            operation: "to_match",
+                        }))
+                    }
                 };
                 let passes = if negated { !passes } else { passes };
 
@@ -7873,19 +8073,23 @@ impl VM {
                 }
                 let name = match &args[0] {
                     Value::String(s) => s.clone(),
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String",
-                        got: args[0].type_name(),
-                        operation: "describe",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: args[0].type_name(),
+                            operation: "describe",
+                        }))
+                    }
                 };
                 let closure = match &args[1] {
                     Value::Closure(c) => c.clone(),
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "Function",
-                        got: args[1].type_name(),
-                        operation: "describe",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Function",
+                            got: args[1].type_name(),
+                            operation: "describe",
+                        }))
+                    }
                 };
 
                 // Print the describe block header
@@ -7907,19 +8111,23 @@ impl VM {
                 }
                 let name = match &args[0] {
                     Value::String(s) => s.clone(),
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "String",
-                        got: args[0].type_name(),
-                        operation: "it",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "String",
+                            got: args[0].type_name(),
+                            operation: "it",
+                        }))
+                    }
                 };
                 let closure = match &args[1] {
                     Value::Closure(c) => c.clone(),
-                    _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                        expected: "Function",
-                        got: args[1].type_name(),
-                        operation: "it",
-                    })),
+                    _ => {
+                        return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                            expected: "Function",
+                            got: args[1].type_name(),
+                            operation: "it",
+                        }))
+                    }
                 };
 
                 // Execute the test closure
@@ -7951,20 +8159,24 @@ impl VM {
         let a_num = match a {
             Value::Int(n) => *n as f64,
             Value::Float(n) => *n,
-            _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                expected: "Int or Float",
-                got: a.type_name(),
-                operation: "numeric comparison",
-            })),
+            _ => {
+                return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                    expected: "Int or Float",
+                    got: a.type_name(),
+                    operation: "numeric comparison",
+                }))
+            }
         };
         let b_num = match b {
             Value::Int(n) => *n as f64,
             Value::Float(n) => *n,
-            _ => return Err(self.runtime_error(RuntimeErrorKind::TypeError {
-                expected: "Int or Float",
-                got: b.type_name(),
-                operation: "numeric comparison",
-            })),
+            _ => {
+                return Err(self.runtime_error(RuntimeErrorKind::TypeError {
+                    expected: "Int or Float",
+                    got: b.type_name(),
+                    operation: "numeric comparison",
+                }))
+            }
         };
         Ok((a_num, b_num))
     }
@@ -7973,17 +8185,14 @@ impl VM {
 
     fn get_field(&self, object: &Value, field: &str) -> RuntimeResult<Value> {
         match object {
-            Value::Struct(instance) => instance
-                .borrow()
-                .fields
-                .get(field)
-                .cloned()
-                .ok_or_else(|| {
+            Value::Struct(instance) => {
+                instance.borrow().fields.get(field).cloned().ok_or_else(|| {
                     self.runtime_error(RuntimeErrorKind::UndefinedField {
                         type_name: instance.borrow().type_name.clone(),
                         field: field.to_string(),
                     })
-                }),
+                })
+            }
             Value::Map(map) => {
                 let key = HashableValue::String(Rc::new(field.to_string()));
                 Ok(map.borrow().get(&key).cloned().unwrap_or(Value::Null))
@@ -8000,7 +8209,10 @@ impl VM {
     fn set_field(&mut self, object: Value, field: &str, value: Value) -> RuntimeResult<()> {
         match object {
             Value::Struct(instance) => {
-                instance.borrow_mut().fields.insert(field.to_string(), value);
+                instance
+                    .borrow_mut()
+                    .fields
+                    .insert(field.to_string(), value);
                 Ok(())
             }
             Value::Map(map) => {
@@ -8137,10 +8349,7 @@ impl VM {
         let len = length as i64;
         let idx = if index < 0 { len + index } else { index };
         if idx < 0 || idx >= len {
-            Err(self.runtime_error(RuntimeErrorKind::IndexOutOfBounds {
-                index,
-                length,
-            }))
+            Err(self.runtime_error(RuntimeErrorKind::IndexOutOfBounds { index, length }))
         } else {
             Ok(idx as usize)
         }
@@ -8222,9 +8431,7 @@ impl VM {
             (Value::String(_), "String") => true,
             (Value::List(_), "List") => true,
             (Value::Map(_), "Map") => true,
-            (Value::Function(_) | Value::Closure(_) | Value::NativeFunction(_), "Function") => {
-                true
-            }
+            (Value::Function(_) | Value::Closure(_) | Value::NativeFunction(_), "Function") => true,
             (Value::Struct(s), name) => s.borrow().type_name == name,
             (Value::EnumVariant(e), name) => e.enum_name == name,
             (Value::Range(_), "Range") => true,
@@ -8313,14 +8520,11 @@ impl VM {
         match closure {
             Value::Closure(c) => self.call_closure_sync(c.clone(), args),
             Value::NativeFunction(nf) => {
-                let result = (nf.function)(&args).map_err(|msg| {
-                    self.runtime_error(RuntimeErrorKind::Internal(msg))
-                })?;
+                let result = (nf.function)(&args)
+                    .map_err(|msg| self.runtime_error(RuntimeErrorKind::Internal(msg)))?;
                 Ok(result)
             }
-            other => Err(self.runtime_error(RuntimeErrorKind::NotCallable(
-                other.type_name(),
-            ))),
+            other => Err(self.runtime_error(RuntimeErrorKind::NotCallable(other.type_name()))),
         }
     }
 
@@ -8524,7 +8728,10 @@ impl VM {
             if let Some(exception) = self.current_exception.take() {
                 if let Ok(handled) = self.handle_exception(exception.clone()) {
                     if !handled {
-                        return DebugStepResult::Error(format!("Uncaught exception: {}", exception));
+                        return DebugStepResult::Error(format!(
+                            "Uncaught exception: {}",
+                            exception
+                        ));
                     }
                     continue;
                 } else {
@@ -8550,15 +8757,23 @@ impl VM {
             let frame_depth = self.frames.len();
 
             // Check breakpoint
-            if self.debug_context.has_breakpoint(self.current_source.as_ref(), current_line) {
+            if self
+                .debug_context
+                .has_breakpoint(self.current_source.as_ref(), current_line)
+            {
                 // Find breakpoint ID
                 let bp_id = 0; // Simplified - would need to look up actual ID
                 self.debug_context.clear_step();
-                return DebugStepResult::Paused(self.get_debug_state(PauseReason::Breakpoint(bp_id)));
+                return DebugStepResult::Paused(
+                    self.get_debug_state(PauseReason::Breakpoint(bp_id)),
+                );
             }
 
             // Check stepping
-            if self.debug_context.should_break_for_step(frame_depth, current_line) {
+            if self
+                .debug_context
+                .should_break_for_step(frame_depth, current_line)
+            {
                 self.debug_context.clear_step();
                 return DebugStepResult::Paused(self.get_debug_state(PauseReason::Step));
             }
@@ -8627,7 +8842,8 @@ impl VM {
     /// Returns the number of cycles broken, or 0 if collection was not triggered.
     pub fn gc_collect_if_needed(&mut self) -> usize {
         if self.gc.should_collect() {
-            self.gc.collect(&self.stack, &self.globals, &self.open_upvalues)
+            self.gc
+                .collect(&self.stack, &self.globals, &self.open_upvalues)
         } else {
             0
         }
@@ -8637,7 +8853,8 @@ impl VM {
     ///
     /// Returns the number of cycles broken.
     pub fn gc_collect(&mut self) -> usize {
-        self.gc.force_collect(&self.stack, &self.globals, &self.open_upvalues)
+        self.gc
+            .force_collect(&self.stack, &self.globals, &self.open_upvalues)
     }
 
     /// Get garbage collection statistics
@@ -8677,23 +8894,40 @@ where
     F: FnOnce(&GroupedDataFrame, &str, Option<&str>) -> crate::data::DataResult<DataFrame>,
 {
     if args.is_empty() {
-        return Err(format!("{name} requires a GroupedDataFrame as the first argument"));
+        return Err(format!(
+            "{name} requires a GroupedDataFrame as the first argument"
+        ));
     }
     let gdf = match &args[0] {
         Value::GroupedDataFrame(gdf) => gdf,
-        other => return Err(format!("{name} expects GroupedDataFrame, got {}", other.type_name())),
+        other => {
+            return Err(format!(
+                "{name} expects GroupedDataFrame, got {}",
+                other.type_name()
+            ))
+        }
     };
     if args.len() < 2 {
         return Err(format!("{name} requires at least a column name argument"));
     }
     let column = match &args[1] {
         Value::String(s) => s.as_str(),
-        other => return Err(format!("{name} column name must be string, got {}", other.type_name())),
+        other => {
+            return Err(format!(
+                "{name} column name must be string, got {}",
+                other.type_name()
+            ))
+        }
     };
     let output = if args.len() > 2 {
         match &args[2] {
             Value::String(s) => Some(s.as_str()),
-            other => return Err(format!("{name} output name must be string, got {}", other.type_name())),
+            other => {
+                return Err(format!(
+                    "{name} output name must be string, got {}",
+                    other.type_name()
+                ))
+            }
         }
     } else {
         None

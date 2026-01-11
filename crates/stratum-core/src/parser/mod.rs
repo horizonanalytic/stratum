@@ -275,16 +275,12 @@ impl Parser {
             let token = &self.tokens[self.position];
             match &token.kind {
                 TokenKind::LineComment => {
-                    self.pending_comments.push(Comment::line(
-                        token.lexeme.clone(),
-                        token.span,
-                    ));
+                    self.pending_comments
+                        .push(Comment::line(token.lexeme.clone(), token.span));
                 }
                 TokenKind::BlockComment => {
-                    self.pending_comments.push(Comment::block(
-                        token.lexeme.clone(),
-                        token.span,
-                    ));
+                    self.pending_comments
+                        .push(Comment::block(token.lexeme.clone(), token.span));
                 }
                 TokenKind::Newline => {
                     // Just skip newlines - they're handled implicitly
@@ -400,7 +396,12 @@ impl Parser {
         }
 
         let end = self.current().span.end;
-        Module::with_trivia(inner_attributes, top_level, Span::new(start, end), module_trivia)
+        Module::with_trivia(
+            inner_attributes,
+            top_level,
+            Span::new(start, end),
+            module_trivia,
+        )
     }
 
     /// Parse inner attributes: #![attr] #![attr(args)]
@@ -493,7 +494,7 @@ impl Parser {
                 | TokenKind::Interface
                 | TokenKind::Impl
                 | TokenKind::Import
-                | TokenKind::Hash  // Attribute
+                | TokenKind::Hash // Attribute
         )
     }
 
@@ -558,7 +559,11 @@ impl Parser {
 
         // Just an expression statement
         self.eat(TokenKind::Semicolon);
-        Ok(TopLevelItem::Statement(Stmt::with_trivia(StmtKind::Expr(expr), span, trivia)))
+        Ok(TopLevelItem::Statement(Stmt::with_trivia(
+            StmtKind::Expr(expr),
+            span,
+            trivia,
+        )))
     }
 
     // ==================== Item Parsing ====================
@@ -1657,8 +1662,7 @@ impl Parser {
         }
 
         // Optional finally - check BEFORE consuming to avoid losing the next token
-        let finally = if self.check(TokenKind::Ident)
-            && self.current().lexeme.as_str() == "finally"
+        let finally = if self.check(TokenKind::Ident) && self.current().lexeme.as_str() == "finally"
         {
             self.advance(); // Now consume 'finally'
             Some(self.block()?)

@@ -78,7 +78,9 @@ impl AotCompiler {
                 .map_err(|e| AotError::BuildError(format!("Failed to create ISA: {}", e)))?
         } else {
             cranelift_native::builder()
-                .map_err(|msg| AotError::BuildError(format!("Host machine not supported: {}", msg)))?
+                .map_err(|msg| {
+                    AotError::BuildError(format!("Host machine not supported: {}", msg))
+                })?
                 .finish(settings::Flags::new(flag_builder.clone()))
                 .map_err(|e| AotError::BuildError(format!("Failed to create ISA: {}", e)))?
         };
@@ -476,10 +478,7 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 .builder
                 .ins()
                 .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
-            let null_data = self
-                .builder
-                .ins()
-                .iconst(CraneliftTypes::VALUE_SECOND, 0);
+            let null_data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, 0);
             self.builder.ins().return_(&[null_tag, null_data]);
         }
 
@@ -680,10 +679,7 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 let bool_and_false = self.builder.ins().band(is_bool, is_false);
                 let is_falsy = self.builder.ins().bor(is_null, bool_and_false);
                 let is_truthy = self.builder.ins().bnot(is_falsy);
-                let one = self
-                    .builder
-                    .ins()
-                    .iconst(CraneliftTypes::VALUE_FIRST, 1);
+                let one = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, 1);
                 let is_truthy_bool = self.builder.ins().band(is_truthy, one);
 
                 self.builder
@@ -710,10 +706,7 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                         .builder
                         .ins()
                         .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
-                    let null_data = self
-                        .builder
-                        .ins()
-                        .iconst(CraneliftTypes::VALUE_SECOND, 0);
+                    let null_data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, 0);
                     (null_tag, null_data)
                 };
                 self.builder.ins().return_(&[tag, data]);
@@ -788,10 +781,7 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                     .ins()
                     .icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
                 let is_not_null = self.builder.ins().bnot(is_null);
-                let one = self
-                    .builder
-                    .ins()
-                    .iconst(CraneliftTypes::VALUE_FIRST, 1);
+                let one = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, 1);
                 let is_not_null_bool = self.builder.ins().band(is_not_null, one);
 
                 self.builder
@@ -826,10 +816,10 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                     .builder
                     .ins()
                     .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
-                let data = self.builder.ins().iconst(
-                    CraneliftTypes::VALUE_SECOND,
-                    if *b { 1 } else { 0 },
-                );
+                let data = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_SECOND, if *b { 1 } else { 0 });
                 self.push(tag, data);
             }
             Value::Int(i) => {
@@ -837,10 +827,7 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                     .builder
                     .ins()
                     .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Int as i64);
-                let data = self
-                    .builder
-                    .ins()
-                    .iconst(CraneliftTypes::VALUE_SECOND, *i);
+                let data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, *i);
                 self.push(tag, data);
             }
             Value::Float(f) => {
@@ -905,21 +892,19 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
             .builder
             .ins()
             .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Int as i64);
-        self.builder
-            .ins()
-            .jump(merge_block, &[int_tag, int_result]);
+        self.builder.ins().jump(merge_block, &[int_tag, int_result]);
         self.builder.seal_block(int_block);
 
         // Float path
         self.builder.switch_to_block(float_block);
-        let left_float = self
-            .builder
-            .ins()
-            .bitcast(CraneliftTypes::FLOAT, MemFlags::new(), left_data);
-        let right_float = self
-            .builder
-            .ins()
-            .bitcast(CraneliftTypes::FLOAT, MemFlags::new(), right_data);
+        let left_float =
+            self.builder
+                .ins()
+                .bitcast(CraneliftTypes::FLOAT, MemFlags::new(), left_data);
+        let right_float =
+            self.builder
+                .ins()
+                .bitcast(CraneliftTypes::FLOAT, MemFlags::new(), right_data);
         let float_result = match op {
             BinaryOp::Add => self.builder.ins().fadd(left_float, right_float),
             BinaryOp::Sub => self.builder.ins().fsub(left_float, right_float),
@@ -930,11 +915,10 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 return Err(AotError::UnsupportedInstruction("float modulo".to_string()));
             }
         };
-        let float_data = self.builder.ins().bitcast(
-            CraneliftTypes::VALUE_SECOND,
-            MemFlags::new(),
-            float_result,
-        );
+        let float_data =
+            self.builder
+                .ins()
+                .bitcast(CraneliftTypes::VALUE_SECOND, MemFlags::new(), float_result);
         let float_tag = self
             .builder
             .ins()
@@ -983,9 +967,7 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
             .builder
             .ins()
             .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Int as i64);
-        self.builder
-            .ins()
-            .jump(merge_block, &[int_tag, neg_int]);
+        self.builder.ins().jump(merge_block, &[int_tag, neg_int]);
         self.builder.seal_block(int_block);
 
         // Float path
@@ -995,18 +977,15 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
             .ins()
             .bitcast(CraneliftTypes::FLOAT, MemFlags::new(), data);
         let neg_float = self.builder.ins().fneg(float_val);
-        let neg_data = self.builder.ins().bitcast(
-            CraneliftTypes::VALUE_SECOND,
-            MemFlags::new(),
-            neg_float,
-        );
+        let neg_data =
+            self.builder
+                .ins()
+                .bitcast(CraneliftTypes::VALUE_SECOND, MemFlags::new(), neg_float);
         let float_tag = self
             .builder
             .ins()
             .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Float as i64);
-        self.builder
-            .ins()
-            .jump(merge_block, &[float_tag, neg_data]);
+        self.builder.ins().jump(merge_block, &[float_tag, neg_data]);
         self.builder.seal_block(float_block);
 
         // Merge
@@ -1106,7 +1085,11 @@ mod tests {
         function.execution_mode = ExecutionMode::Compile;
 
         let result = compiler.compile_function(&function);
-        assert!(result.is_ok(), "AOT compilation should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "AOT compilation should succeed: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -1183,7 +1166,11 @@ mod tests {
         function.execution_mode = ExecutionMode::Compile;
 
         let result = compiler.compile_function(&function);
-        assert!(result.is_ok(), "AOT compilation with locals should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "AOT compilation with locals should succeed: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -1231,6 +1218,9 @@ mod tests {
         // Object file should have some content
         let obj_bytes = result.unwrap();
         assert!(!obj_bytes.is_empty(), "Object file should not be empty");
-        assert!(obj_bytes.len() > 100, "Object file should have meaningful content");
+        assert!(
+            obj_bytes.len() > 100,
+            "Object file should have meaningful content"
+        );
     }
 }

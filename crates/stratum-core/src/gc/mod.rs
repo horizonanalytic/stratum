@@ -792,10 +792,14 @@ mod tests {
         let map2_value = Value::Map(Rc::clone(&map2));
 
         // Create mutual references
-        map1.borrow_mut()
-            .insert(HashableValue::String(Rc::new("other".to_string())), map2_value.clone());
-        map2.borrow_mut()
-            .insert(HashableValue::String(Rc::new("other".to_string())), map1_value.clone());
+        map1.borrow_mut().insert(
+            HashableValue::String(Rc::new("other".to_string())),
+            map2_value.clone(),
+        );
+        map2.borrow_mut().insert(
+            HashableValue::String(Rc::new("other".to_string())),
+            map1_value.clone(),
+        );
 
         gc.track(&map1_value);
         gc.track(&map2_value);

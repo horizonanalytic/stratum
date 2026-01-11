@@ -65,12 +65,14 @@ impl DocExtractor {
     fn extract_struct(s: &StructDef) -> DocumentedItem {
         let doc = s.trivia.doc_text().map(|t| DocComment::parse(&t));
         let sig = Self::format_struct_signature(s);
-        let mut item = DocumentedItem::new(s.name.name.clone(), ItemKind::Struct, sig).with_doc(doc);
+        let mut item =
+            DocumentedItem::new(s.name.name.clone(), ItemKind::Struct, sig).with_doc(doc);
 
         // Add fields as children
         for field in &s.fields {
             let field_sig = format!("{}: {}", field.name.name, Self::format_type(&field.ty));
-            let field_item = DocumentedItem::new(field.name.name.clone(), ItemKind::Field, field_sig);
+            let field_item =
+                DocumentedItem::new(field.name.name.clone(), ItemKind::Field, field_sig);
             item.add_child(field_item);
         }
 
@@ -139,7 +141,11 @@ impl DocExtractor {
         // Type parameters
         if !func.type_params.is_empty() {
             sig.push('<');
-            let params: Vec<_> = func.type_params.iter().map(|p| p.name.name.as_str()).collect();
+            let params: Vec<_> = func
+                .type_params
+                .iter()
+                .map(|p| p.name.name.as_str())
+                .collect();
             sig.push_str(&params.join(", "));
             sig.push('>');
         }
@@ -150,11 +156,10 @@ impl DocExtractor {
             .params
             .iter()
             .map(|p| {
-                let ty = p
-                    .ty
-                    .as_ref()
-                    .map(|t| format!(": {}", Self::format_type(t)))
-                    .unwrap_or_default();
+                let ty =
+                    p.ty.as_ref()
+                        .map(|t| format!(": {}", Self::format_type(t)))
+                        .unwrap_or_default();
                 format!("{}{}", p.name.name, ty)
             })
             .collect();
@@ -250,7 +255,11 @@ impl DocExtractor {
         // Type parameters
         if !method.type_params.is_empty() {
             sig.push('<');
-            let params: Vec<_> = method.type_params.iter().map(|p| p.name.name.as_str()).collect();
+            let params: Vec<_> = method
+                .type_params
+                .iter()
+                .map(|p| p.name.name.as_str())
+                .collect();
             sig.push_str(&params.join(", "));
             sig.push('>');
         }
@@ -261,11 +270,10 @@ impl DocExtractor {
             .params
             .iter()
             .map(|p| {
-                let ty = p
-                    .ty
-                    .as_ref()
-                    .map(|t| format!(": {}", Self::format_type(t)))
-                    .unwrap_or_default();
+                let ty =
+                    p.ty.as_ref()
+                        .map(|t| format!(": {}", Self::format_type(t)))
+                        .unwrap_or_default();
                 format!("{}{}", p.name.name, ty)
             })
             .collect();

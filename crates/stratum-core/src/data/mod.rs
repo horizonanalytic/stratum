@@ -33,9 +33,9 @@ pub use io::{
 pub use join::{JoinSpec, JoinType};
 pub use lazy::{LazyFrame, LazyGroupBy};
 pub use memory::{
-    categories as memory_categories, detect_leaks, enable_profiling, disable_profiling,
-    is_profiling_enabled, profiler_summary, record_allocation, record_deallocation,
-    reset_profiler, set_profiler_gc_stats, CategoryStats, LeakInfo, MemoryProfiler, MemoryStats,
+    categories as memory_categories, detect_leaks, disable_profiling, enable_profiling,
+    is_profiling_enabled, profiler_summary, record_allocation, record_deallocation, reset_profiler,
+    set_profiler_gc_stats, CategoryStats, LeakInfo, MemoryProfiler, MemoryStats,
 };
 pub use parallel::{parallel_threshold, set_parallel_threshold, ParallelConfig};
 pub use series::{Rolling, Series};

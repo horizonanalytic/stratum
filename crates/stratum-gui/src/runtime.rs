@@ -52,23 +52,47 @@ pub enum Message {
     /// Set a field to a specific float value
     SetFloatField { field: String, value: f64 },
     /// TextField value changed - invokes callback with new value
-    TextFieldChanged { callback_id: CallbackId, value: String },
+    TextFieldChanged {
+        callback_id: CallbackId,
+        value: String,
+    },
     /// Checkbox toggled - invokes callback with new checked state
-    CheckboxToggled { callback_id: CallbackId, checked: bool },
+    CheckboxToggled {
+        callback_id: CallbackId,
+        checked: bool,
+    },
     /// Radio button selected - invokes callback with selected value
-    RadioButtonSelected { callback_id: CallbackId, value: String },
+    RadioButtonSelected {
+        callback_id: CallbackId,
+        value: String,
+    },
     /// Dropdown selection changed - invokes callback with selected value
-    DropdownSelected { callback_id: CallbackId, value: String },
+    DropdownSelected {
+        callback_id: CallbackId,
+        value: String,
+    },
     /// Slider value changed - invokes callback with new value
     SliderChanged { callback_id: CallbackId, value: f64 },
     /// Toggle switched - invokes callback with new state
-    ToggleSwitched { callback_id: CallbackId, is_on: bool },
+    ToggleSwitched {
+        callback_id: CallbackId,
+        is_on: bool,
+    },
     /// DataTable column sort requested - invokes callback with column name
-    DataTableSort { callback_id: CallbackId, column: String },
+    DataTableSort {
+        callback_id: CallbackId,
+        column: String,
+    },
     /// DataTable page changed - invokes callback with new page number
-    DataTablePageChange { callback_id: CallbackId, page: usize },
+    DataTablePageChange {
+        callback_id: CallbackId,
+        page: usize,
+    },
     /// DataTable row selection changed - invokes callback with selected row indices
-    DataTableRowSelect { callback_id: CallbackId, rows: Vec<usize> },
+    DataTableRowSelect {
+        callback_id: CallbackId,
+        rows: Vec<usize>,
+    },
     /// DataTable row clicked - invokes callback with row index
     DataTableRowClick { callback_id: CallbackId, row: usize },
     /// DataTable cell clicked - invokes callback with row index and column name
@@ -640,13 +664,7 @@ impl GuiRuntime {
     fn get_count(&self) -> i64 {
         self.state
             .get_field("count")
-            .and_then(|v| {
-                if let Value::Int(i) = v {
-                    Some(i)
-                } else {
-                    None
-                }
-            })
+            .and_then(|v| if let Value::Int(i) = v { Some(i) } else { None })
             .unwrap_or(0)
     }
 
@@ -682,9 +700,9 @@ impl GuiRuntime {
         }
 
         // Invoke on_init if present
-        lifecycle.start().map_err(|e| {
-            GuiError::EventHandling(format!("Failed to start lifecycle: {e}"))
-        })?;
+        lifecycle
+            .start()
+            .map_err(|e| GuiError::EventHandling(format!("Failed to start lifecycle: {e}")))?;
 
         // Create initial window manager
         let window_manager = WindowManager::new();
@@ -822,9 +840,9 @@ impl App {
     /// Re-invoke the view function and update root_element
     /// Called after callbacks execute to reflect state changes in the UI
     fn refresh_view(&mut self) {
-        use crate::element::GuiElement;
         use crate::bindings::take_pending_callbacks;
         use crate::callback::Callback;
+        use crate::element::GuiElement;
 
         // Only refresh if we have both a view_fn and an executor
         if let (Some(ref view_fn), Some(ref executor)) = (&self.view_fn, &self.executor) {
@@ -916,7 +934,10 @@ impl App {
                     }
                 }
             }
-            Message::CheckboxToggled { callback_id, checked } => {
+            Message::CheckboxToggled {
+                callback_id,
+                checked,
+            } => {
                 if let Some(ref executor) = self.executor {
                     let checked_arg = Value::Bool(checked);
                     if let Err(e) = executor.execute(callback_id, vec![checked_arg]) {
@@ -956,7 +977,10 @@ impl App {
                     }
                 }
             }
-            Message::DataTableSort { callback_id, column } => {
+            Message::DataTableSort {
+                callback_id,
+                column,
+            } => {
                 if let Some(ref executor) = self.executor {
                     let col_arg = Value::String(column.into());
                     if let Err(e) = executor.execute(callback_id, vec![col_arg]) {
@@ -974,8 +998,10 @@ impl App {
             }
             Message::DataTableRowSelect { callback_id, rows } => {
                 if let Some(ref executor) = self.executor {
-                    let row_values: Vec<Value> = rows.into_iter().map(|r| Value::Int(r as i64)).collect();
-                    let rows_arg = Value::List(std::rc::Rc::new(std::cell::RefCell::new(row_values)));
+                    let row_values: Vec<Value> =
+                        rows.into_iter().map(|r| Value::Int(r as i64)).collect();
+                    let rows_arg =
+                        Value::List(std::rc::Rc::new(std::cell::RefCell::new(row_values)));
                     if let Err(e) = executor.execute(callback_id, vec![rows_arg]) {
                         eprintln!("DataTable on_selection_change callback error: {e}");
                     }
@@ -1029,7 +1055,8 @@ impl App {
             // Window events
             Message::WindowOpened(id) => {
                 // Window already registered in run_with, just update focus
-                self.window_manager.set_focused(WindowId::from_iced(id), true);
+                self.window_manager
+                    .set_focused(WindowId::from_iced(id), true);
             }
             Message::WindowClosed(id) => {
                 self.window_manager.unregister(WindowId::from_iced(id));
@@ -1161,7 +1188,8 @@ impl App {
                         .into_iter()
                         .map(|m| Value::String(Rc::new(m)))
                         .collect();
-                    let measures_arg = Value::List(Rc::new(std::cell::RefCell::new(measure_values)));
+                    let measures_arg =
+                        Value::List(Rc::new(std::cell::RefCell::new(measure_values)));
                     if let Err(e) = executor.execute(callback_id, vec![measures_arg]) {
                         eprintln!("Cube measure select callback error: {e}");
                     }
@@ -1299,10 +1327,22 @@ impl App {
                         let key_arg = Value::String(Rc::new(key));
                         // Pack modifiers as a struct-like map
                         let mut mods_map = std::collections::HashMap::new();
-                        mods_map.insert(HashableValue::String(Rc::new("shift".to_string())), Value::Bool(modifiers.shift));
-                        mods_map.insert(HashableValue::String(Rc::new("ctrl".to_string())), Value::Bool(modifiers.ctrl));
-                        mods_map.insert(HashableValue::String(Rc::new("alt".to_string())), Value::Bool(modifiers.alt));
-                        mods_map.insert(HashableValue::String(Rc::new("logo".to_string())), Value::Bool(modifiers.logo));
+                        mods_map.insert(
+                            HashableValue::String(Rc::new("shift".to_string())),
+                            Value::Bool(modifiers.shift),
+                        );
+                        mods_map.insert(
+                            HashableValue::String(Rc::new("ctrl".to_string())),
+                            Value::Bool(modifiers.ctrl),
+                        );
+                        mods_map.insert(
+                            HashableValue::String(Rc::new("alt".to_string())),
+                            Value::Bool(modifiers.alt),
+                        );
+                        mods_map.insert(
+                            HashableValue::String(Rc::new("logo".to_string())),
+                            Value::Bool(modifiers.logo),
+                        );
                         let mods_arg = Value::Map(Rc::new(std::cell::RefCell::new(mods_map)));
                         if let Err(e) = executor.execute(callback_id, vec![key_arg, mods_arg]) {
                             eprintln!("Key pressed callback error: {e}");
@@ -1321,10 +1361,22 @@ impl App {
                         use stratum_core::bytecode::HashableValue;
                         let key_arg = Value::String(Rc::new(key));
                         let mut mods_map = std::collections::HashMap::new();
-                        mods_map.insert(HashableValue::String(Rc::new("shift".to_string())), Value::Bool(modifiers.shift));
-                        mods_map.insert(HashableValue::String(Rc::new("ctrl".to_string())), Value::Bool(modifiers.ctrl));
-                        mods_map.insert(HashableValue::String(Rc::new("alt".to_string())), Value::Bool(modifiers.alt));
-                        mods_map.insert(HashableValue::String(Rc::new("logo".to_string())), Value::Bool(modifiers.logo));
+                        mods_map.insert(
+                            HashableValue::String(Rc::new("shift".to_string())),
+                            Value::Bool(modifiers.shift),
+                        );
+                        mods_map.insert(
+                            HashableValue::String(Rc::new("ctrl".to_string())),
+                            Value::Bool(modifiers.ctrl),
+                        );
+                        mods_map.insert(
+                            HashableValue::String(Rc::new("alt".to_string())),
+                            Value::Bool(modifiers.alt),
+                        );
+                        mods_map.insert(
+                            HashableValue::String(Rc::new("logo".to_string())),
+                            Value::Bool(modifiers.logo),
+                        );
                         let mods_arg = Value::Map(Rc::new(std::cell::RefCell::new(mods_map)));
                         if let Err(e) = executor.execute(callback_id, vec![key_arg, mods_arg]) {
                             eprintln!("Key released callback error: {e}");
@@ -1390,11 +1442,7 @@ impl App {
 
             // Context menu events
             Message::ShowContextMenu { x, y, items } => {
-                self.context_menu = Some(ContextMenuState {
-                    x,
-                    y,
-                    items,
-                });
+                self.context_menu = Some(ContextMenuState { x, y, items });
             }
             Message::ContextMenuSelect {
                 callback_id,
@@ -1488,9 +1536,7 @@ impl App {
         };
 
         // Wrap content in scrollable for long content
-        let scrollable_content = scrollable(content)
-            .width(Fill)
-            .height(Fill);
+        let scrollable_content = scrollable(content).width(Fill).height(Fill);
 
         let base = container(scrollable_content)
             .padding(self.padding)
@@ -1562,10 +1608,11 @@ impl App {
         base: Element<'a, Message>,
         menu: &'a ContextMenuState,
     ) -> Element<'a, Message> {
-        use iced::widget::{stack, container, column, button, text, mouse_area};
+        use iced::widget::{button, column, container, mouse_area, stack, text};
 
         // Build menu items
-        let menu_items: Vec<Element<'_, Message>> = menu.items
+        let menu_items: Vec<Element<'_, Message>> = menu
+            .items
             .iter()
             .enumerate()
             .filter_map(|(idx, item)| {
@@ -1574,10 +1621,12 @@ impl App {
                     Some(
                         container(iced::widget::Space::new().width(Fill).height(1))
                             .style(|_theme: &Theme| container::Style {
-                                background: Some(iced::Background::Color(Color::from_rgb(0.5, 0.5, 0.5))),
+                                background: Some(iced::Background::Color(Color::from_rgb(
+                                    0.5, 0.5, 0.5,
+                                ))),
                                 ..Default::default()
                             })
-                            .into()
+                            .into(),
                     )
                 } else if let Some(callback_id) = item.on_select {
                     // Render clickable menu item
@@ -1599,7 +1648,7 @@ impl App {
                         container(text(&item.label))
                             .padding([4, 16])
                             .width(Fill)
-                            .into()
+                            .into(),
                     )
                 }
             })
@@ -1607,39 +1656,36 @@ impl App {
 
         // Create menu container
         let menu_column = column(menu_items).spacing(2);
-        let menu_container = container(menu_column)
-            .padding(4)
-            .style(|theme: &Theme| {
-                let palette = theme.palette();
-                container::Style {
-                    background: Some(iced::Background::Color(palette.background)),
-                    border: iced::Border {
-                        color: palette.text,
-                        width: 1.0,
-                        radius: 4.0.into(),
-                    },
-                    shadow: iced::Shadow {
-                        color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                        offset: iced::Vector::new(2.0, 2.0),
-                        blur_radius: 4.0,
-                    },
-                    ..Default::default()
-                }
-            });
+        let menu_container = container(menu_column).padding(4).style(|theme: &Theme| {
+            let palette = theme.palette();
+            container::Style {
+                background: Some(iced::Background::Color(palette.background)),
+                border: iced::Border {
+                    color: palette.text,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                shadow: iced::Shadow {
+                    color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+                    offset: iced::Vector::new(2.0, 2.0),
+                    blur_radius: 4.0,
+                },
+                ..Default::default()
+            }
+        });
 
         // Position the menu at the click location
-        let positioned_menu = container(menu_container)
-            .padding(iced::Padding {
-                top: menu.y,
-                left: menu.x,
-                bottom: 0.0,
-                right: 0.0,
-            });
+        let positioned_menu = container(menu_container).padding(iced::Padding {
+            top: menu.y,
+            left: menu.x,
+            bottom: 0.0,
+            right: 0.0,
+        });
 
         // Create backdrop that hides menu when clicked
-        let backdrop = mouse_area(
-            container(iced::widget::Space::new().width(Fill).height(Fill))
-        )
+        let backdrop = mouse_area(container(
+            iced::widget::Space::new().width(Fill).height(Fill),
+        ))
         .on_press(Message::HideContextMenu);
 
         // Stack: base, backdrop, menu
@@ -1659,63 +1705,62 @@ impl App {
 
         // Add keyboard and file drop event subscriptions
         // Note: We use iced::event::listen_with with a pure function to avoid closure capture issues
-        subscriptions.push(
-            iced::event::listen_with(|event, _status, _id| {
-                match event {
-                    // Keyboard events
-                    iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                        let key_str = format!("{key:?}");
-                        Some(Message::KeyPressed {
-                            callback_id: CallbackId::new(0), // Placeholder - handled in update
-                            key: key_str,
-                            modifiers: KeyModifiers::from_iced(modifiers),
-                        })
-                    }
-                    iced::Event::Keyboard(iced::keyboard::Event::KeyReleased { key, modifiers, .. }) => {
-                        let key_str = format!("{key:?}");
-                        Some(Message::KeyReleased {
-                            callback_id: CallbackId::new(0), // Placeholder - handled in update
-                            key: key_str,
-                            modifiers: KeyModifiers::from_iced(modifiers),
-                        })
-                    }
-                    // File drop events
-                    iced::Event::Window(iced::window::Event::FileHovered(path)) => {
-                        Some(Message::FileHovered { paths: vec![path] })
-                    }
-                    iced::Event::Window(iced::window::Event::FileDropped(path)) => {
-                        Some(Message::FileDropped { paths: vec![path] })
-                    }
-                    iced::Event::Window(iced::window::Event::FilesHoveredLeft) => {
-                        Some(Message::FileHoverLeft)
-                    }
-                    _ => None
+        subscriptions.push(iced::event::listen_with(|event, _status, _id| {
+            match event {
+                // Keyboard events
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key, modifiers, ..
+                }) => {
+                    let key_str = format!("{key:?}");
+                    Some(Message::KeyPressed {
+                        callback_id: CallbackId::new(0), // Placeholder - handled in update
+                        key: key_str,
+                        modifiers: KeyModifiers::from_iced(modifiers),
+                    })
                 }
-            })
-        );
+                iced::Event::Keyboard(iced::keyboard::Event::KeyReleased {
+                    key,
+                    modifiers,
+                    ..
+                }) => {
+                    let key_str = format!("{key:?}");
+                    Some(Message::KeyReleased {
+                        callback_id: CallbackId::new(0), // Placeholder - handled in update
+                        key: key_str,
+                        modifiers: KeyModifiers::from_iced(modifiers),
+                    })
+                }
+                // File drop events
+                iced::Event::Window(iced::window::Event::FileHovered(path)) => {
+                    Some(Message::FileHovered { paths: vec![path] })
+                }
+                iced::Event::Window(iced::window::Event::FileDropped(path)) => {
+                    Some(Message::FileDropped { paths: vec![path] })
+                }
+                iced::Event::Window(iced::window::Event::FilesHoveredLeft) => {
+                    Some(Message::FileHoverLeft)
+                }
+                _ => None,
+            }
+        }));
 
         Subscription::batch(subscriptions)
     }
 
     /// Helper to get an integer field from state
     fn get_int_field(&self, field: &str) -> Option<i64> {
-        self.state.get_field(field).and_then(|v| {
-            if let Value::Int(i) = v {
-                Some(i)
-            } else {
-                None
-            }
-        })
+        self.state
+            .get_field(field)
+            .and_then(|v| if let Value::Int(i) = v { Some(i) } else { None })
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::element::GuiElementKind;
     use std::collections::HashMap;
     use stratum_core::bytecode::StructInstance;
-    use crate::element::GuiElementKind;
 
     fn create_counter_state(initial: i64) -> Value {
         let mut fields = HashMap::new();
@@ -1774,8 +1819,7 @@ mod tests {
     #[test]
     fn test_runtime_with_stratum_theme() {
         let state = create_counter_state(0);
-        let runtime = GuiRuntime::new(state)
-            .with_theme_preset(ThemePreset::Dracula);
+        let runtime = GuiRuntime::new(state).with_theme_preset(ThemePreset::Dracula);
 
         assert_eq!(runtime.config.theme.name(), "dracula");
     }
@@ -1850,7 +1894,9 @@ mod tests {
     #[test]
     fn test_window_manager_in_app() {
         let mut app = create_test_app(0);
-        let main_id = app.window_manager.register_main(WindowSettings::new("Main"));
+        let main_id = app
+            .window_manager
+            .register_main(WindowSettings::new("Main"));
 
         assert_eq!(app.window_manager.len(), 1);
         assert_eq!(app.window_manager.title(main_id), "Main");
@@ -2081,13 +2127,13 @@ mod tests {
                 GuiElement::hstack()
                     .child(GuiElement::text("A").build())
                     .child(GuiElement::text("B").build())
-                    .build()
+                    .build(),
             )
             .child(
                 GuiElement::hstack()
                     .child(GuiElement::text("C").build())
                     .child(GuiElement::text("D").build())
-                    .build()
+                    .build(),
             )
             .build();
 
@@ -2112,9 +2158,7 @@ mod tests {
         assert!(checkbox.children.is_empty());
 
         // Test text field creation
-        let textfield = GuiElement::text_field()
-            .placeholder("Enter text")
-            .build();
+        let textfield = GuiElement::text_field().placeholder("Enter text").build();
         assert!(textfield.children.is_empty());
     }
 
@@ -2125,11 +2169,17 @@ mod tests {
     /// Helper to create state with multiple field types for binding tests
     fn create_binding_test_state() -> Value {
         let mut fields = HashMap::new();
-        fields.insert("text_value".to_string(), Value::String(Rc::new("initial".to_string())));
+        fields.insert(
+            "text_value".to_string(),
+            Value::String(Rc::new("initial".to_string())),
+        );
         fields.insert("checked".to_string(), Value::Bool(false));
         fields.insert("slider_value".to_string(), Value::Float(50.0));
         fields.insert("toggle_on".to_string(), Value::Bool(true));
-        fields.insert("selected_option".to_string(), Value::String(Rc::new("A".to_string())));
+        fields.insert(
+            "selected_option".to_string(),
+            Value::String(Rc::new("A".to_string())),
+        );
         fields.insert("count".to_string(), Value::Int(0));
         fields.insert("show_details".to_string(), Value::Bool(false));
         fields.insert(
@@ -2186,9 +2236,7 @@ mod tests {
         );
 
         // Create a text field bound to the text_value field
-        let textfield = GuiElement::text_field()
-            .bind_field("text_value")
-            .build();
+        let textfield = GuiElement::text_field().bind_field("text_value").build();
 
         // Verify the widget has the correct field_path
         if let GuiElementKind::TextField(config) = &textfield.kind {
@@ -2329,13 +2377,10 @@ mod tests {
         );
 
         // Create a dropdown bound to the selected_option field
-        let dropdown = GuiElement::dropdown(vec![
-            "A".to_string(),
-            "B".to_string(),
-            "C".to_string(),
-        ])
-        .bind_field("selected_option")
-        .build();
+        let dropdown =
+            GuiElement::dropdown(vec!["A".to_string(), "B".to_string(), "C".to_string()])
+                .bind_field("selected_option")
+                .build();
 
         // Verify the widget has the correct field_path
         if let GuiElementKind::Dropdown(config) = &dropdown.kind {
@@ -2468,10 +2513,7 @@ mod tests {
         }
 
         // Verify the condition is true in state
-        assert_eq!(
-            app.state.get_field("show_details"),
-            Some(Value::Bool(true))
-        );
+        assert_eq!(app.state.get_field("show_details"), Some(Value::Bool(true)));
     }
 
     #[test]
@@ -2527,10 +2569,7 @@ mod tests {
             field: "show_details".to_string(),
             value: true,
         });
-        assert_eq!(
-            app.state.get_field("show_details"),
-            Some(Value::Bool(true))
-        );
+        assert_eq!(app.state.get_field("show_details"), Some(Value::Bool(true)));
 
         // Toggle back to false
         let _ = app.update(Message::SetBoolField {
@@ -2560,10 +2599,7 @@ mod tests {
         if let Some(Value::List(list)) = items {
             let borrowed = list.borrow();
             assert_eq!(borrowed.len(), 3);
-            assert_eq!(
-                borrowed[0],
-                Value::String(Rc::new("Item 1".to_string()))
-            );
+            assert_eq!(borrowed[0], Value::String(Rc::new("Item 1".to_string())));
         } else {
             panic!("Expected list field");
         }
@@ -2582,8 +2618,8 @@ mod tests {
     #[test]
     fn test_e2e_list_with_template() {
         // Test: ForEach element with template callback ID
-        use crate::element::GuiElement;
         use crate::callback::CallbackId;
+        use crate::element::GuiElement;
 
         let template_id = CallbackId::new(100);
         let for_each = GuiElement::for_each_with_template("items", template_id).build();
@@ -2685,8 +2721,8 @@ mod tests {
     #[test]
     fn test_e2e_bar_chart_with_data() {
         // Test: BarChart element can be created with data
-        use crate::element::GuiElement;
         use crate::charts::DataPoint;
+        use crate::element::GuiElement;
 
         let data = vec![
             DataPoint::new("Q1", 100.0),
@@ -2717,8 +2753,8 @@ mod tests {
     #[test]
     fn test_e2e_line_chart_with_series() {
         // Test: LineChart element can be created with multiple series
-        use crate::element::GuiElement;
         use crate::charts::DataSeries;
+        use crate::element::GuiElement;
 
         let labels = vec!["Jan".to_string(), "Feb".to_string(), "Mar".to_string()];
         let series = vec![
@@ -2746,8 +2782,8 @@ mod tests {
     #[test]
     fn test_e2e_pie_chart_with_data() {
         // Test: PieChart element can be created with data
-        use crate::element::GuiElement;
         use crate::charts::DataPoint;
+        use crate::element::GuiElement;
 
         let data = vec![
             DataPoint::new("Product A", 45.0),
@@ -2774,13 +2810,10 @@ mod tests {
     #[test]
     fn test_e2e_donut_chart() {
         // Test: Donut chart (pie chart with inner radius)
-        use crate::element::GuiElement;
         use crate::charts::DataPoint;
+        use crate::element::GuiElement;
 
-        let data = vec![
-            DataPoint::new("Yes", 60.0),
-            DataPoint::new("No", 40.0),
-        ];
+        let data = vec![DataPoint::new("Yes", 60.0), DataPoint::new("No", 40.0)];
 
         let chart = GuiElement::pie_chart_with_data(data)
             .inner_radius(0.5) // Makes it a donut
@@ -2807,7 +2840,11 @@ mod tests {
         // Build a complete UI with bound widgets
         let _ui = GuiElement::vstack()
             .spacing(16.0)
-            .child(GuiElement::text("Registration Form").text_size(24.0).build())
+            .child(
+                GuiElement::text("Registration Form")
+                    .text_size(24.0)
+                    .build(),
+            )
             .child(
                 GuiElement::text_field()
                     .placeholder("Enter name")
@@ -2821,12 +2858,8 @@ mod tests {
             )
             .child(
                 GuiElement::conditional("checked")
-                    .true_element(
-                        GuiElement::button("Submit").build(),
-                    )
-                    .false_element(
-                        GuiElement::text("Please accept terms").build(),
-                    )
+                    .true_element(GuiElement::button("Submit").build())
+                    .false_element(GuiElement::text("Please accept terms").build())
                     .build(),
             )
             .build();
@@ -2860,10 +2893,19 @@ mod tests {
 
         // Create state with todo items (matches todo.rs example structure)
         let mut fields = HashMap::new();
-        fields.insert("new_todo_text".to_string(), Value::String(Rc::new(String::new())));
-        fields.insert("todo_0_label".to_string(), Value::String(Rc::new("Task 1".to_string())));
+        fields.insert(
+            "new_todo_text".to_string(),
+            Value::String(Rc::new(String::new())),
+        );
+        fields.insert(
+            "todo_0_label".to_string(),
+            Value::String(Rc::new("Task 1".to_string())),
+        );
         fields.insert("todo_0_completed".to_string(), Value::Bool(false));
-        fields.insert("todo_1_label".to_string(), Value::String(Rc::new("Task 2".to_string())));
+        fields.insert(
+            "todo_1_label".to_string(),
+            Value::String(Rc::new("Task 2".to_string())),
+        );
         fields.insert("todo_1_completed".to_string(), Value::Bool(false));
         fields.insert("total_items".to_string(), Value::Int(2));
 
@@ -2878,16 +2920,29 @@ mod tests {
             .child(
                 GuiElement::hstack()
                     .spacing(10.0)
-                    .child(GuiElement::text_field().placeholder("What needs to be done?").bind_field("new_todo_text").build())
+                    .child(
+                        GuiElement::text_field()
+                            .placeholder("What needs to be done?")
+                            .bind_field("new_todo_text")
+                            .build(),
+                    )
                     .child(GuiElement::button("Add Todo").build())
-                    .build()
+                    .build(),
             )
             .child(
                 GuiElement::vstack()
                     .spacing(8.0)
-                    .child(GuiElement::checkbox("Task 1").bind_field("todo_0_completed").build())
-                    .child(GuiElement::checkbox("Task 2").bind_field("todo_1_completed").build())
-                    .build()
+                    .child(
+                        GuiElement::checkbox("Task 1")
+                            .bind_field("todo_0_completed")
+                            .build(),
+                    )
+                    .child(
+                        GuiElement::checkbox("Task 2")
+                            .bind_field("todo_1_completed")
+                            .build(),
+                    )
+                    .build(),
             )
             .build();
 
@@ -2914,8 +2969,14 @@ mod tests {
         };
 
         // Initially no todos are completed
-        assert_eq!(app.state.get_field("todo_0_completed"), Some(Value::Bool(false)));
-        assert_eq!(app.state.get_field("todo_1_completed"), Some(Value::Bool(false)));
+        assert_eq!(
+            app.state.get_field("todo_0_completed"),
+            Some(Value::Bool(false))
+        );
+        assert_eq!(
+            app.state.get_field("todo_1_completed"),
+            Some(Value::Bool(false))
+        );
 
         // Toggle first todo - simulates checkbox click
         let _ = app.update(Message::SetBoolField {
@@ -2924,8 +2985,14 @@ mod tests {
         });
 
         // Verify state updated
-        assert_eq!(app.state.get_field("todo_0_completed"), Some(Value::Bool(true)));
-        assert_eq!(app.state.get_field("todo_1_completed"), Some(Value::Bool(false)));
+        assert_eq!(
+            app.state.get_field("todo_0_completed"),
+            Some(Value::Bool(true))
+        );
+        assert_eq!(
+            app.state.get_field("todo_1_completed"),
+            Some(Value::Bool(false))
+        );
 
         // Toggle second todo
         let _ = app.update(Message::SetBoolField {
@@ -2934,8 +3001,14 @@ mod tests {
         });
 
         // Verify both are now completed
-        assert_eq!(app.state.get_field("todo_0_completed"), Some(Value::Bool(true)));
-        assert_eq!(app.state.get_field("todo_1_completed"), Some(Value::Bool(true)));
+        assert_eq!(
+            app.state.get_field("todo_0_completed"),
+            Some(Value::Bool(true))
+        );
+        assert_eq!(
+            app.state.get_field("todo_1_completed"),
+            Some(Value::Bool(true))
+        );
 
         // State generation should have increased
         assert!(app.state.generation() >= 2);

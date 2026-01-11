@@ -85,7 +85,11 @@ impl ProjectDoc {
         // Index children (methods, fields, variants)
         for child in &item.children {
             // For children, create a compound anchor
-            let child_anchor = format!("{}-{}", Self::make_anchor(&item.name), Self::make_anchor(&child.name));
+            let child_anchor = format!(
+                "{}-{}",
+                Self::make_anchor(&item.name),
+                Self::make_anchor(&child.name)
+            );
             let child_desc = child
                 .doc
                 .as_ref()

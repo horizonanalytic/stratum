@@ -19,7 +19,10 @@ fn main() {
     // Create initial state
     let mut fields = HashMap::new();
     fields.insert("count".to_string(), Value::Int(0));
-    fields.insert("text_value".to_string(), Value::String(Rc::new(String::new())));
+    fields.insert(
+        "text_value".to_string(),
+        Value::String(Rc::new(String::new())),
+    );
     fields.insert("checked".to_string(), Value::Bool(false));
 
     let mut instance = StructInstance::new("VerificationState".to_string());
@@ -99,25 +102,25 @@ fn build_verification_ui() -> GuiElement {
 
     // Widget verification section - Dropdown
     let dropdown_label = GuiElement::text("Dropdown Widget:").build();
-    let dropdown_demo = GuiElement::dropdown(vec!["Red".to_string(), "Green".to_string(), "Blue".to_string()])
-        .dropdown_placeholder("Select a color...")
-        .build();
+    let dropdown_demo = GuiElement::dropdown(vec![
+        "Red".to_string(),
+        "Green".to_string(),
+        "Blue".to_string(),
+    ])
+    .dropdown_placeholder("Select a color...")
+    .build();
 
     // Widget verification section - Slider
     let slider_label = GuiElement::text("Slider Widget:").build();
-    let slider_demo = GuiElement::slider(0.0, 100.0)
-        .slider_value(50.0)
-        .build();
+    let slider_demo = GuiElement::slider(0.0, 100.0).slider_value(50.0).build();
 
     // Widget verification section - Toggle
     let toggle_label = GuiElement::text("Toggle Widget:").build();
-    let toggle_demo = GuiElement::toggle("Enable feature")
-        .build();
+    let toggle_demo = GuiElement::toggle("Enable feature").build();
 
     // Widget verification section - ProgressBar
     let progress_label = GuiElement::text("ProgressBar Widget:").build();
-    let progress_demo = GuiElement::progress_bar(0.7)
-        .build();
+    let progress_demo = GuiElement::progress_bar(0.7).build();
 
     // Build the main VStack layout
     GuiElement::vstack()

@@ -569,7 +569,10 @@ impl Series {
             .collect();
 
         // Return first one (deterministic for same input)
-        Ok(mode_values.first().map(|v| (*v).clone()).unwrap_or(Value::Null))
+        Ok(mode_values
+            .first()
+            .map(|v| (*v).clone())
+            .unwrap_or(Value::Null))
     }
 
     /// Calculate a quantile of numeric values
@@ -638,7 +641,9 @@ impl Series {
         if lower == upper {
             Ok(Value::Float(values[lower]))
         } else {
-            Ok(Value::Float(values[lower] * (1.0 - frac) + values[upper] * frac))
+            Ok(Value::Float(
+                values[lower] * (1.0 - frac) + values[upper] * frac,
+            ))
         }
     }
 
@@ -814,8 +819,7 @@ impl Series {
     pub fn add(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
         let (left, right) = self.coerce_numeric_pair(other)?;
-        let result = numeric::add(&left, &right)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result = numeric::add(&left, &right).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(self.name.clone(), result))
     }
 
@@ -827,30 +831,28 @@ impl Series {
         let result = match (self.array.data_type(), value) {
             (DataType::Int64, Value::Int(v)) => {
                 let scalar = Scalar::new(Int64Array::from(vec![*v]));
-                numeric::add(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::add(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Int64, Value::Float(v)) => {
                 let arr = self.cast_to_float()?;
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                numeric::add(&arr, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::add(&arr, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Int(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v as f64]));
-                numeric::add(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::add(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Float(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                numeric::add(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::add(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
-            _ => return Err(DataError::InvalidOperation(format!(
-                "cannot add {} to {:?} Series",
-                value.type_name(),
-                self.data_type()
-            ))),
+            _ => {
+                return Err(DataError::InvalidOperation(format!(
+                    "cannot add {} to {:?} Series",
+                    value.type_name(),
+                    self.data_type()
+                )))
+            }
         };
         Ok(Self::new(self.name.clone(), result))
     }
@@ -862,8 +864,7 @@ impl Series {
     pub fn sub(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
         let (left, right) = self.coerce_numeric_pair(other)?;
-        let result = numeric::sub(&left, &right)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result = numeric::sub(&left, &right).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(self.name.clone(), result))
     }
 
@@ -875,30 +876,28 @@ impl Series {
         let result = match (self.array.data_type(), value) {
             (DataType::Int64, Value::Int(v)) => {
                 let scalar = Scalar::new(Int64Array::from(vec![*v]));
-                numeric::sub(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::sub(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Int64, Value::Float(v)) => {
                 let arr = self.cast_to_float()?;
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                numeric::sub(&arr, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::sub(&arr, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Int(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v as f64]));
-                numeric::sub(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::sub(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Float(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                numeric::sub(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::sub(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
-            _ => return Err(DataError::InvalidOperation(format!(
-                "cannot subtract {} from {:?} Series",
-                value.type_name(),
-                self.data_type()
-            ))),
+            _ => {
+                return Err(DataError::InvalidOperation(format!(
+                    "cannot subtract {} from {:?} Series",
+                    value.type_name(),
+                    self.data_type()
+                )))
+            }
         };
         Ok(Self::new(self.name.clone(), result))
     }
@@ -910,8 +909,7 @@ impl Series {
     pub fn mul(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
         let (left, right) = self.coerce_numeric_pair(other)?;
-        let result = numeric::mul(&left, &right)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result = numeric::mul(&left, &right).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(self.name.clone(), result))
     }
 
@@ -923,30 +921,28 @@ impl Series {
         let result = match (self.array.data_type(), value) {
             (DataType::Int64, Value::Int(v)) => {
                 let scalar = Scalar::new(Int64Array::from(vec![*v]));
-                numeric::mul(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::mul(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Int64, Value::Float(v)) => {
                 let arr = self.cast_to_float()?;
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                numeric::mul(&arr, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::mul(&arr, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Int(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v as f64]));
-                numeric::mul(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::mul(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Float(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                numeric::mul(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::mul(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
-            _ => return Err(DataError::InvalidOperation(format!(
-                "cannot multiply {:?} Series by {}",
-                self.data_type(),
-                value.type_name()
-            ))),
+            _ => {
+                return Err(DataError::InvalidOperation(format!(
+                    "cannot multiply {:?} Series by {}",
+                    self.data_type(),
+                    value.type_name()
+                )))
+            }
         };
         Ok(Self::new(self.name.clone(), result))
     }
@@ -958,8 +954,7 @@ impl Series {
     pub fn div(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
         let (left, right) = self.coerce_numeric_pair(other)?;
-        let result = numeric::div(&left, &right)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result = numeric::div(&left, &right).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(self.name.clone(), result))
     }
 
@@ -971,30 +966,28 @@ impl Series {
         let result = match (self.array.data_type(), value) {
             (DataType::Int64, Value::Int(v)) => {
                 let scalar = Scalar::new(Int64Array::from(vec![*v]));
-                numeric::div(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::div(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Int64, Value::Float(v)) => {
                 let arr = self.cast_to_float()?;
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                numeric::div(&arr, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::div(&arr, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Int(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v as f64]));
-                numeric::div(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::div(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Float(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                numeric::div(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                numeric::div(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
-            _ => return Err(DataError::InvalidOperation(format!(
-                "cannot divide {:?} Series by {}",
-                self.data_type(),
-                value.type_name()
-            ))),
+            _ => {
+                return Err(DataError::InvalidOperation(format!(
+                    "cannot divide {:?} Series by {}",
+                    self.data_type(),
+                    value.type_name()
+                )))
+            }
         };
         Ok(Self::new(self.name.clone(), result))
     }
@@ -1004,8 +997,7 @@ impl Series {
     /// # Errors
     /// Returns error if type is not numeric
     pub fn neg(&self) -> DataResult<Self> {
-        let result = numeric::neg(&self.array)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result = numeric::neg(&self.array).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(self.name.clone(), result))
     }
 
@@ -1019,8 +1011,8 @@ impl Series {
     /// Returns error if types are incompatible or lengths don't match
     pub fn eq(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
-        let result = cmp::eq(&self.array, &other.array)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result =
+            cmp::eq(&self.array, &other.array).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_eq", self.name), Arc::new(result)))
     }
 
@@ -1039,8 +1031,8 @@ impl Series {
     /// Returns error if types are incompatible or lengths don't match
     pub fn neq(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
-        let result = cmp::neq(&self.array, &other.array)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result =
+            cmp::neq(&self.array, &other.array).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_neq", self.name), Arc::new(result)))
     }
 
@@ -1059,8 +1051,8 @@ impl Series {
     /// Returns error if types are incompatible or lengths don't match
     pub fn lt(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
-        let result = cmp::lt(&self.array, &other.array)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result =
+            cmp::lt(&self.array, &other.array).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_lt", self.name), Arc::new(result)))
     }
 
@@ -1079,8 +1071,8 @@ impl Series {
     /// Returns error if types are incompatible or lengths don't match
     pub fn le(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
-        let result = cmp::lt_eq(&self.array, &other.array)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result =
+            cmp::lt_eq(&self.array, &other.array).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_le", self.name), Arc::new(result)))
     }
 
@@ -1099,8 +1091,8 @@ impl Series {
     /// Returns error if types are incompatible or lengths don't match
     pub fn gt(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
-        let result = cmp::gt(&self.array, &other.array)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result =
+            cmp::gt(&self.array, &other.array).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_gt", self.name), Arc::new(result)))
     }
 
@@ -1119,8 +1111,8 @@ impl Series {
     /// Returns error if types are incompatible or lengths don't match
     pub fn ge(&self, other: &Series) -> DataResult<Self> {
         self.check_length(other)?;
-        let result = cmp::gt_eq(&self.array, &other.array)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result =
+            cmp::gt_eq(&self.array, &other.array).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_ge", self.name), Arc::new(result)))
     }
 
@@ -1145,8 +1137,7 @@ impl Series {
         self.check_length(other)?;
         let left = self.as_boolean()?;
         let right = other.as_boolean()?;
-        let result = boolean::and(&left, &right)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result = boolean::and(&left, &right).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_and", self.name), Arc::new(result)))
     }
 
@@ -1158,8 +1149,7 @@ impl Series {
         self.check_length(other)?;
         let left = self.as_boolean()?;
         let right = other.as_boolean()?;
-        let result = boolean::or(&left, &right)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result = boolean::or(&left, &right).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_or", self.name), Arc::new(result)))
     }
 
@@ -1169,8 +1159,7 @@ impl Series {
     /// Returns error if series is not boolean
     pub fn not(&self) -> DataResult<Self> {
         let arr = self.as_boolean()?;
-        let result = boolean::not(&arr)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result = boolean::not(&arr).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_not", self.name), Arc::new(result)))
     }
 
@@ -1208,8 +1197,7 @@ impl Series {
                 found: format!("{:?}", self.data_type()),
             });
         }
-        let result = length::length(&self.array)
-            .map_err(|e| DataError::Arrow(e.to_string()))?;
+        let result = length::length(&self.array).map_err(|e| DataError::Arrow(e.to_string()))?;
         Ok(Self::new(format!("{}_len", self.name), result))
     }
 
@@ -1231,7 +1219,10 @@ impl Series {
             })
             .collect();
         let result = BooleanArray::from(results);
-        Ok(Self::new(format!("{}_contains", self.name), Arc::new(result)))
+        Ok(Self::new(
+            format!("{}_contains", self.name),
+            Arc::new(result),
+        ))
     }
 
     /// Check if each string starts with the given prefix
@@ -1469,10 +1460,7 @@ impl Series {
                 if arr.is_null(i) {
                     None
                 } else {
-                    arr.value(i)
-                        .split(delimiter)
-                        .nth(index)
-                        .map(String::from)
+                    arr.value(i).split(delimiter).nth(index).map(String::from)
                 }
             })
             .collect();
@@ -1875,45 +1863,44 @@ impl Series {
     /// Compare series elements to a scalar value using the given comparison function
     fn compare_scalar<F>(&self, value: &Value, cmp_fn: F) -> DataResult<BooleanArray>
     where
-        F: Fn(&dyn arrow::array::Datum, &dyn arrow::array::Datum) -> Result<BooleanArray, arrow::error::ArrowError>,
+        F: Fn(
+            &dyn arrow::array::Datum,
+            &dyn arrow::array::Datum,
+        ) -> Result<BooleanArray, arrow::error::ArrowError>,
     {
         let result = match (self.array.data_type(), value) {
             (DataType::Int64, Value::Int(v)) => {
                 let scalar = Scalar::new(Int64Array::from(vec![*v]));
-                cmp_fn(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                cmp_fn(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Int64, Value::Float(v)) => {
                 let arr = self.cast_to_float()?;
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                cmp_fn(&arr, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                cmp_fn(&arr, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Int(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v as f64]));
-                cmp_fn(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                cmp_fn(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Float64, Value::Float(v)) => {
                 let scalar = Scalar::new(Float64Array::from(vec![*v]));
-                cmp_fn(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                cmp_fn(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Boolean, Value::Bool(v)) => {
                 let scalar = Scalar::new(BooleanArray::from(vec![*v]));
-                cmp_fn(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                cmp_fn(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
             (DataType::Utf8, Value::String(v)) => {
                 let scalar = Scalar::new(StringArray::from(vec![v.as_str()]));
-                cmp_fn(&self.array, &scalar)
-                    .map_err(|e| DataError::Arrow(e.to_string()))?
+                cmp_fn(&self.array, &scalar).map_err(|e| DataError::Arrow(e.to_string()))?
             }
-            _ => return Err(DataError::InvalidOperation(format!(
-                "cannot compare {:?} Series with {}",
-                self.data_type(),
-                value.type_name()
-            ))),
+            _ => {
+                return Err(DataError::InvalidOperation(format!(
+                    "cannot compare {:?} Series with {}",
+                    self.data_type(),
+                    value.type_name()
+                )))
+            }
         };
         Ok(result)
     }
@@ -2124,7 +2111,10 @@ impl Series {
                 }
 
                 let result = Int64Array::from(results);
-                Ok(Self::new(format!("{}_cumprod", self.name), Arc::new(result)))
+                Ok(Self::new(
+                    format!("{}_cumprod", self.name),
+                    Arc::new(result),
+                ))
             }
             DataType::Float64 => {
                 let arr = self.array.as_any().downcast_ref::<Float64Array>().unwrap();
@@ -2141,7 +2131,10 @@ impl Series {
                 }
 
                 let result = Float64Array::from(results);
-                Ok(Self::new(format!("{}_cumprod", self.name), Arc::new(result)))
+                Ok(Self::new(
+                    format!("{}_cumprod", self.name),
+                    Arc::new(result),
+                ))
             }
             other => Err(DataError::TypeMismatch {
                 expected: "numeric type".to_string(),
@@ -2504,9 +2497,7 @@ impl Series {
         }
 
         // Collect indices of non-null values
-        let non_null_indices: Vec<usize> = (0..self.len())
-            .filter(|&i| !self.is_null(i))
-            .collect();
+        let non_null_indices: Vec<usize> = (0..self.len()).filter(|&i| !self.is_null(i)).collect();
 
         if non_null_indices.is_empty() {
             // Return empty series of same type
@@ -2549,7 +2540,13 @@ impl Series {
                 };
                 let arr = self.array.as_any().downcast_ref::<Int64Array>().unwrap();
                 let filled: Vec<i64> = (0..arr.len())
-                    .map(|i| if arr.is_null(i) { fill_int } else { arr.value(i) })
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            fill_int
+                        } else {
+                            arr.value(i)
+                        }
+                    })
                     .collect();
                 Ok(Self::from_ints(&self.name, filled))
             }
@@ -2566,7 +2563,13 @@ impl Series {
                 };
                 let arr = self.array.as_any().downcast_ref::<Float64Array>().unwrap();
                 let filled: Vec<f64> = (0..arr.len())
-                    .map(|i| if arr.is_null(i) { fill_float } else { arr.value(i) })
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            fill_float
+                        } else {
+                            arr.value(i)
+                        }
+                    })
                     .collect();
                 Ok(Self::from_floats(&self.name, filled))
             }
@@ -2582,7 +2585,13 @@ impl Series {
                 };
                 let arr = self.array.as_any().downcast_ref::<BooleanArray>().unwrap();
                 let filled: Vec<bool> = (0..arr.len())
-                    .map(|i| if arr.is_null(i) { fill_bool } else { arr.value(i) })
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            fill_bool
+                        } else {
+                            arr.value(i)
+                        }
+                    })
                     .collect();
                 Ok(Self::from_bools(&self.name, filled))
             }
@@ -2693,9 +2702,8 @@ impl Series {
                     }
                 }
 
-                let result = StringArray::from(
-                    filled.iter().map(|s| s.as_deref()).collect::<Vec<_>>(),
-                );
+                let result =
+                    StringArray::from(filled.iter().map(|s| s.as_deref()).collect::<Vec<_>>());
                 Ok(Self::new(&self.name, Arc::new(result)))
             }
             other => Err(DataError::InvalidOperation(format!(
@@ -2782,9 +2790,8 @@ impl Series {
                     }
                 }
 
-                let result = StringArray::from(
-                    filled.iter().map(|s| s.as_deref()).collect::<Vec<_>>(),
-                );
+                let result =
+                    StringArray::from(filled.iter().map(|s| s.as_deref()).collect::<Vec<_>>());
                 Ok(Self::new(&self.name, Arc::new(result)))
             }
             other => Err(DataError::InvalidOperation(format!(
@@ -2809,7 +2816,13 @@ impl Series {
             DataType::Int64 => {
                 let arr = self.array.as_any().downcast_ref::<Int64Array>().unwrap();
                 let values: Vec<Option<f64>> = (0..arr.len())
-                    .map(|i| if arr.is_null(i) { None } else { Some(arr.value(i) as f64) })
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            None
+                        } else {
+                            Some(arr.value(i) as f64)
+                        }
+                    })
                     .collect();
                 let interpolated = Self::interpolate_values(&values);
                 // Convert back to Int64
@@ -2822,7 +2835,13 @@ impl Series {
             DataType::Float64 => {
                 let arr = self.array.as_any().downcast_ref::<Float64Array>().unwrap();
                 let values: Vec<Option<f64>> = (0..arr.len())
-                    .map(|i| if arr.is_null(i) { None } else { Some(arr.value(i)) })
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            None
+                        } else {
+                            Some(arr.value(i))
+                        }
+                    })
                     .collect();
                 let interpolated = Self::interpolate_values(&values);
                 let result = Float64Array::from(interpolated);
@@ -2958,7 +2977,12 @@ impl Rolling {
 
         match self.series.data_type() {
             DataType::Int64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Int64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<i64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -2991,7 +3015,12 @@ impl Rolling {
                 ))
             }
             DataType::Float64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Float64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<f64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -3045,7 +3074,12 @@ impl Rolling {
 
         match self.series.data_type() {
             DataType::Int64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Int64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<f64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -3077,7 +3111,12 @@ impl Rolling {
                 ))
             }
             DataType::Float64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Float64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<f64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -3131,7 +3170,12 @@ impl Rolling {
 
         match self.series.data_type() {
             DataType::Int64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Int64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<i64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -3164,7 +3208,12 @@ impl Rolling {
                 ))
             }
             DataType::Float64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Float64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<f64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -3219,7 +3268,12 @@ impl Rolling {
 
         match self.series.data_type() {
             DataType::Int64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Int64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<i64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -3252,7 +3306,12 @@ impl Rolling {
                 ))
             }
             DataType::Float64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Float64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<f64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -3302,7 +3361,11 @@ impl Rolling {
             // Take square root of variance for std
             match var_series.data_type() {
                 DataType::Float64 => {
-                    let arr = var_series.array().as_any().downcast_ref::<Float64Array>().unwrap();
+                    let arr = var_series
+                        .array()
+                        .as_any()
+                        .downcast_ref::<Float64Array>()
+                        .unwrap();
                     let results: Vec<Option<f64>> = (0..arr.len())
                         .map(|i| {
                             if arr.is_null(i) {
@@ -3339,7 +3402,12 @@ impl Rolling {
 
         match self.series.data_type() {
             DataType::Int64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Int64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<f64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -3382,7 +3450,12 @@ impl Rolling {
                 ))
             }
             DataType::Float64 => {
-                let arr = self.series.array().as_any().downcast_ref::<Float64Array>().unwrap();
+                let arr = self
+                    .series
+                    .array()
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .unwrap();
                 let mut results: Vec<Option<f64>> = Vec::with_capacity(len);
 
                 for i in 0..len {
@@ -3835,11 +3908,7 @@ mod tests {
 
     #[test]
     fn test_str_operations_with_nulls() {
-        let values = vec![
-            Value::string("hello"),
-            Value::Null,
-            Value::string("world"),
-        ];
+        let values = vec![Value::string("hello"), Value::Null, Value::string("world")];
         let s = Series::from_values("text", &values).unwrap();
 
         let contains = s.str_contains("o").unwrap();
@@ -3892,7 +3961,10 @@ mod tests {
 
     #[test]
     fn test_str_extract() {
-        let s = Series::from_strings("emails", vec!["user@example.com", "test@domain.org", "invalid"]);
+        let s = Series::from_strings(
+            "emails",
+            vec!["user@example.com", "test@domain.org", "invalid"],
+        );
 
         // Extract domain from email
         let domains = s.str_extract(r"@([^.]+)").unwrap();
@@ -4143,9 +4215,9 @@ mod tests {
         let result = rolling.sum().unwrap();
         assert_eq!(result.get(0).unwrap(), Value::Null);
         assert_eq!(result.get(1).unwrap(), Value::Null);
-        assert_eq!(result.get(2).unwrap(), Value::Int(6));   // 1+2+3
-        assert_eq!(result.get(3).unwrap(), Value::Int(9));   // 2+3+4
-        assert_eq!(result.get(4).unwrap(), Value::Int(12));  // 3+4+5
+        assert_eq!(result.get(2).unwrap(), Value::Int(6)); // 1+2+3
+        assert_eq!(result.get(3).unwrap(), Value::Int(9)); // 2+3+4
+        assert_eq!(result.get(4).unwrap(), Value::Int(12)); // 3+4+5
     }
 
     #[test]
@@ -4422,7 +4494,7 @@ mod tests {
         let result = s.to_bool().unwrap();
         assert_eq!(result.data_type(), &DataType::Boolean);
         assert_eq!(result.get(0).unwrap(), Value::Bool(false)); // 0 is false
-        assert_eq!(result.get(1).unwrap(), Value::Bool(true));  // non-zero is true
+        assert_eq!(result.get(1).unwrap(), Value::Bool(true)); // non-zero is true
         assert_eq!(result.get(2).unwrap(), Value::Bool(true));
         assert_eq!(result.get(3).unwrap(), Value::Bool(true));
     }

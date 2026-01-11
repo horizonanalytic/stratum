@@ -72,12 +72,20 @@ pub fn publish_package(options: PublishOptions) -> Result<()> {
 
     // Create GitHub release
     println!("Creating GitHub release {}...", tag);
-    create_github_release(&validation.repository, &tag, &tarball_path, &validation.name)?;
+    create_github_release(
+        &validation.repository,
+        &tag,
+        &tarball_path,
+        &validation.name,
+    )?;
 
     // Clean up
     std::fs::remove_file(&tarball_path)?;
 
-    println!("\nPublished {} v{} to GitHub!", validation.name, validation.version);
+    println!(
+        "\nPublished {} v{} to GitHub!",
+        validation.name, validation.version
+    );
     println!(
         "View at: https://github.com/{}/releases/tag/{}",
         validation.repository, tag
@@ -107,7 +115,9 @@ fn validate_package(options: &PublishOptions) -> Result<ValidationResult> {
     }
 
     if manifest.package.version.is_empty() {
-        return Err(anyhow::anyhow!("Package version is required in stratum.toml"));
+        return Err(anyhow::anyhow!(
+            "Package version is required in stratum.toml"
+        ));
     }
 
     // Validate version is valid semver
@@ -245,9 +255,7 @@ fn check_gh_cli() -> Result<()> {
         .context("GitHub CLI (gh) is not installed. Install it from https://cli.github.com/")?;
 
     if !output.status.success() {
-        return Err(anyhow::anyhow!(
-            "GitHub CLI (gh) is not working properly"
-        ));
+        return Err(anyhow::anyhow!("GitHub CLI (gh) is not working properly"));
     }
 
     // Check if authenticated
@@ -372,13 +380,7 @@ fn create_github_release(
 ) -> Result<()> {
     // Check if tag already exists
     let tag_check = Command::new("gh")
-        .args([
-            "release",
-            "view",
-            tag,
-            "--repo",
-            repository,
-        ])
+        .args(["release", "view", tag, "--repo", repository])
         .output();
 
     if let Ok(output) = tag_check {

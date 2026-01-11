@@ -55,7 +55,13 @@ fn compute_quick_fixes_cached(
     // Did-you-mean for undefined variable
     if message.contains("undefined variable") {
         if let Some(name) = extract_name_from_message(message, "undefined variable `", "`") {
-            let suggestions = find_similar_symbols(index, &name, data.content, data.line_index, &diagnostic.range);
+            let suggestions = find_similar_symbols(
+                index,
+                &name,
+                data.content,
+                data.line_index,
+                &diagnostic.range,
+            );
             for suggestion in suggestions {
                 let action = create_replace_action(
                     uri,
@@ -72,7 +78,13 @@ fn compute_quick_fixes_cached(
     // Did-you-mean for undefined function
     if message.contains("undefined function") {
         if let Some(name) = extract_name_from_message(message, "undefined function `", "`") {
-            let suggestions = find_similar_symbols(index, &name, data.content, data.line_index, &diagnostic.range);
+            let suggestions = find_similar_symbols(
+                index,
+                &name,
+                data.content,
+                data.line_index,
+                &diagnostic.range,
+            );
             for suggestion in suggestions {
                 let action = create_replace_action(
                     uri,
@@ -89,7 +101,13 @@ fn compute_quick_fixes_cached(
     // Did-you-mean for undefined type
     if message.contains("undefined type") {
         if let Some(name) = extract_name_from_message(message, "undefined type `", "`") {
-            let suggestions = find_similar_symbols(index, &name, data.content, data.line_index, &diagnostic.range);
+            let suggestions = find_similar_symbols(
+                index,
+                &name,
+                data.content,
+                data.line_index,
+                &diagnostic.range,
+            );
             for suggestion in suggestions {
                 let action = create_replace_action(
                     uri,
@@ -153,7 +171,8 @@ fn compute_quick_fixes(
     // Did-you-mean for undefined variable
     if message.contains("undefined variable") {
         if let Some(name) = extract_name_from_message(message, "undefined variable `", "`") {
-            let suggestions = find_similar_symbols(&index, &name, source, &line_index, &diagnostic.range);
+            let suggestions =
+                find_similar_symbols(&index, &name, source, &line_index, &diagnostic.range);
             for suggestion in suggestions {
                 let action = create_replace_action(
                     uri,
@@ -170,7 +189,8 @@ fn compute_quick_fixes(
     // Did-you-mean for undefined function
     if message.contains("undefined function") {
         if let Some(name) = extract_name_from_message(message, "undefined function `", "`") {
-            let suggestions = find_similar_symbols(&index, &name, source, &line_index, &diagnostic.range);
+            let suggestions =
+                find_similar_symbols(&index, &name, source, &line_index, &diagnostic.range);
             for suggestion in suggestions {
                 let action = create_replace_action(
                     uri,
@@ -187,7 +207,8 @@ fn compute_quick_fixes(
     // Did-you-mean for undefined type
     if message.contains("undefined type") {
         if let Some(name) = extract_name_from_message(message, "undefined type `", "`") {
-            let suggestions = find_similar_symbols(&index, &name, source, &line_index, &diagnostic.range);
+            let suggestions =
+                find_similar_symbols(&index, &name, source, &line_index, &diagnostic.range);
             for suggestion in suggestions {
                 let action = create_replace_action(
                     uri,
@@ -223,11 +244,7 @@ fn compute_quick_fixes(
 }
 
 /// Compute refactorings for a selection
-fn compute_refactorings(
-    uri: &Url,
-    source: &str,
-    range: Range,
-) -> Option<Vec<CodeActionOrCommand>> {
+fn compute_refactorings(uri: &Url, source: &str, range: Range) -> Option<Vec<CodeActionOrCommand>> {
     let mut actions = Vec::new();
 
     // Only offer extract variable if there's a non-empty selection
@@ -283,7 +300,11 @@ fn find_similar_symbols(
     suggestions.sort_by_key(|(_, dist)| *dist);
 
     // Return top 3 suggestions
-    suggestions.into_iter().take(3).map(|(name, _)| name).collect()
+    suggestions
+        .into_iter()
+        .take(3)
+        .map(|(name, _)| name)
+        .collect()
 }
 
 /// Calculate Levenshtein distance between two strings
@@ -311,7 +332,11 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
 
     for i in 1..=a_len {
         for j in 1..=b_len {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             matrix[i][j] = (matrix[i - 1][j] + 1)
                 .min(matrix[i][j - 1] + 1)
                 .min(matrix[i - 1][j - 1] + cost);
@@ -517,11 +542,7 @@ fn compute_extra_field_fix(
 }
 
 /// Compute extract variable refactoring
-fn compute_extract_variable(
-    uri: &Url,
-    source: &str,
-    range: Range,
-) -> Option<CodeAction> {
+fn compute_extract_variable(uri: &Url, source: &str, range: Range) -> Option<CodeAction> {
     let line_index = LineIndex::new(source);
 
     // Get the selected text
@@ -689,8 +710,14 @@ fx main() {
         // Create a diagnostic for "undefined variable `cont`"
         let diagnostic = Diagnostic {
             range: Range {
-                start: Position { line: 4, character: 17 },
-                end: Position { line: 4, character: 21 },
+                start: Position {
+                    line: 4,
+                    character: 17,
+                },
+                end: Position {
+                    line: 4,
+                    character: 21,
+                },
             },
             severity: None,
             code: None,
@@ -702,12 +729,7 @@ fx main() {
             data: None,
         };
 
-        let actions = compute_code_actions(
-            &uri,
-            source,
-            diagnostic.range,
-            &[diagnostic],
-        );
+        let actions = compute_code_actions(&uri, source, diagnostic.range, &[diagnostic]);
 
         // Should suggest "count" and "counter"
         assert!(!actions.is_empty());
@@ -734,8 +756,14 @@ fx main() {
 
         // Select "1 + 2" on line 2
         let range = Range {
-            start: Position { line: 2, character: 17 },
-            end: Position { line: 2, character: 22 },
+            start: Position {
+                line: 2,
+                character: 17,
+            },
+            end: Position {
+                line: 2,
+                character: 22,
+            },
         };
 
         let actions = compute_code_actions(&uri, source, range, &[]);

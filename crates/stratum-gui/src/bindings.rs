@@ -21,7 +21,10 @@ pub enum PendingTheme {
     /// Set theme from a preset
     Preset(ThemePreset),
     /// Set a custom theme with name and palette
-    Custom { name: String, palette: StratumPalette },
+    Custom {
+        name: String,
+        palette: StratumPalette,
+    },
 }
 
 /// A pending field update request from a callback
@@ -99,9 +102,7 @@ pub fn register_pending_callback(callback: Value) -> i64 {
 ///
 /// Called by GuiRuntime when starting to register all pending callbacks.
 pub fn take_pending_callbacks() -> Vec<Value> {
-    PENDING_CALLBACKS.with(|callbacks| {
-        std::mem::take(&mut *callbacks.borrow_mut())
-    })
+    PENDING_CALLBACKS.with(|callbacks| std::mem::take(&mut *callbacks.borrow_mut()))
 }
 
 /// Clear pending callbacks without returning them
@@ -118,7 +119,9 @@ pub fn clear_pending_callbacks() {
 /// This queues a field update to be applied after the current callback completes.
 pub fn request_field_update(field: String, value: Value) {
     PENDING_FIELD_UPDATES.with(|updates| {
-        updates.borrow_mut().push(PendingFieldUpdate { field, value });
+        updates
+            .borrow_mut()
+            .push(PendingFieldUpdate { field, value });
     });
 }
 
@@ -126,9 +129,7 @@ pub fn request_field_update(field: String, value: Value) {
 ///
 /// Called by the runtime after callback execution to apply state changes.
 pub fn take_pending_field_updates() -> Vec<PendingFieldUpdate> {
-    PENDING_FIELD_UPDATES.with(|updates| {
-        std::mem::take(&mut *updates.borrow_mut())
-    })
+    PENDING_FIELD_UPDATES.with(|updates| std::mem::take(&mut *updates.borrow_mut()))
 }
 
 /// Register the GUI namespace with the VM
@@ -611,9 +612,9 @@ pub fn gui_run_method(vm: &mut VM, _method: &str, args: &[Value]) -> RuntimeResu
         .with_root(element);
 
     // Run the GUI - this blocks until the window is closed
-    runtime.run().map_err(|e| {
-        vm.runtime_error(RuntimeErrorKind::UserError(format!("GUI error: {}", e)))
-    })?;
+    runtime
+        .run()
+        .map_err(|e| vm.runtime_error(RuntimeErrorKind::UserError(format!("GUI error: {}", e))))?;
 
     Ok(Value::Null)
 }
@@ -677,12 +678,14 @@ pub fn gui_app_method(vm: &mut VM, _method: &str, args: &[Value]) -> RuntimeResu
     };
 
     // Invoke view_fn with initial state to get the initial element tree
-    let initial_element = vm.invoke_callback(&view_fn, vec![initial_state.clone()]).map_err(|e| {
-        vm.runtime_error(RuntimeErrorKind::UserError(format!(
-            "Failed to invoke view function: {}",
-            e
-        )))
-    })?;
+    let initial_element = vm
+        .invoke_callback(&view_fn, vec![initial_state.clone()])
+        .map_err(|e| {
+            vm.runtime_error(RuntimeErrorKind::UserError(format!(
+                "Failed to invoke view function: {}",
+                e
+            )))
+        })?;
 
     // Extract GuiElement from result
     let element = match &initial_element {
@@ -720,9 +723,9 @@ pub fn gui_app_method(vm: &mut VM, _method: &str, args: &[Value]) -> RuntimeResu
         .with_vm(callback_vm);
 
     // Run the GUI - this blocks until the window is closed
-    runtime.run().map_err(|e| {
-        vm.runtime_error(RuntimeErrorKind::UserError(format!("GUI error: {}", e)))
-    })?;
+    runtime
+        .run()
+        .map_err(|e| vm.runtime_error(RuntimeErrorKind::UserError(format!("GUI error: {}", e))))?;
 
     Ok(Value::Null)
 }
@@ -745,7 +748,11 @@ pub fn gui_quit_method(_vm: &mut VM, _method: &str, _args: &[Value]) -> RuntimeR
 ///
 /// Returns a callback ID that can be passed to button handlers etc.
 /// The callback will be invoked when the associated UI event occurs.
-pub fn gui_register_callback_method(vm: &mut VM, _method: &str, args: &[Value]) -> RuntimeResult<Value> {
+pub fn gui_register_callback_method(
+    vm: &mut VM,
+    _method: &str,
+    args: &[Value],
+) -> RuntimeResult<Value> {
     use stratum_core::vm::RuntimeErrorKind;
 
     if args.is_empty() {
@@ -761,13 +768,11 @@ pub fn gui_register_callback_method(vm: &mut VM, _method: &str, args: &[Value]) 
             let id = register_pending_callback(args[0].clone());
             Ok(Value::Int(id))
         }
-        other => {
-            Err(vm.runtime_error(RuntimeErrorKind::TypeError {
-                expected: "Closure",
-                got: other.type_name(),
-                operation: "Gui.register_callback",
-            }))
-        }
+        other => Err(vm.runtime_error(RuntimeErrorKind::TypeError {
+            expected: "Closure",
+            got: other.type_name(),
+            operation: "Gui.register_callback",
+        })),
     }
 }
 
@@ -784,7 +789,11 @@ pub fn gui_register_callback_method(vm: &mut VM, _method: &str, args: &[Value]) 
 ///     Gui.update_field("count", s.count - 1);
 /// });
 /// ```
-pub fn gui_update_field_method(_vm: &mut VM, _method: &str, args: &[Value]) -> RuntimeResult<Value> {
+pub fn gui_update_field_method(
+    _vm: &mut VM,
+    _method: &str,
+    args: &[Value],
+) -> RuntimeResult<Value> {
     use stratum_core::vm::RuntimeErrorKind;
 
     if args.len() < 2 {
@@ -914,12 +923,12 @@ mod tests {
 
         // Create custom palette
         let palette = StratumPalette::new(
-            Color::rgb(30, 30, 30),      // background
-            Color::rgb(200, 200, 200),   // text
-            Color::rgb(100, 150, 255),   // primary
-            Color::rgb(100, 200, 100),   // success
-            Color::rgb(255, 200, 100),   // warning
-            Color::rgb(255, 100, 100),   // danger
+            Color::rgb(30, 30, 30),    // background
+            Color::rgb(200, 200, 200), // text
+            Color::rgb(100, 150, 255), // primary
+            Color::rgb(100, 200, 100), // success
+            Color::rgb(255, 200, 100), // warning
+            Color::rgb(255, 100, 100), // danger
         );
 
         // Request custom theme
@@ -1105,9 +1114,16 @@ mod tests {
         // Create a container element
         let container = gui_method("container", &[]).unwrap();
         // Call background() method with RGBA values
-        let result = gui_element_method(&container, "background", &[
-            Value::Int(255), Value::Int(0), Value::Int(0), Value::Int(255)
-        ]);
+        let result = gui_element_method(
+            &container,
+            "background",
+            &[
+                Value::Int(255),
+                Value::Int(0),
+                Value::Int(0),
+                Value::Int(255),
+            ],
+        );
         assert!(result.is_ok());
     }
 

@@ -105,16 +105,15 @@ pub use gc::CycleCollector;
 
 /// Convenience re-export of memory profiling types and functions
 pub use data::{
-    enable_profiling, disable_profiling, is_profiling_enabled,
-    profiler_summary, record_allocation, record_deallocation,
-    reset_profiler, set_profiler_gc_stats, detect_leaks,
-    memory_categories, CategoryStats, LeakInfo, MemoryProfiler, MemoryStats,
+    detect_leaks, disable_profiling, enable_profiling, is_profiling_enabled, memory_categories,
+    profiler_summary, record_allocation, record_deallocation, reset_profiler,
+    set_profiler_gc_stats, CategoryStats, LeakInfo, MemoryProfiler, MemoryStats,
 };
 
 /// Convenience re-export of coverage types
 pub use coverage::{
-    BranchInfo, CoverageCollector, CoverageFormat, CoverageSummary,
-    FileCoverage, FileCoverageSummary, FunctionCoverage, generate_report,
+    generate_report, BranchInfo, CoverageCollector, CoverageFormat, CoverageSummary, FileCoverage,
+    FileCoverageSummary, FunctionCoverage,
 };
 
 #[cfg(test)]
@@ -192,13 +191,15 @@ mod tests {
 
     #[test]
     fn test_list_reduce() {
-        let result = run_expr("{ let nums = [1, 2, 3, 4]; nums.reduce(|acc, x| acc + x, 0) }").unwrap();
+        let result =
+            run_expr("{ let nums = [1, 2, 3, 4]; nums.reduce(|acc, x| acc + x, 0) }").unwrap();
         assert_eq!(result, bytecode::Value::Int(10));
     }
 
     #[test]
     fn test_list_reduce_no_initial() {
-        let result = run_expr("{ let nums = [1, 2, 3, 4]; nums.reduce(|acc, x| acc + x) }").unwrap();
+        let result =
+            run_expr("{ let nums = [1, 2, 3, 4]; nums.reduce(|acc, x| acc + x) }").unwrap();
         assert_eq!(result, bytecode::Value::Int(10));
     }
 
@@ -323,8 +324,8 @@ mod tests {
 
         // Call main if it exists
         if vm.globals().contains_key("main") {
-            let main_call = parser::Parser::parse_expression("main()")
-                .map_err(|e| format!("{:?}", e))?;
+            let main_call =
+                parser::Parser::parse_expression("main()").map_err(|e| format!("{:?}", e))?;
             let main_fn = bytecode::Compiler::new()
                 .compile_expression(&main_call)
                 .map_err(|e| format!("{:?}", e))?;
@@ -346,9 +347,7 @@ mod tests {
         "#;
 
         let module = parser::Parser::parse_module(source).unwrap();
-        let function = bytecode::Compiler::new()
-            .compile_module(&module)
-            .unwrap();
+        let function = bytecode::Compiler::new().compile_module(&module).unwrap();
 
         let script_bc = bytecode::disassemble_chunk(&function.chunk, "<script>");
         eprintln!("{}", script_bc);
@@ -415,10 +414,10 @@ mod tests {
         // Load first parameter (slot 0)
         chunk.write_op(bytecode::OpCode::LoadLocal, 1);
         chunk.code_mut().extend(&[0, 0]); // u16 slot 0
-        // Load second parameter (slot 1)
+                                          // Load second parameter (slot 1)
         chunk.write_op(bytecode::OpCode::LoadLocal, 1);
         chunk.code_mut().extend(&[1, 0]); // u16 slot 1
-        // Add
+                                          // Add
         chunk.write_op(bytecode::OpCode::Add, 1);
         // Return
         chunk.write_op(bytecode::OpCode::Return, 1);
@@ -454,10 +453,10 @@ mod tests {
         // Load first parameter (slot 0)
         chunk.write_op(bytecode::OpCode::LoadLocal, 1);
         chunk.code_mut().extend(&[0, 0]); // u16 slot 0
-        // Load second parameter (slot 1)
+                                          // Load second parameter (slot 1)
         chunk.write_op(bytecode::OpCode::LoadLocal, 1);
         chunk.code_mut().extend(&[1, 0]); // u16 slot 1
-        // Compare: a > b
+                                          // Compare: a > b
         chunk.write_op(bytecode::OpCode::Gt, 1);
         // Return
         chunk.write_op(bytecode::OpCode::Return, 1);
@@ -521,7 +520,10 @@ mod tests {
         assert!(result.is_err(), "JIT should fail for unsupported opcodes");
 
         if let Err(e) = result {
-            assert!(e.to_string().contains("Unsupported"), "Error should indicate unsupported instruction");
+            assert!(
+                e.to_string().contains("Unsupported"),
+                "Error should indicate unsupported instruction"
+            );
         }
     }
 
@@ -594,7 +596,10 @@ mod tests {
 
         // CompileHot function should also compile when explicitly requested
         let result = jit.compile_function(&hot_fn);
-        assert!(result.is_ok(), "CompileHot function should compile when explicitly requested");
+        assert!(
+            result.is_ok(),
+            "CompileHot function should compile when explicitly requested"
+        );
     }
 
     #[test]
@@ -647,7 +652,11 @@ mod tests {
         "#;
 
         let result = run_module(source);
-        assert!(result.is_ok(), "CompileHot function should execute: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "CompileHot function should execute: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), bytecode::Value::Int(3));
     }
 
@@ -663,7 +672,11 @@ mod tests {
             }
         "#;
         let result = run_module(source);
-        assert!(result.is_ok(), "Pipeline with bare function: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Pipeline with bare function: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), bytecode::Value::Int(10));
     }
 
@@ -691,7 +704,11 @@ mod tests {
             }
         "#;
         let result = run_module(source);
-        assert!(result.is_ok(), "Pipeline with placeholder: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Pipeline with placeholder: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), bytecode::Value::Int(7));
     }
 
@@ -705,7 +722,11 @@ mod tests {
             }
         "#;
         let result = run_module(source);
-        assert!(result.is_ok(), "Pipeline with placeholder in second position: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Pipeline with placeholder in second position: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), bytecode::Value::Int(7)); // 10 - 3 = 7
     }
 
@@ -735,7 +756,11 @@ mod tests {
             }
         "#;
         let result = run_module(source);
-        assert!(result.is_ok(), "Chained pipeline with args: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Chained pipeline with args: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), bytecode::Value::Int(16)); // (5 + 3) * 2 = 16
     }
 
@@ -749,7 +774,11 @@ mod tests {
             }
         "#;
         let result = run_module(source);
-        assert!(result.is_ok(), "Pipeline with multiple placeholders: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Pipeline with multiple placeholders: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), bytecode::Value::Int(10)); // 5 + 5 = 10
     }
 }

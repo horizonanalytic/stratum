@@ -16,13 +16,11 @@ use dap::responses::{
     VariablesResponse,
 };
 use dap::types::{
-    Breakpoint, Capabilities, OutputEventCategory, Scope, Source, StackFrame,
-    StoppedEventReason, Thread, Variable,
+    Breakpoint, Capabilities, OutputEventCategory, Scope, Source, StackFrame, StoppedEventReason,
+    Thread, Variable,
 };
 use dap::{events::Event, requests::Command, responses::ResponseBody, server::Server};
-use stratum_core::{
-    DebugStackFrame, DebugState, DebugStepResult, DebugVariable, PauseReason, VM,
-};
+use stratum_core::{DebugStackFrame, DebugState, DebugStepResult, DebugVariable, PauseReason, VM};
 
 /// Thread ID for the main thread (Stratum is single-threaded)
 const MAIN_THREAD_ID: i64 = 1;
@@ -268,7 +266,8 @@ pub fn run_dap_server() -> Result<()> {
                 if let Some(program) = program {
                     let source_path = PathBuf::from(program);
                     if !source_path.exists() {
-                        let rsp = req.error(&format!("Source file not found: {}", source_path.display()));
+                        let rsp =
+                            req.error(&format!("Source file not found: {}", source_path.display()));
                         server.respond(rsp)?;
                         continue;
                     }

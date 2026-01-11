@@ -101,30 +101,19 @@ pub enum RuntimeErrorKind {
     UndefinedVariable(String),
 
     /// Undefined field on struct/object
-    UndefinedField {
-        type_name: String,
-        field: String,
-    },
+    UndefinedField { type_name: String, field: String },
 
     /// Index out of bounds
-    IndexOutOfBounds {
-        index: i64,
-        length: usize,
-    },
+    IndexOutOfBounds { index: i64, length: usize },
 
     /// Invalid index type
-    InvalidIndexType {
-        got: &'static str,
-    },
+    InvalidIndexType { got: &'static str },
 
     /// Value is not callable
     NotCallable(&'static str),
 
     /// Wrong number of arguments
-    ArityMismatch {
-        expected: u8,
-        got: u8,
-    },
+    ArityMismatch { expected: u8, got: u8 },
 
     /// Value is not iterable
     NotIterable(&'static str),
@@ -186,10 +175,7 @@ impl fmt::Display for RuntimeErrorKind {
                 got,
                 operation,
             } => {
-                write!(
-                    f,
-                    "type error: {operation} expected {expected}, got {got}"
-                )
+                write!(f, "type error: {operation} expected {expected}, got {got}")
             }
             RuntimeErrorKind::DivisionByZero => write!(f, "division by zero"),
             RuntimeErrorKind::UndefinedVariable(name) => {

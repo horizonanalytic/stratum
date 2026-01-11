@@ -344,7 +344,10 @@ mod tests {
         let doc = DocComment::parse(text);
         assert_eq!(doc.summary, "Greet a user.");
         assert_eq!(doc.params.len(), 2);
-        assert_eq!(doc.params.get("name").unwrap().description, "The user's name");
+        assert_eq!(
+            doc.params.get("name").unwrap().description,
+            "The user's name"
+        );
     }
 
     #[test]

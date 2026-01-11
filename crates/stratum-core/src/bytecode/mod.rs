@@ -21,9 +21,9 @@ pub use error::{CompileError, CompileErrorKind, CompileResult};
 pub use opcode::OpCode;
 pub use value::{
     BoundMethod, Closure, CoroutineState, CoroutineStatus, DbConnection, DbConnectionKind,
-    EnumVariantInstance, ExpectationState, Function, FutureState, FutureStatus, GuiValue, HashableValue,
-    ImageWrapper, NativeFunction, Range, SavedCallFrame, SavedExceptionHandler, StructInstance,
-    TcpListenerWrapper, TcpStreamWrapper, UdpSocketWrapper,
-    WebSocketWrapper, WebSocketServerWrapper, WebSocketServerConnWrapper,
-    Upvalue, Value, WeakRefValue, XmlDocumentWrapper,
+    EnumVariantInstance, ExpectationState, Function, FutureState, FutureStatus, GuiValue,
+    HashableValue, ImageWrapper, NativeFunction, Range, SavedCallFrame, SavedExceptionHandler,
+    StructInstance, TcpListenerWrapper, TcpStreamWrapper, UdpSocketWrapper, Upvalue, Value,
+    WeakRefValue, WebSocketServerConnWrapper, WebSocketServerWrapper, WebSocketWrapper,
+    XmlDocumentWrapper,
 };

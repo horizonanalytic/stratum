@@ -165,10 +165,7 @@ pub fn expect_type_error(source: &str) -> TestResult<String> {
 /// Returns error if the program unexpectedly succeeds
 pub fn expect_runtime_error(source: &str) -> TestResult<String> {
     match run_program(source) {
-        Ok(value) => Err(format!(
-            "Expected runtime error, but got value: {}",
-            value
-        )),
+        Ok(value) => Err(format!("Expected runtime error, but got value: {}", value)),
         Err(e) => Ok(e),
     }
 }

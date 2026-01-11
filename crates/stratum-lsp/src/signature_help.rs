@@ -13,7 +13,10 @@ use tower_lsp::lsp_types::{
 use crate::cache::CachedData;
 
 /// Compute signature help using cached data
-pub fn compute_signature_help_cached(data: &CachedData<'_>, position: Position) -> Option<SignatureHelp> {
+pub fn compute_signature_help_cached(
+    data: &CachedData<'_>,
+    position: Position,
+) -> Option<SignatureHelp> {
     // Convert LSP position to byte offset
     let offset = position_to_offset(data.line_index, position)?;
 
@@ -24,7 +27,9 @@ pub fn compute_signature_help_cached(data: &CachedData<'_>, position: Position) 
     let signature = if let Some(module) = data.ast() {
         if let Some(sig) = find_signature_from_ast(module, &call_context.function_name) {
             build_signature_info_from_ast(&sig, call_context.active_parameter)
-        } else if let Some(sig) = find_signature_from_text(data.content, &call_context.function_name) {
+        } else if let Some(sig) =
+            find_signature_from_text(data.content, &call_context.function_name)
+        {
             sig.with_active_parameter(call_context.active_parameter)
         } else {
             return None;
@@ -56,14 +61,14 @@ pub fn compute_signature_help(source: &str, position: Position) -> Option<Signat
 
     // Try to find the function definition
     // First try parsing, then fall back to text-based search
-    let signature = if let Some(sig) = find_signature_from_parse(source, &call_context.function_name)
-    {
-        build_signature_info_from_ast(&sig, call_context.active_parameter)
-    } else if let Some(sig) = find_signature_from_text(source, &call_context.function_name) {
-        sig.with_active_parameter(call_context.active_parameter)
-    } else {
-        return None;
-    };
+    let signature =
+        if let Some(sig) = find_signature_from_parse(source, &call_context.function_name) {
+            build_signature_info_from_ast(&sig, call_context.active_parameter)
+        } else if let Some(sig) = find_signature_from_text(source, &call_context.function_name) {
+            sig.with_active_parameter(call_context.active_parameter)
+        } else {
+            return None;
+        };
 
     Some(SignatureHelp {
         signatures: vec![signature],
@@ -244,7 +249,10 @@ impl FunctionSig {
             .map(|ty| format!(" -> {}", ty))
             .unwrap_or_default();
         let async_str = if self.is_async { "async " } else { "" };
-        let label = format!("{}fx {}({}){}", async_str, self.name, params_str, return_str);
+        let label = format!(
+            "{}fx {}({}){}",
+            async_str, self.name, params_str, return_str
+        );
 
         // Build parameter information with offset labels
         let mut param_infos = Vec::new();

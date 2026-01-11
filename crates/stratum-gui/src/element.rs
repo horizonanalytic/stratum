@@ -6,16 +6,25 @@
 use std::fmt;
 use std::sync::{Arc, RwLock};
 
-use iced::widget::{button, canvas, checkbox, column, container, mouse_area, pick_list, progress_bar, radio, row, scrollable, slider, text, text_input, toggler, Image};
+use iced::widget::{
+    button, canvas, checkbox, column, container, mouse_area, pick_list, progress_bar, radio, row,
+    scrollable, slider, text, text_input, toggler, Image,
+};
 use iced::{font, Color, ContentFit, Element, Fill, Font, Length, Point};
 
-use crate::charts::{BarChartConfig, BarChartProgram, LineChartConfig, LineChartProgram, PieChartConfig, PieChartProgram, DataPoint, DataSeries};
+use crate::charts::{
+    BarChartConfig, BarChartProgram, DataPoint, DataSeries, LineChartConfig, LineChartProgram,
+    PieChartConfig, PieChartProgram,
+};
 
 use stratum_core::bytecode::{GuiValue, Value};
-use stratum_core::data::{DataFrame, CubeQuery};
+use stratum_core::data::{CubeQuery, DataFrame};
 
 use crate::callback::{CallbackExecutor, CallbackId};
-use crate::layout::{Container, Grid, HAlign, HStack, ScrollDirection, ScrollView, Size, Spacer, VAlign, VStack, ZStack};
+use crate::layout::{
+    Container, Grid, HAlign, HStack, ScrollDirection, ScrollView, Size, Spacer, VAlign, VStack,
+    ZStack,
+};
 use crate::runtime::Message;
 use crate::state::ReactiveState;
 use crate::theme::{Color as StratumColor, WidgetStyle};
@@ -1372,7 +1381,10 @@ impl GuiElement {
 
     /// Create a new Dropdown element with options and initial selection
     #[must_use]
-    pub fn dropdown_with_selection(options: Vec<String>, selected: Option<String>) -> GuiElementBuilder {
+    pub fn dropdown_with_selection(
+        options: Vec<String>,
+        selected: Option<String>,
+    ) -> GuiElementBuilder {
         GuiElementBuilder::new(GuiElementKind::Dropdown(DropdownConfig {
             options,
             selected,
@@ -1462,7 +1474,10 @@ impl GuiElement {
 
     /// Create a for-each element with a template callback ID
     #[must_use]
-    pub fn for_each_with_template(list_field: impl Into<String>, template_id: CallbackId) -> GuiElementBuilder {
+    pub fn for_each_with_template(
+        list_field: impl Into<String>,
+        template_id: CallbackId,
+    ) -> GuiElementBuilder {
         GuiElementBuilder::new(GuiElementKind::ForEach(ForEachConfig {
             list_field: list_field.into(),
             template_id: Some(template_id),
@@ -1595,10 +1610,12 @@ impl GuiElement {
     /// Create a new HierarchyNavigator element
     #[must_use]
     pub fn hierarchy_navigator(hierarchy: impl Into<String>) -> GuiElementBuilder {
-        GuiElementBuilder::new(GuiElementKind::HierarchyNavigator(HierarchyNavigatorConfig {
-            hierarchy: hierarchy.into(),
-            ..Default::default()
-        }))
+        GuiElementBuilder::new(GuiElementKind::HierarchyNavigator(
+            HierarchyNavigatorConfig {
+                hierarchy: hierarchy.into(),
+                ..Default::default()
+            },
+        ))
     }
 
     /// Create a HierarchyNavigator element with a cube
@@ -1607,17 +1624,21 @@ impl GuiElement {
         cube: Arc<stratum_core::data::Cube>,
         hierarchy: impl Into<String>,
     ) -> GuiElementBuilder {
-        GuiElementBuilder::new(GuiElementKind::HierarchyNavigator(HierarchyNavigatorConfig {
-            cube: Some(cube),
-            hierarchy: hierarchy.into(),
-            ..Default::default()
-        }))
+        GuiElementBuilder::new(GuiElementKind::HierarchyNavigator(
+            HierarchyNavigatorConfig {
+                cube: Some(cube),
+                hierarchy: hierarchy.into(),
+                ..Default::default()
+            },
+        ))
     }
 
     /// Create a new MeasureSelector element
     #[must_use]
     pub fn measure_selector() -> GuiElementBuilder {
-        GuiElementBuilder::new(GuiElementKind::MeasureSelector(MeasureSelectorConfig::default()))
+        GuiElementBuilder::new(GuiElementKind::MeasureSelector(
+            MeasureSelectorConfig::default(),
+        ))
     }
 
     /// Create a MeasureSelector element with a cube
@@ -1660,9 +1681,7 @@ impl GuiElement {
                 let children: Vec<Element<'_, Message>> =
                     self.children.iter().map(|c| c.render()).collect();
 
-                let mut vstack = VStack::new()
-                    .spacing(config.spacing)
-                    .align(config.align);
+                let mut vstack = VStack::new().spacing(config.spacing).align(config.align);
 
                 if let Some(padding) = self.style.padding {
                     vstack = vstack.padding(padding);
@@ -1681,9 +1700,7 @@ impl GuiElement {
                 let children: Vec<Element<'_, Message>> =
                     self.children.iter().map(|c| c.render()).collect();
 
-                let mut hstack = HStack::new()
-                    .spacing(config.spacing)
-                    .align(config.align);
+                let mut hstack = HStack::new().spacing(config.spacing).align(config.align);
 
                 if let Some(padding) = self.style.padding {
                     hstack = hstack.padding(padding);
@@ -1903,19 +1920,19 @@ impl GuiElement {
                 // Priority: field_path binding > on_toggle callback
                 let cb = if let Some(ref field) = config.field_path {
                     let field = field.clone();
-                    checkbox(config.checked).label(label).on_toggle(move |checked| {
-                        Message::SetBoolField {
+                    checkbox(config.checked)
+                        .label(label)
+                        .on_toggle(move |checked| Message::SetBoolField {
                             field: field.clone(),
                             value: checked,
-                        }
-                    })
+                        })
                 } else if let Some(callback_id) = config.on_toggle {
-                    checkbox(config.checked).label(label).on_toggle(move |checked| {
-                        Message::CheckboxToggled {
+                    checkbox(config.checked)
+                        .label(label)
+                        .on_toggle(move |checked| Message::CheckboxToggled {
                             callback_id,
                             checked,
-                        }
-                    })
+                        })
                 } else {
                     // No binding or callback - checkbox is read-only
                     checkbox(config.checked).label(label)
@@ -1945,11 +1962,9 @@ impl GuiElement {
                 let rb = if let Some(ref field) = config.field_path {
                     let field = field.clone();
                     let value_for_message = value_str.clone();
-                    radio(label, (), selected, move |()| {
-                        Message::SetStringField {
-                            field: field.clone(),
-                            value: value_for_message.clone(),
-                        }
+                    radio(label, (), selected, move |()| Message::SetStringField {
+                        field: field.clone(),
+                        value: value_for_message.clone(),
                     })
                 } else if let Some(callback_id) = config.on_select {
                     let value_for_message = value_str.clone();
@@ -1990,10 +2005,7 @@ impl GuiElement {
                     .placeholder(placeholder)
                 } else if let Some(callback_id) = config.on_select {
                     pick_list(options, selected, move |value: String| {
-                        Message::DropdownSelected {
-                            callback_id,
-                            value,
-                        }
+                        Message::DropdownSelected { callback_id, value }
                     })
                     .placeholder(placeholder)
                 } else {
@@ -2074,19 +2086,16 @@ impl GuiElement {
                 // Priority: field_path binding > on_toggle callback > no-op
                 let tg = if let Some(ref field) = config.field_path {
                     let field = field.clone();
-                    toggler(config.is_on)
-                        .label(label)
-                        .on_toggle(move |is_on| Message::SetBoolField {
+                    toggler(config.is_on).label(label).on_toggle(move |is_on| {
+                        Message::SetBoolField {
                             field: field.clone(),
                             value: is_on,
-                        })
+                        }
+                    })
                 } else if let Some(callback_id) = config.on_toggle {
                     toggler(config.is_on)
                         .label(label)
-                        .on_toggle(move |is_on| Message::ToggleSwitched {
-                            callback_id,
-                            is_on,
-                        })
+                        .on_toggle(move |is_on| Message::ToggleSwitched { callback_id, is_on })
                 } else {
                     // No binding or callback - toggler is read-only (no on_toggle)
                     toggler(config.is_on).label(label)
@@ -2174,46 +2183,26 @@ impl GuiElement {
             }
 
             // DataTable renders a table from DataFrame data
-            GuiElementKind::DataTable(config) => {
-                self.render_data_table(config)
-            }
+            GuiElementKind::DataTable(config) => self.render_data_table(config),
 
-            GuiElementKind::BarChart(config) => {
-                self.render_bar_chart(config)
-            }
+            GuiElementKind::BarChart(config) => self.render_bar_chart(config),
 
-            GuiElementKind::LineChart(config) => {
-                self.render_line_chart(config)
-            }
+            GuiElementKind::LineChart(config) => self.render_line_chart(config),
 
-            GuiElementKind::PieChart(config) => {
-                self.render_pie_chart(config)
-            }
+            GuiElementKind::PieChart(config) => self.render_pie_chart(config),
 
             // OLAP Cube widgets
-            GuiElementKind::CubeTable(config) => {
-                self.render_cube_table(config)
-            }
+            GuiElementKind::CubeTable(config) => self.render_cube_table(config),
 
-            GuiElementKind::CubeChart(config) => {
-                self.render_cube_chart(config)
-            }
+            GuiElementKind::CubeChart(config) => self.render_cube_chart(config),
 
-            GuiElementKind::DimensionFilter(config) => {
-                self.render_dimension_filter(config)
-            }
+            GuiElementKind::DimensionFilter(config) => self.render_dimension_filter(config),
 
-            GuiElementKind::HierarchyNavigator(config) => {
-                self.render_hierarchy_navigator(config)
-            }
+            GuiElementKind::HierarchyNavigator(config) => self.render_hierarchy_navigator(config),
 
-            GuiElementKind::MeasureSelector(config) => {
-                self.render_measure_selector(config)
-            }
+            GuiElementKind::MeasureSelector(config) => self.render_measure_selector(config),
 
-            GuiElementKind::Interactive(config) => {
-                self.render_interactive(config)
-            }
+            GuiElementKind::Interactive(config) => self.render_interactive(config),
         }
     }
 
@@ -2320,9 +2309,7 @@ impl GuiElement {
     fn render_data_table(&self, config: &DataTableConfig) -> Element<'_, Message> {
         let Some(ref df) = config.dataframe else {
             // No data - show empty placeholder
-            return container(text("No data"))
-                .padding(20)
-                .into();
+            return container(text("No data")).padding(20).into();
         };
 
         // Determine which columns to display
@@ -2333,39 +2320,45 @@ impl GuiElement {
         };
 
         if columns_to_show.is_empty() {
-            return container(text("No columns"))
-                .padding(20)
-                .into();
+            return container(text("No columns")).padding(20).into();
         }
 
         // Calculate effective column count (with selection checkbox column)
         let has_selection = config.selectable && config.on_selection_change.is_some();
-        let num_columns = if has_selection { columns_to_show.len() + 1 } else { columns_to_show.len() };
+        let num_columns = if has_selection {
+            columns_to_show.len() + 1
+        } else {
+            columns_to_show.len()
+        };
 
         // Calculate pagination
         let total_rows = df.num_rows();
         let page_size = config.page_size.unwrap_or(total_rows);
         let start_row = config.current_page * page_size;
         let end_row = (start_row + page_size).min(total_rows);
-        let total_pages = if page_size > 0 { (total_rows + page_size - 1) / page_size } else { 1 };
+        let total_pages = if page_size > 0 {
+            (total_rows + page_size - 1) / page_size
+        } else {
+            1
+        };
 
         // Build header row
         let mut header_cells: Vec<Element<'_, Message>> = Vec::new();
 
         // Selection column header (empty or "select all")
         if has_selection {
-            header_cells.push(
-                container(text("☑"))
-                    .padding(8)
-                    .into()
-            );
+            header_cells.push(container(text("☑")).padding(8).into());
         }
 
         // Column headers - clickable if sortable
         for col_name in &columns_to_show {
             let is_sorted = config.sort_column.as_ref() == Some(col_name);
             let sort_indicator = if is_sorted {
-                if config.sort_ascending { " ▲" } else { " ▼" }
+                if config.sort_ascending {
+                    " ▲"
+                } else {
+                    " ▼"
+                }
             } else if config.sortable {
                 " ○" // Indicate sortable
             } else {
@@ -2379,7 +2372,8 @@ impl GuiElement {
             });
 
             // Get column width if specified
-            let col_width = config.column_widths
+            let col_width = config
+                .column_widths
                 .iter()
                 .find(|(c, _)| c == col_name)
                 .map(|(_, w)| *w);
@@ -2431,86 +2425,85 @@ impl GuiElement {
                         new_selection.push(row_idx);
                     }
                     all_cells.push(
-                        container(
-                            checkbox(is_selected)
-                                .on_toggle(move |_| Message::DataTableRowSelect {
-                                    callback_id: selection_callback,
-                                    rows: new_selection.clone(),
-                                })
-                        )
+                        container(checkbox(is_selected).on_toggle(move |_| {
+                            Message::DataTableRowSelect {
+                                callback_id: selection_callback,
+                                rows: new_selection.clone(),
+                            }
+                        }))
                         .padding(4)
-                        .into()
+                        .into(),
                     );
                 } else {
-                    all_cells.push(
-                        container(checkbox(is_selected))
-                            .padding(4)
-                            .into()
-                    );
+                    all_cells.push(container(checkbox(is_selected)).padding(4).into());
                 }
             }
 
             // Data cells
             for col_name in &columns_to_show {
-                let value = df.column(col_name)
+                let value = df
+                    .column(col_name)
                     .ok()
                     .and_then(|series| series.get(row_idx).ok())
                     .map(|v| format!("{v}"))
                     .unwrap_or_default();
 
                 // Check for custom cell renderer
-                let cell_content: Element<'_, Message> = if let Some((_renderer_col, _renderer_id)) =
-                    config.cell_renderers.iter().find(|(c, _)| c == col_name)
-                {
-                    // Custom cell renderers are callbacks that return GuiElements
-                    // For now, render the value as text - full renderer support would need
-                    // executor access in render(), which requires architectural changes
-                    text(value.clone()).into()
-                } else {
-                    text(value.clone()).into()
-                };
+                let cell_content: Element<'_, Message> =
+                    if let Some((_renderer_col, _renderer_id)) =
+                        config.cell_renderers.iter().find(|(c, _)| c == col_name)
+                    {
+                        // Custom cell renderers are callbacks that return GuiElements
+                        // For now, render the value as text - full renderer support would need
+                        // executor access in render(), which requires architectural changes
+                        text(value.clone()).into()
+                    } else {
+                        text(value.clone()).into()
+                    };
 
                 // Get column width if specified
-                let col_width = config.column_widths
+                let col_width = config
+                    .column_widths
                     .iter()
                     .find(|(c, _)| c == col_name)
                     .map(|(_, w)| *w);
 
                 // Build the cell with optional width and click handling
-                let cell_elem: Element<'_, Message> = if let Some(cell_callback) = config.on_cell_click {
-                    // Cell is clickable
-                    let col_name_owned = col_name.clone();
-                    let mut cell_btn = button(cell_content)
-                        .on_press(Message::DataTableCellClick {
-                            callback_id: cell_callback,
-                            row: row_idx,
-                            column: col_name_owned,
-                        })
-                        .padding(4);
-                    if let Some(w) = col_width {
-                        cell_btn = cell_btn.width(w);
-                    }
-                    cell_btn.into()
-                } else if let Some(row_callback) = config.on_row_click {
-                    // Row click - make cell clickable too
-                    let mut cell_btn = button(cell_content)
-                        .on_press(Message::DataTableRowClick {
-                            callback_id: row_callback,
-                            row: row_idx,
-                        })
-                        .padding(4);
-                    if let Some(w) = col_width {
-                        cell_btn = cell_btn.width(w);
-                    }
-                    cell_btn.into()
-                } else {
-                    // Non-clickable cell
-                    let mut cell_container = container(cell_content).padding(4);
-                    if let Some(w) = col_width {
-                        cell_container = cell_container.width(w);
-                    }
-                    cell_container.into()
-                };
+                let cell_elem: Element<'_, Message> =
+                    if let Some(cell_callback) = config.on_cell_click {
+                        // Cell is clickable
+                        let col_name_owned = col_name.clone();
+                        let mut cell_btn = button(cell_content)
+                            .on_press(Message::DataTableCellClick {
+                                callback_id: cell_callback,
+                                row: row_idx,
+                                column: col_name_owned,
+                            })
+                            .padding(4);
+                        if let Some(w) = col_width {
+                            cell_btn = cell_btn.width(w);
+                        }
+                        cell_btn.into()
+                    } else if let Some(row_callback) = config.on_row_click {
+                        // Row click - make cell clickable too
+                        let mut cell_btn = button(cell_content)
+                            .on_press(Message::DataTableRowClick {
+                                callback_id: row_callback,
+                                row: row_idx,
+                            })
+                            .padding(4);
+                        if let Some(w) = col_width {
+                            cell_btn = cell_btn.width(w);
+                        }
+                        cell_btn.into()
+                    } else {
+                        // Non-clickable cell
+                        let mut cell_container = container(cell_content).padding(4);
+                        if let Some(w) = col_width {
+                            cell_container = cell_container.width(w);
+                        }
+                        cell_container.into()
+                    };
 
                 all_cells.push(cell_elem);
             }
@@ -2533,8 +2526,17 @@ impl GuiElement {
 
         // Build pagination controls
         let pagination = if total_pages > 1 {
-            let page_info = text(format!("Page {} of {}", config.current_page + 1, total_pages));
-            let row_info = text(format!("Rows {}-{} of {}", start_row + 1, end_row, total_rows));
+            let page_info = text(format!(
+                "Page {} of {}",
+                config.current_page + 1,
+                total_pages
+            ));
+            let row_info = text(format!(
+                "Rows {}-{} of {}",
+                start_row + 1,
+                end_row,
+                total_rows
+            ));
 
             // Pagination buttons
             let has_page_callback = config.on_page_change.is_some();
@@ -2549,24 +2551,21 @@ impl GuiElement {
                     .padding([4, 8])
                     .into()
             } else {
-                button(text("◀ Prev"))
-                    .padding([4, 8])
-                    .into()
+                button(text("◀ Prev")).padding([4, 8]).into()
             };
 
-            let next_button: Element<'_, Message> = if current_page + 1 < total_pages && has_page_callback {
-                button(text("Next ▶"))
-                    .on_press(Message::DataTablePageChange {
-                        callback_id: config.on_page_change.unwrap(),
-                        page: current_page + 1,
-                    })
-                    .padding([4, 8])
-                    .into()
-            } else {
-                button(text("Next ▶"))
-                    .padding([4, 8])
-                    .into()
-            };
+            let next_button: Element<'_, Message> =
+                if current_page + 1 < total_pages && has_page_callback {
+                    button(text("Next ▶"))
+                        .on_press(Message::DataTablePageChange {
+                            callback_id: config.on_page_change.unwrap(),
+                            page: current_page + 1,
+                        })
+                        .padding([4, 8])
+                        .into()
+                } else {
+                    button(text("Next ▶")).padding([4, 8]).into()
+                };
 
             Some(
                 row![
@@ -2578,7 +2577,7 @@ impl GuiElement {
                 ]
                 .spacing(10)
                 .padding(8)
-                .align_y(iced::Alignment::Center)
+                .align_y(iced::Alignment::Center),
             )
         } else {
             None
@@ -2586,16 +2585,11 @@ impl GuiElement {
 
         // Combine grid and pagination
         if let Some(pagination_row) = pagination {
-            column![
-                scrollable(grid_element).height(Fill),
-                pagination_row,
-            ]
-            .spacing(4)
-            .into()
-        } else {
-            scrollable(grid_element)
-                .height(Fill)
+            column![scrollable(grid_element).height(Fill), pagination_row,]
+                .spacing(4)
                 .into()
+        } else {
+            scrollable(grid_element).height(Fill).into()
         }
     }
 
@@ -2616,7 +2610,8 @@ impl GuiElement {
             // Conditional rendering
             GuiElementKind::Conditional(config) => {
                 // Get the condition value from state
-                let condition = state.get_path(&config.condition_field)
+                let condition = state
+                    .get_path(&config.condition_field)
                     .map(|v| matches!(v, Value::Bool(true)))
                     .unwrap_or(false);
 
@@ -2641,7 +2636,8 @@ impl GuiElement {
                     iced::widget::Space::new().into()
                 } else {
                     // Render pre-expanded children
-                    let children: Vec<Element<'_, Message>> = self.children
+                    let children: Vec<Element<'_, Message>> = self
+                        .children
                         .iter()
                         .map(|c| c.render_with_state(state, executor))
                         .collect();
@@ -2667,14 +2663,13 @@ impl GuiElement {
         // For now, we'll use a macro-like approach to avoid duplicating all the rendering code
         match &self.kind {
             GuiElementKind::VStack(config) => {
-                let children: Vec<Element<'_, Message>> = self.children
+                let children: Vec<Element<'_, Message>> = self
+                    .children
                     .iter()
                     .map(|c| c.render_with_state(state, executor))
                     .collect();
 
-                let mut vstack = VStack::new()
-                    .spacing(config.spacing)
-                    .align(config.align);
+                let mut vstack = VStack::new().spacing(config.spacing).align(config.align);
 
                 if let Some(padding) = self.style.padding {
                     vstack = vstack.padding(padding);
@@ -2690,14 +2685,13 @@ impl GuiElement {
             }
 
             GuiElementKind::HStack(config) => {
-                let children: Vec<Element<'_, Message>> = self.children
+                let children: Vec<Element<'_, Message>> = self
+                    .children
                     .iter()
                     .map(|c| c.render_with_state(state, executor))
                     .collect();
 
-                let mut hstack = HStack::new()
-                    .spacing(config.spacing)
-                    .align(config.align);
+                let mut hstack = HStack::new().spacing(config.spacing).align(config.align);
 
                 if let Some(padding) = self.style.padding {
                     hstack = hstack.padding(padding);
@@ -2713,7 +2707,8 @@ impl GuiElement {
             }
 
             GuiElementKind::ZStack(_config) => {
-                let children: Vec<Element<'_, Message>> = self.children
+                let children: Vec<Element<'_, Message>> = self
+                    .children
                     .iter()
                     .map(|c| c.render_with_state(state, executor))
                     .collect();
@@ -2734,7 +2729,8 @@ impl GuiElement {
             }
 
             GuiElementKind::Grid(config) => {
-                let children: Vec<Element<'_, Message>> = self.children
+                let children: Vec<Element<'_, Message>> = self
+                    .children
                     .iter()
                     .map(|c| c.render_with_state(state, executor))
                     .collect();
@@ -2823,16 +2819,18 @@ impl GuiElement {
             config: config.clone(),
         };
 
-        let width = self.style.width
+        let width = self
+            .style
+            .width
             .map(|s| s.to_iced())
             .unwrap_or(Length::Fixed(config.width));
-        let height = self.style.height
+        let height = self
+            .style
+            .height
             .map(|s| s.to_iced())
             .unwrap_or(Length::Fixed(config.height));
 
-        let chart = canvas(program)
-            .width(width)
-            .height(height);
+        let chart = canvas(program).width(width).height(height);
 
         if let Some(padding) = self.style.padding {
             container(chart).padding(padding).into()
@@ -2847,16 +2845,18 @@ impl GuiElement {
             config: config.clone(),
         };
 
-        let width = self.style.width
+        let width = self
+            .style
+            .width
             .map(|s| s.to_iced())
             .unwrap_or(Length::Fixed(config.width));
-        let height = self.style.height
+        let height = self
+            .style
+            .height
             .map(|s| s.to_iced())
             .unwrap_or(Length::Fixed(config.height));
 
-        let chart = canvas(program)
-            .width(width)
-            .height(height);
+        let chart = canvas(program).width(width).height(height);
 
         if let Some(padding) = self.style.padding {
             container(chart).padding(padding).into()
@@ -2871,16 +2871,18 @@ impl GuiElement {
             config: config.clone(),
         };
 
-        let width = self.style.width
+        let width = self
+            .style
+            .width
             .map(|s| s.to_iced())
             .unwrap_or(Length::Fixed(config.width));
-        let height = self.style.height
+        let height = self
+            .style
+            .height
             .map(|s| s.to_iced())
             .unwrap_or(Length::Fixed(config.height));
 
-        let chart = canvas(program)
-            .width(width)
-            .height(height);
+        let chart = canvas(program).width(width).height(height);
 
         if let Some(padding) = self.style.padding {
             container(chart).padding(padding).into()
@@ -2896,9 +2898,7 @@ impl GuiElement {
     /// Render a CubeTable element - OLAP-aware data table with drill-down
     fn render_cube_table(&self, config: &CubeTableConfig) -> Element<'_, Message> {
         let Some(ref cube) = config.cube else {
-            return container(text("No cube data"))
-                .padding(20)
-                .into();
+            return container(text("No cube data")).padding(20).into();
         };
 
         // Clone config values for use in the function
@@ -2911,13 +2911,15 @@ impl GuiElement {
         let on_cell_click = config.on_cell_click;
 
         // Get active filters from filter context
-        let active_filters = config.filter_context
+        let active_filters = config
+            .filter_context
             .as_ref()
             .map(|ctx| ctx.get_active_filters())
             .unwrap_or_default();
 
         // Get selected measures from filter context (if any)
-        let selected_measures = config.filter_context
+        let selected_measures = config
+            .filter_context
             .as_ref()
             .and_then(|ctx| ctx.get_selected_measures());
 
@@ -2937,7 +2939,10 @@ impl GuiElement {
             };
             // If filter context has selected measures, filter to only those
             if let Some(ref selected) = selected_measures {
-                base_measures.into_iter().filter(|m| selected.contains(m)).collect()
+                base_measures
+                    .into_iter()
+                    .filter(|m| selected.contains(m))
+                    .collect()
             } else {
                 base_measures
             }
@@ -3002,7 +3007,8 @@ impl GuiElement {
         // Query actual data from the cube
         let query_result = {
             // Build select expressions: dimensions + measures
-            let mut select_exprs: Vec<String> = row_dims.iter().map(|d| format!("\"{}\"", d)).collect();
+            let mut select_exprs: Vec<String> =
+                row_dims.iter().map(|d| format!("\"{}\"", d)).collect();
             for m in &measures {
                 select_exprs.push(format!("SUM(\"{}\") as \"{}\"", m, m));
             }
@@ -3023,8 +3029,7 @@ impl GuiElement {
             }
 
             // Execute with limit
-            query.limit(page_size * (current_page + 1))
-                .to_dataframe()
+            query.limit(page_size * (current_page + 1)).to_dataframe()
         };
 
         match query_result {
@@ -3065,29 +3070,30 @@ impl GuiElement {
                                     .unwrap_or_else(|| "-".to_string());
 
                                 let cell_text = text(cell_value.clone());
-                                let cell_elem: Element<'_, Message> = if let Some(drill_callback) = on_drill {
-                                    let dim = dim_name.clone();
-                                    button(cell_text)
-                                        .on_press(Message::CubeDrillDown {
-                                            callback_id: drill_callback,
-                                            dimension: dim,
-                                            value: Some(cell_value),
-                                        })
-                                        .padding([6, 8])
-                                        .into()
-                                } else if let Some(cell_callback) = on_cell_click {
-                                    let col = dim_name.clone();
-                                    button(cell_text)
-                                        .on_press(Message::DataTableCellClick {
-                                            callback_id: cell_callback,
-                                            row: row_idx,
-                                            column: col,
-                                        })
-                                        .padding([6, 8])
-                                        .into()
-                                } else {
-                                    container(cell_text).padding([6, 8]).into()
-                                };
+                                let cell_elem: Element<'_, Message> =
+                                    if let Some(drill_callback) = on_drill {
+                                        let dim = dim_name.clone();
+                                        button(cell_text)
+                                            .on_press(Message::CubeDrillDown {
+                                                callback_id: drill_callback,
+                                                dimension: dim,
+                                                value: Some(cell_value),
+                                            })
+                                            .padding([6, 8])
+                                            .into()
+                                    } else if let Some(cell_callback) = on_cell_click {
+                                        let col = dim_name.clone();
+                                        button(cell_text)
+                                            .on_press(Message::DataTableCellClick {
+                                                callback_id: cell_callback,
+                                                row: row_idx,
+                                                column: col,
+                                            })
+                                            .padding([6, 8])
+                                            .into()
+                                    } else {
+                                        container(cell_text).padding([6, 8]).into()
+                                    };
 
                                 all_cells.push(cell_elem);
                             }
@@ -3113,18 +3119,23 @@ impl GuiElement {
 
                         // Add roll-up control row if enabled
                         if show_drill_controls && on_roll_up.is_some() {
-                            let first_dim = if !row_dims.is_empty() { row_dims[0].clone() } else { String::new() };
-                            let rollup_btn: Element<'_, Message> = if let Some(rollup_callback) = on_roll_up {
-                                button(text("▲ Roll Up"))
-                                    .on_press(Message::CubeRollUp {
-                                        callback_id: rollup_callback,
-                                        dimension: first_dim,
-                                    })
-                                    .padding([4, 8])
-                                    .into()
+                            let first_dim = if !row_dims.is_empty() {
+                                row_dims[0].clone()
                             } else {
-                                iced::widget::Space::new().into()
+                                String::new()
                             };
+                            let rollup_btn: Element<'_, Message> =
+                                if let Some(rollup_callback) = on_roll_up {
+                                    button(text("▲ Roll Up"))
+                                        .on_press(Message::CubeRollUp {
+                                            callback_id: rollup_callback,
+                                            dimension: first_dim,
+                                        })
+                                        .padding([4, 8])
+                                        .into()
+                                } else {
+                                    iced::widget::Space::new().into()
+                                };
 
                             all_cells.push(rollup_btn);
                             for _ in 1..num_columns {
@@ -3134,7 +3145,8 @@ impl GuiElement {
                     }
                     Err(_) => {
                         // Show error state
-                        all_cells.push(container(text("Error loading page data")).padding(8).into());
+                        all_cells
+                            .push(container(text("Error loading page data")).padding(8).into());
                         for _ in 1..num_columns {
                             all_cells.push(iced::widget::Space::new().into());
                         }
@@ -3205,25 +3217,18 @@ impl GuiElement {
 
             let pagination_row = row![prev_btn, page_info, next_btn].spacing(10).padding(8);
 
-            column![
-                scrollable(grid_element).height(Fill),
-                pagination_row,
-            ]
-            .spacing(4)
-            .into()
-        } else {
-            scrollable(grid_element)
-                .height(Fill)
+            column![scrollable(grid_element).height(Fill), pagination_row,]
+                .spacing(4)
                 .into()
+        } else {
+            scrollable(grid_element).height(Fill).into()
         }
     }
 
     /// Render a CubeChart element - OLAP-aware chart with drill-down
     fn render_cube_chart(&self, config: &CubeChartConfig) -> Element<'_, Message> {
         let Some(ref cube) = config.cube else {
-            return container(text("No cube data"))
-                .padding(20)
-                .into();
+            return container(text("No cube data")).padding(20).into();
         };
 
         // Clone all config values upfront
@@ -3236,16 +3241,21 @@ impl GuiElement {
         let show_grid = config.show_grid;
 
         // Get active filters from filter context
-        let active_filters = config.filter_context
+        let active_filters = config
+            .filter_context
             .as_ref()
             .map(|ctx| ctx.get_active_filters())
             .unwrap_or_default();
 
         // Get the dimension and measure names (owned)
-        let x_dim = config.x_dimension.clone()
+        let x_dim = config
+            .x_dimension
+            .clone()
             .or_else(|| cube.dimension_names().first().cloned())
             .unwrap_or_else(|| "dimension".to_string());
-        let y_measure = config.y_measure.clone()
+        let y_measure = config
+            .y_measure
+            .clone()
             .or_else(|| cube.measure_names().first().cloned())
             .unwrap_or_else(|| "measure".to_string());
 
@@ -3299,12 +3309,16 @@ impl GuiElement {
                         let mut data_points: Vec<DataPoint> = Vec::new();
                         let num_rows = df.num_rows();
 
-                        if let (Ok(x_series), Ok(y_series)) = (df.column(&x_dim), df.column(&y_measure)) {
+                        if let (Ok(x_series), Ok(y_series)) =
+                            (df.column(&x_dim), df.column(&y_measure))
+                        {
                             for i in 0..num_rows {
-                                let label = x_series.get(i)
+                                let label = x_series
+                                    .get(i)
                                     .map(|v| format!("{}", v))
                                     .unwrap_or_else(|_| format!("Row {}", i));
-                                let value = y_series.get(i)
+                                let value = y_series
+                                    .get(i)
                                     .map(|v| match v {
                                         Value::Float(f) => f,
                                         Value::Int(n) => n as f64,
@@ -3333,16 +3347,18 @@ impl GuiElement {
                         };
 
                         let program = BarChartProgram { config: bar_config };
-                        let width = self.style.width
+                        let width = self
+                            .style
+                            .width
                             .map(|s| s.to_iced())
                             .unwrap_or(Length::Fixed(config_width));
-                        let height = self.style.height
+                        let height = self
+                            .style
+                            .height
                             .map(|s| s.to_iced())
                             .unwrap_or(Length::Fixed(config_height));
 
-                        let chart = canvas(program)
-                            .width(width)
-                            .height(height);
+                        let chart = canvas(program).width(width).height(height);
 
                         if let Some(padding) = self.style.padding {
                             container(chart).padding(padding).into()
@@ -3360,14 +3376,27 @@ impl GuiElement {
                             // Multi-series line chart
                             // Get unique x values and series values
                             let mut x_values: Vec<String> = Vec::new();
-                            let mut series_map: std::collections::HashMap<String, Vec<(String, f64)>> = std::collections::HashMap::new();
+                            let mut series_map: std::collections::HashMap<
+                                String,
+                                Vec<(String, f64)>,
+                            > = std::collections::HashMap::new();
 
-                            if let (Ok(x_series), Ok(series_col), Ok(y_series)) =
-                                (df.column(&x_dim), df.column(series_dim), df.column(&y_measure)) {
+                            if let (Ok(x_series), Ok(series_col), Ok(y_series)) = (
+                                df.column(&x_dim),
+                                df.column(series_dim),
+                                df.column(&y_measure),
+                            ) {
                                 for i in 0..num_rows {
-                                    let x_val = x_series.get(i).map(|v| format!("{}", v)).unwrap_or_default();
-                                    let s_val = series_col.get(i).map(|v| format!("{}", v)).unwrap_or_default();
-                                    let y_val = y_series.get(i)
+                                    let x_val = x_series
+                                        .get(i)
+                                        .map(|v| format!("{}", v))
+                                        .unwrap_or_default();
+                                    let s_val = series_col
+                                        .get(i)
+                                        .map(|v| format!("{}", v))
+                                        .unwrap_or_default();
+                                    let y_val = y_series
+                                        .get(i)
                                         .map(|v| match v {
                                             Value::Float(f) => f,
                                             Value::Int(n) => n as f64,
@@ -3402,10 +3431,16 @@ impl GuiElement {
                         } else {
                             // Single series line chart
                             let mut label_value_pairs: Vec<(String, f64)> = Vec::new();
-                            if let (Ok(x_series), Ok(y_series)) = (df.column(&x_dim), df.column(&y_measure)) {
+                            if let (Ok(x_series), Ok(y_series)) =
+                                (df.column(&x_dim), df.column(&y_measure))
+                            {
                                 for i in 0..num_rows {
-                                    let label = x_series.get(i).map(|v| format!("{}", v)).unwrap_or_default();
-                                    let value = y_series.get(i)
+                                    let label = x_series
+                                        .get(i)
+                                        .map(|v| format!("{}", v))
+                                        .unwrap_or_default();
+                                    let value = y_series
+                                        .get(i)
                                         .map(|v| match v {
                                             Value::Float(f) => f,
                                             Value::Int(n) => n as f64,
@@ -3417,7 +3452,8 @@ impl GuiElement {
                             }
                             // Sort by label for consistent ordering
                             label_value_pairs.sort_by(|a, b| a.0.cmp(&b.0));
-                            let values: Vec<f64> = label_value_pairs.iter().map(|(_, v)| *v).collect();
+                            let values: Vec<f64> =
+                                label_value_pairs.iter().map(|(_, v)| *v).collect();
                             labels = label_value_pairs.into_iter().map(|(l, _)| l).collect();
                             series_data.push(DataSeries::new(y_measure.clone(), values));
                         }
@@ -3438,17 +3474,21 @@ impl GuiElement {
                             y_label: Some(y_measure),
                         };
 
-                        let program = LineChartProgram { config: line_config };
-                        let width = self.style.width
+                        let program = LineChartProgram {
+                            config: line_config,
+                        };
+                        let width = self
+                            .style
+                            .width
                             .map(|s| s.to_iced())
                             .unwrap_or(Length::Fixed(config_width));
-                        let height = self.style.height
+                        let height = self
+                            .style
+                            .height
                             .map(|s| s.to_iced())
                             .unwrap_or(Length::Fixed(config_height));
 
-                        let chart = canvas(program)
-                            .width(width)
-                            .height(height);
+                        let chart = canvas(program).width(width).height(height);
 
                         if let Some(padding) = self.style.padding {
                             container(chart).padding(padding).into()
@@ -3461,10 +3501,16 @@ impl GuiElement {
                         let mut data_points: Vec<DataPoint> = Vec::new();
                         let num_rows = df.num_rows();
 
-                        if let (Ok(x_series), Ok(y_series)) = (df.column(&x_dim), df.column(&y_measure)) {
+                        if let (Ok(x_series), Ok(y_series)) =
+                            (df.column(&x_dim), df.column(&y_measure))
+                        {
                             for i in 0..num_rows {
-                                let label = x_series.get(i).map(|v| format!("{}", v)).unwrap_or_default();
-                                let value = y_series.get(i)
+                                let label = x_series
+                                    .get(i)
+                                    .map(|v| format!("{}", v))
+                                    .unwrap_or_default();
+                                let value = y_series
+                                    .get(i)
                                     .map(|v| match v {
                                         Value::Float(f) => f,
                                         Value::Int(n) => n as f64,
@@ -3492,16 +3538,18 @@ impl GuiElement {
                         };
 
                         let program = PieChartProgram { config: pie_config };
-                        let width = self.style.width
+                        let width = self
+                            .style
+                            .width
                             .map(|s| s.to_iced())
                             .unwrap_or(Length::Fixed(config_width));
-                        let height = self.style.height
+                        let height = self
+                            .style
+                            .height
                             .map(|s| s.to_iced())
                             .unwrap_or(Length::Fixed(config_height));
 
-                        let chart = canvas(program)
-                            .width(width)
-                            .height(height);
+                        let chart = canvas(program).width(width).height(height);
 
                         if let Some(padding) = self.style.padding {
                             container(chart).padding(padding).into()
@@ -3516,12 +3564,17 @@ impl GuiElement {
                 let error_col = column![
                     text("Error loading chart data").size(14),
                     text(format!("{} by {}", y_measure, x_dim)).size(12)
-                ].spacing(8);
+                ]
+                .spacing(8);
 
-                let width = self.style.width
+                let width = self
+                    .style
+                    .width
                     .map(|s| s.to_iced())
                     .unwrap_or(Length::Fixed(config_width));
-                let height = self.style.height
+                let height = self
+                    .style
+                    .height
                     .map(|s| s.to_iced())
                     .unwrap_or(Length::Fixed(config_height));
 
@@ -3540,7 +3593,10 @@ impl GuiElement {
         let label_opt = config.label.clone();
         let show_all_option = config.show_all_option;
         let dimension = config.dimension.clone();
-        let placeholder = config.placeholder.clone().unwrap_or_else(|| "Select...".to_string());
+        let placeholder = config
+            .placeholder
+            .clone()
+            .unwrap_or_else(|| "Select...".to_string());
         let on_select = config.on_select;
         let field_path_opt = config.field_path.clone();
         let internal_selection = config.internal_selection.clone();
@@ -3567,12 +3623,24 @@ impl GuiElement {
             if let Some(ref ctx) = filter_context {
                 if let Some(filter_val) = ctx.get_dimension_filter(&dimension) {
                     // Filter context has a value - use it
-                    filter_val.or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                    filter_val.or_else(|| {
+                        if show_all_option {
+                            Some("All".to_string())
+                        } else {
+                            None
+                        }
+                    })
                 } else {
                     // No value in filter context yet - fall through to internal state
                     let guard = internal_selection.read().unwrap();
                     if let Some(ref sel) = *guard {
-                        sel.clone().or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                        sel.clone().or_else(|| {
+                            if show_all_option {
+                                Some("All".to_string())
+                            } else {
+                                None
+                            }
+                        })
                     } else {
                         drop(guard);
                         let initial = config.selected_value.clone();
@@ -3581,21 +3649,39 @@ impl GuiElement {
                         }
                         // Also initialize the filter context
                         ctx.set_dimension_filter(&dimension, initial.clone());
-                        initial.or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                        initial.or_else(|| {
+                            if show_all_option {
+                                Some("All".to_string())
+                            } else {
+                                None
+                            }
+                        })
                     }
                 }
             } else {
                 // No filter context - use internal state
                 let guard = internal_selection.read().unwrap();
                 if let Some(ref sel) = *guard {
-                    sel.clone().or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                    sel.clone().or_else(|| {
+                        if show_all_option {
+                            Some("All".to_string())
+                        } else {
+                            None
+                        }
+                    })
                 } else {
                     drop(guard);
                     let initial = config.selected_value.clone();
                     if let Ok(mut write_guard) = internal_selection.write() {
                         *write_guard = Some(initial.clone());
                     }
-                    initial.or_else(|| if show_all_option { Some("All".to_string()) } else { None })
+                    initial.or_else(|| {
+                        if show_all_option {
+                            Some("All".to_string())
+                        } else {
+                            None
+                        }
+                    })
                 }
             }
         };
@@ -3604,12 +3690,10 @@ impl GuiElement {
 
         // Label
         if let Some(label) = label_opt {
-            content_col = content_col.push(
-                text(label).font(Font {
-                    weight: font::Weight::Bold,
-                    ..Font::default()
-                })
-            );
+            content_col = content_col.push(text(label).font(Font {
+                weight: font::Weight::Bold,
+                ..Font::default()
+            }));
         }
 
         // Create pick_list with selection handler
@@ -3635,7 +3719,11 @@ impl GuiElement {
             let dim_clone = dimension.clone();
             let filter_ctx_clone = filter_context.clone();
             pick_list(options, selected, move |value: String| {
-                let actual_value = if value == "All" { None } else { Some(value.clone()) };
+                let actual_value = if value == "All" {
+                    None
+                } else {
+                    Some(value.clone())
+                };
                 // Update internal selection state directly
                 if let Ok(mut guard) = internal_sel_clone.write() {
                     *guard = Some(actual_value.clone());
@@ -3656,7 +3744,11 @@ impl GuiElement {
             let internal_sel_clone = internal_selection.clone();
             let filter_ctx_clone = filter_context.clone();
             pick_list(options, selected, move |value: String| {
-                let actual_value = if value == "All" { None } else { Some(value.clone()) };
+                let actual_value = if value == "All" {
+                    None
+                } else {
+                    Some(value.clone())
+                };
                 // Update internal selection state directly
                 if let Ok(mut guard) = internal_sel_clone.write() {
                     *guard = Some(actual_value.clone());
@@ -3686,7 +3778,10 @@ impl GuiElement {
     }
 
     /// Render a HierarchyNavigator element - breadcrumb for hierarchy navigation
-    fn render_hierarchy_navigator(&self, config: &HierarchyNavigatorConfig) -> Element<'_, Message> {
+    fn render_hierarchy_navigator(
+        &self,
+        config: &HierarchyNavigatorConfig,
+    ) -> Element<'_, Message> {
         // Get hierarchy levels from cube and clone them for ownership
         let levels: Vec<String> = if let Some(ref cube) = config.cube {
             cube.hierarchies_with_levels()
@@ -3710,19 +3805,17 @@ impl GuiElement {
 
         // Label
         if let Some(label) = label_opt {
-            content_row = content_row.push(
-                text(format!("{}: ", label)).font(Font {
-                    weight: font::Weight::Bold,
-                    ..Font::default()
-                })
-            );
+            content_row = content_row.push(text(format!("{}: ", label)).font(Font {
+                weight: font::Weight::Bold,
+                ..Font::default()
+            }));
         }
 
         if levels.is_empty() {
             content_row = content_row.push(text("No hierarchy levels"));
         } else {
-            let current_level = current_level_opt
-                .unwrap_or_else(|| levels.first().cloned().unwrap_or_default());
+            let current_level =
+                current_level_opt.unwrap_or_else(|| levels.first().cloned().unwrap_or_default());
 
             let current_idx = levels.iter().position(|l| l == &current_level).unwrap_or(0);
             let levels_len = levels.len();
@@ -3737,7 +3830,7 @@ impl GuiElement {
                                 callback_id: rollup_callback,
                                 dimension: hierarchy_clone,
                             })
-                            .padding([4, 8])
+                            .padding([4, 8]),
                     );
                 }
             }
@@ -3757,7 +3850,8 @@ impl GuiElement {
                     text(level_display)
                 };
 
-                let level_elem: Element<'_, Message> = if let Some(level_callback) = on_level_change {
+                let level_elem: Element<'_, Message> = if let Some(level_callback) = on_level_change
+                {
                     let hierarchy_clone = hierarchy_name.clone();
                     button(level_text)
                         .on_press(Message::CubeHierarchyLevelChange {
@@ -3789,7 +3883,7 @@ impl GuiElement {
                                 dimension: hierarchy_name.clone(),
                                 value: None,
                             })
-                            .padding([4, 8])
+                            .padding([4, 8]),
                     );
                 }
             }
@@ -3869,12 +3963,10 @@ impl GuiElement {
 
         // Label
         if let Some(label) = label_opt {
-            content_col = content_col.push(
-                text(label).font(Font {
-                    weight: font::Weight::Bold,
-                    ..Font::default()
-                })
-            );
+            content_col = content_col.push(text(label).font(Font {
+                weight: font::Weight::Bold,
+                ..Font::default()
+            }));
         }
 
         if all_measures.is_empty() {
@@ -5302,9 +5394,7 @@ mod tests {
 
     #[test]
     fn test_text_color() {
-        let element = GuiElement::text("Colored")
-            .color(255, 0, 0, 255)
-            .build();
+        let element = GuiElement::text("Colored").color(255, 0, 0, 255).build();
 
         if let GuiElementKind::Text(config) = &element.kind {
             assert_eq!(config.color, Some((255, 0, 0, 255)));
@@ -5315,9 +5405,7 @@ mod tests {
 
     #[test]
     fn test_text_color_rgb() {
-        let element = GuiElement::text("Blue Text")
-            .color_rgb(0, 0, 255)
-            .build();
+        let element = GuiElement::text("Blue Text").color_rgb(0, 0, 255).build();
 
         if let GuiElementKind::Text(config) = &element.kind {
             assert_eq!(config.color, Some((0, 0, 255, 255)));
@@ -5495,9 +5583,7 @@ mod tests {
 
     #[test]
     fn test_text_field_bind_field() {
-        let element = GuiElement::text_field()
-            .bind_field("user.name")
-            .build();
+        let element = GuiElement::text_field().bind_field("user.name").build();
 
         if let GuiElementKind::TextField(config) = &element.kind {
             assert_eq!(config.field_path, Some("user.name".to_string()));
@@ -5557,9 +5643,7 @@ mod tests {
 
     #[test]
     fn test_checkbox_checked() {
-        let element = GuiElement::checkbox("Option")
-            .checked(true)
-            .build();
+        let element = GuiElement::checkbox("Option").checked(true).build();
 
         if let GuiElementKind::Checkbox(config) = &element.kind {
             assert!(config.checked);
@@ -5632,7 +5716,8 @@ mod tests {
 
     #[test]
     fn test_radio_button_with_selection() {
-        let element = GuiElement::radio_button_with_selection("Option B", "b", Some("b".to_string())).build();
+        let element =
+            GuiElement::radio_button_with_selection("Option B", "b", Some("b".to_string())).build();
 
         if let GuiElementKind::RadioButton(config) = &element.kind {
             assert_eq!(config.label, "Option B");
@@ -5699,11 +5784,12 @@ mod tests {
     #[test]
     fn test_radio_button_full_config() {
         let callback_id = CallbackId::new(200);
-        let element = GuiElement::radio_button_with_selection("Large", "large", Some("small".to_string()))
-            .bind_field("state.size")
-            .on_select(callback_id)
-            .padding(8.0)
-            .build();
+        let element =
+            GuiElement::radio_button_with_selection("Large", "large", Some("small".to_string()))
+                .bind_field("state.size")
+                .on_select(callback_id)
+                .padding(8.0)
+                .build();
 
         if let GuiElementKind::RadioButton(config) = &element.kind {
             assert_eq!(config.label, "Large");
@@ -5738,7 +5824,8 @@ mod tests {
     #[test]
     fn test_dropdown_with_selection() {
         let options = vec!["A".to_string(), "B".to_string(), "C".to_string()];
-        let element = GuiElement::dropdown_with_selection(options.clone(), Some("B".to_string())).build();
+        let element =
+            GuiElement::dropdown_with_selection(options.clone(), Some("B".to_string())).build();
 
         if let GuiElementKind::Dropdown(config) = &element.kind {
             assert_eq!(config.options, options);
@@ -5817,14 +5904,19 @@ mod tests {
     #[test]
     fn test_dropdown_full_config() {
         let callback_id = CallbackId::new(300);
-        let options = vec!["Small".to_string(), "Medium".to_string(), "Large".to_string()];
-        let element = GuiElement::dropdown_with_selection(options.clone(), Some("Medium".to_string()))
-            .dropdown_placeholder("Select size")
-            .bind_field("state.size")
-            .on_select(callback_id)
-            .padding(12.0)
-            .width(Size::Fixed(200.0))
-            .build();
+        let options = vec![
+            "Small".to_string(),
+            "Medium".to_string(),
+            "Large".to_string(),
+        ];
+        let element =
+            GuiElement::dropdown_with_selection(options.clone(), Some("Medium".to_string()))
+                .dropdown_placeholder("Select size")
+                .bind_field("state.size")
+                .on_select(callback_id)
+                .padding(12.0)
+                .width(Size::Fixed(200.0))
+                .build();
 
         if let GuiElementKind::Dropdown(config) = &element.kind {
             assert_eq!(config.options, options);
@@ -5956,10 +6048,7 @@ mod tests {
 
     #[test]
     fn test_donut_chart() {
-        let data = vec![
-            DataPoint::new("Yes", 60.0),
-            DataPoint::new("No", 40.0),
-        ];
+        let data = vec![DataPoint::new("Yes", 60.0), DataPoint::new("No", 40.0)];
 
         let element = GuiElement::pie_chart_with_data(data)
             .inner_radius(0.5)

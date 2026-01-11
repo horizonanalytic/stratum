@@ -4,8 +4,8 @@
 //! view of all symbols defined in a file.
 
 use stratum_core::ast::{
-    EnumDef, EnumVariantData, Function, ImplDef, InterfaceDef, Item, ItemKind, Module, StructDef,
-    TopLevelItem, TopLevelLet, PatternKind, TypeKind,
+    EnumDef, EnumVariantData, Function, ImplDef, InterfaceDef, Item, ItemKind, Module, PatternKind,
+    StructDef, TopLevelItem, TopLevelLet, TypeKind,
 };
 use stratum_core::lexer::{LineIndex, Span};
 use stratum_core::parser::Parser;
@@ -155,9 +155,10 @@ fn collect_enum_symbol(enum_def: &EnumDef, line_index: &LineIndex) -> DocumentSy
         .variants
         .iter()
         .map(|variant| {
-            let detail = variant.data.as_ref().map(|data| {
-                enum_variant_data_to_string(data)
-            });
+            let detail = variant
+                .data
+                .as_ref()
+                .map(|data| enum_variant_data_to_string(data));
             #[allow(deprecated)]
             DocumentSymbol {
                 name: variant.name.name.clone(),
@@ -190,7 +191,10 @@ fn collect_enum_symbol(enum_def: &EnumDef, line_index: &LineIndex) -> DocumentSy
 }
 
 /// Collect an interface symbol with method children
-fn collect_interface_symbol(interface_def: &InterfaceDef, line_index: &LineIndex) -> DocumentSymbol {
+fn collect_interface_symbol(
+    interface_def: &InterfaceDef,
+    line_index: &LineIndex,
+) -> DocumentSymbol {
     let children: Vec<DocumentSymbol> = interface_def
         .methods
         .iter()
@@ -290,10 +294,7 @@ fn collect_top_level_let_symbol(
     // Extract the variable name from the pattern
     let name = extract_pattern_name(&let_decl.pattern)?;
 
-    let detail = let_decl
-        .ty
-        .as_ref()
-        .map(|ty| type_annotation_to_string(ty));
+    let detail = let_decl.ty.as_ref().map(|ty| type_annotation_to_string(ty));
 
     #[allow(deprecated)]
     Some(DocumentSymbol {

@@ -23,7 +23,11 @@ use super::error::{DataError, DataResult};
 /// Returns error if file cannot be read or is not valid Parquet
 pub fn read_parquet<P: AsRef<Path>>(path: P) -> DataResult<DataFrame> {
     let file = File::open(path.as_ref()).map_err(|e| {
-        DataError::Io(format!("failed to open file '{}': {}", path.as_ref().display(), e))
+        DataError::Io(format!(
+            "failed to open file '{}': {}",
+            path.as_ref().display(),
+            e
+        ))
     })?;
 
     let builder = ParquetRecordBatchReaderBuilder::try_new(file)
@@ -47,7 +51,11 @@ pub fn read_parquet<P: AsRef<Path>>(path: P) -> DataResult<DataFrame> {
 /// Returns error if file cannot be written
 pub fn write_parquet<P: AsRef<Path>>(df: &DataFrame, path: P) -> DataResult<()> {
     let file = File::create(path.as_ref()).map_err(|e| {
-        DataError::Io(format!("failed to create file '{}': {}", path.as_ref().display(), e))
+        DataError::Io(format!(
+            "failed to create file '{}': {}",
+            path.as_ref().display(),
+            e
+        ))
     })?;
 
     let schema = df.schema().clone();
@@ -90,7 +98,11 @@ pub fn read_csv_with_options<P: AsRef<Path>>(
     delimiter: u8,
 ) -> DataResult<DataFrame> {
     let file = File::open(path.as_ref()).map_err(|e| {
-        DataError::Io(format!("failed to open file '{}': {}", path.as_ref().display(), e))
+        DataError::Io(format!(
+            "failed to open file '{}': {}",
+            path.as_ref().display(),
+            e
+        ))
     })?;
 
     let reader = BufReader::new(file);
@@ -147,7 +159,11 @@ pub fn write_csv_with_options<P: AsRef<Path>>(
     delimiter: u8,
 ) -> DataResult<()> {
     let file = File::create(path.as_ref()).map_err(|e| {
-        DataError::Io(format!("failed to create file '{}': {}", path.as_ref().display(), e))
+        DataError::Io(format!(
+            "failed to create file '{}': {}",
+            path.as_ref().display(),
+            e
+        ))
     })?;
 
     let writer = BufWriter::new(file);
@@ -174,7 +190,11 @@ pub fn write_csv_with_options<P: AsRef<Path>>(
 /// Returns error if file cannot be read or is not valid JSON
 pub fn read_json<P: AsRef<Path>>(path: P) -> DataResult<DataFrame> {
     let file = File::open(path.as_ref()).map_err(|e| {
-        DataError::Io(format!("failed to open file '{}': {}", path.as_ref().display(), e))
+        DataError::Io(format!(
+            "failed to open file '{}': {}",
+            path.as_ref().display(),
+            e
+        ))
     })?;
 
     let reader = BufReader::new(file);
@@ -209,7 +229,11 @@ pub fn read_json<P: AsRef<Path>>(path: P) -> DataResult<DataFrame> {
 /// Returns error if file cannot be written
 pub fn write_json<P: AsRef<Path>>(df: &DataFrame, path: P) -> DataResult<()> {
     let file = File::create(path.as_ref()).map_err(|e| {
-        DataError::Io(format!("failed to create file '{}': {}", path.as_ref().display(), e))
+        DataError::Io(format!(
+            "failed to create file '{}': {}",
+            path.as_ref().display(),
+            e
+        ))
     })?;
 
     let writer = BufWriter::new(file);

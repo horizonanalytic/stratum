@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 
 use stratum_core::ast::{
-    Block, CallArg, EnumDef, Expr, ExprKind, Function, Item, ItemKind, Module, Pattern,
-    PatternKind, Stmt, StmtKind, StructDef, TopLevelItem, TopLevelLet, InterfaceDef, ImplDef,
+    Block, CallArg, EnumDef, Expr, ExprKind, Function, ImplDef, InterfaceDef, Item, ItemKind,
+    Module, Pattern, PatternKind, Stmt, StmtKind, StructDef, TopLevelItem, TopLevelLet,
 };
 use stratum_core::lexer::{LineIndex, Span};
 use stratum_core::parser::Parser;
@@ -121,7 +121,9 @@ impl SymbolIndex {
             if let Some(scope) = info.scope_span {
                 // Check if position is within scope and after the definition
                 if position >= info.name_span.start && position < scope.end {
-                    if info.name.to_lowercase().starts_with(&prefix_lower) && !seen.contains(&info.name) {
+                    if info.name.to_lowercase().starts_with(&prefix_lower)
+                        && !seen.contains(&info.name)
+                    {
                         seen.insert(info.name.clone());
                         results.push((info.name.clone(), info.kind));
                     }
@@ -392,7 +394,11 @@ impl SymbolIndex {
                 self.collect_expr(expr, scope_span);
             }
             StmtKind::Return(None) | StmtKind::Break | StmtKind::Continue => {}
-            StmtKind::For { pattern, iter, body } => {
+            StmtKind::For {
+                pattern,
+                iter,
+                body,
+            } => {
                 self.collect_expr(iter, scope_span);
                 // For loop variable pattern is scoped to the body
                 self.collect_pattern_scoped(pattern, body.span);
@@ -405,7 +411,11 @@ impl SymbolIndex {
             StmtKind::Loop { body } => {
                 self.collect_block(body, body.span);
             }
-            StmtKind::TryCatch { try_block, catches, finally } => {
+            StmtKind::TryCatch {
+                try_block,
+                catches,
+                finally,
+            } => {
                 self.collect_block(try_block, try_block.span);
                 for catch in catches {
                     // Catch binding is scoped to the catch body
@@ -449,7 +459,11 @@ impl SymbolIndex {
             ExprKind::Block(block) => {
                 self.collect_block(block, block.span);
             }
-            ExprKind::If { cond, then_branch, else_branch } => {
+            ExprKind::If {
+                cond,
+                then_branch,
+                else_branch,
+            } => {
                 self.collect_expr(cond, scope_span);
                 self.collect_block(then_branch, then_branch.span);
                 if let Some(else_br) = else_branch {
@@ -483,7 +497,11 @@ impl SymbolIndex {
             ExprKind::Unary { expr: e, .. } => {
                 self.collect_expr(e, scope_span);
             }
-            ExprKind::Call { callee, args, trailing_closure } => {
+            ExprKind::Call {
+                callee,
+                args,
+                trailing_closure,
+            } => {
                 self.collect_expr(callee, scope_span);
                 for arg in args {
                     match arg {
@@ -530,7 +548,9 @@ impl SymbolIndex {
                     self.collect_expr(d, scope_span);
                 }
             }
-            ExprKind::Paren(inner) | ExprKind::Await(inner) | ExprKind::Try(inner)
+            ExprKind::Paren(inner)
+            | ExprKind::Await(inner)
+            | ExprKind::Try(inner)
             | ExprKind::StateBinding(inner) => {
                 self.collect_expr(inner, scope_span);
             }
@@ -542,7 +562,9 @@ impl SymbolIndex {
                 }
             }
             // Leaf expressions - no nested symbols
-            ExprKind::Literal(_) | ExprKind::Ident(_) | ExprKind::Placeholder
+            ExprKind::Literal(_)
+            | ExprKind::Ident(_)
+            | ExprKind::Placeholder
             | ExprKind::ColumnShorthand(_) => {}
         }
     }
@@ -586,11 +608,7 @@ pub fn compute_definition_cached(
 
 /// Compute definition (non-cached version for compatibility)
 #[allow(dead_code)] // Standalone API used by tests
-pub fn compute_definition(
-    uri: &Url,
-    source: &str,
-    position: Position,
-) -> Option<DefinitionResult> {
+pub fn compute_definition(uri: &Url, source: &str, position: Position) -> Option<DefinitionResult> {
     let line_index = LineIndex::new(source);
 
     // Convert LSP position to byte offset
@@ -786,7 +804,11 @@ fn find_ident_in_pattern(pattern: &Pattern, offset: u32) -> Option<IdentAtPositi
                 }
             }
         }
-        PatternKind::Variant { enum_name, variant, data } => {
+        PatternKind::Variant {
+            enum_name,
+            variant,
+            data,
+        } => {
             if let Some(enum_n) = enum_name {
                 if span_contains(enum_n.span, offset) {
                     return Some(IdentAtPosition {
@@ -877,7 +899,11 @@ fn find_ident_in_stmt(stmt: &Stmt, offset: u32) -> Option<IdentAtPosition> {
         }
         StmtKind::Return(Some(expr)) => find_ident_in_expr(expr, offset),
         StmtKind::Return(None) | StmtKind::Break | StmtKind::Continue => None,
-        StmtKind::For { pattern, iter, body } => {
+        StmtKind::For {
+            pattern,
+            iter,
+            body,
+        } => {
             if let Some(info) = find_ident_in_pattern(pattern, offset) {
                 return Some(info);
             }
@@ -893,7 +919,11 @@ fn find_ident_in_stmt(stmt: &Stmt, offset: u32) -> Option<IdentAtPosition> {
             find_ident_in_block(body, offset)
         }
         StmtKind::Loop { body } => find_ident_in_block(body, offset),
-        StmtKind::TryCatch { try_block, catches, finally } => {
+        StmtKind::TryCatch {
+            try_block,
+            catches,
+            finally,
+        } => {
             if let Some(info) = find_ident_in_block(try_block, offset) {
                 return Some(info);
             }
@@ -945,7 +975,11 @@ fn find_ident_in_expr(expr: &Expr, offset: u32) -> Option<IdentAtPosition> {
         ExprKind::Paren(inner) => {
             return find_ident_in_expr(inner, offset);
         }
-        ExprKind::Call { callee, args, trailing_closure } => {
+        ExprKind::Call {
+            callee,
+            args,
+            trailing_closure,
+        } => {
             if let Some(info) = find_ident_in_expr(callee, offset) {
                 return Some(info);
             }
@@ -999,7 +1033,11 @@ fn find_ident_in_expr(expr: &Expr, offset: u32) -> Option<IdentAtPosition> {
             }
             return find_ident_in_expr(index, offset);
         }
-        ExprKind::If { cond, then_branch, else_branch } => {
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             if let Some(info) = find_ident_in_expr(cond, offset) {
                 return Some(info);
             }
@@ -1092,7 +1130,11 @@ fn find_ident_in_expr(expr: &Expr, offset: u32) -> Option<IdentAtPosition> {
                 }
             }
         }
-        ExprKind::EnumVariant { enum_name, variant, data } => {
+        ExprKind::EnumVariant {
+            enum_name,
+            variant,
+            data,
+        } => {
             if let Some(enum_n) = enum_name {
                 if span_contains(enum_n.span, offset) {
                     return Some(IdentAtPosition {
@@ -1169,7 +1211,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "greet" in the call (line 7, after "let msg = ")
-        let position = Position { line: 6, character: 14 };
+        let position = Position {
+            line: 6,
+            character: 14,
+        };
 
         let result = compute_definition(&uri, source, position);
         assert!(result.is_some());
@@ -1191,7 +1236,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "x" in "x + 1" (line 3)
-        let position = Position { line: 3, character: 12 };
+        let position = Position {
+            line: 3,
+            character: 12,
+        };
 
         let result = compute_definition(&uri, source, position);
         assert!(result.is_some());
@@ -1211,7 +1259,10 @@ fx add(a: Int, b: Int) -> Int {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "a" in "a + b" (line 2)
-        let position = Position { line: 2, character: 4 };
+        let position = Position {
+            line: 2,
+            character: 4,
+        };
 
         let result = compute_definition(&uri, source, position);
         assert!(result.is_some());
@@ -1236,7 +1287,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "Point" in struct init (line 7)
-        let position = Position { line: 7, character: 12 };
+        let position = Position {
+            line: 7,
+            character: 12,
+        };
 
         let result = compute_definition(&uri, source, position);
         assert!(result.is_some());
@@ -1258,7 +1312,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "i" in print(i) (line 3)
-        let position = Position { line: 3, character: 14 };
+        let position = Position {
+            line: 3,
+            character: 14,
+        };
 
         let result = compute_definition(&uri, source, position);
         assert!(result.is_some());
@@ -1278,7 +1335,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "unknown_var"
-        let position = Position { line: 2, character: 10 };
+        let position = Position {
+            line: 2,
+            character: 10,
+        };
 
         let result = compute_definition(&uri, source, position);
         // Should not find a definition

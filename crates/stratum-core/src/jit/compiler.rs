@@ -8,7 +8,9 @@ use std::mem;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use cranelift_codegen::ir::{condcodes::IntCC, AbiParam, InstBuilder, MemFlags, Signature, UserFuncName};
+use cranelift_codegen::ir::{
+    condcodes::IntCC, AbiParam, InstBuilder, MemFlags, Signature, UserFuncName,
+};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_codegen::Context;
@@ -70,7 +72,8 @@ impl JitCompiler {
             .unwrap();
 
         // Create the JIT module
-        let mut jit_builder = JITBuilder::with_isa(isa.clone(), cranelift_module::default_libcall_names());
+        let mut jit_builder =
+            JITBuilder::with_isa(isa.clone(), cranelift_module::default_libcall_names());
 
         // Register runtime symbols
         Self::register_runtime_symbols(&mut jit_builder);
@@ -98,7 +101,10 @@ impl JitCompiler {
         builder.symbol("stratum_add_float", runtime::stratum_add_float as *const u8);
 
         // String operations
-        builder.symbol("stratum_concat_strings", runtime::stratum_concat_strings as *const u8);
+        builder.symbol(
+            "stratum_concat_strings",
+            runtime::stratum_concat_strings as *const u8,
+        );
 
         // List operations
         builder.symbol("stratum_new_list", runtime::stratum_new_list as *const u8);
@@ -107,12 +113,24 @@ impl JitCompiler {
         // Utilities
         builder.symbol("stratum_is_truthy", runtime::stratum_is_truthy as *const u8);
         builder.symbol("stratum_print_int", runtime::stratum_print_int as *const u8);
-        builder.symbol("stratum_print_float", runtime::stratum_print_float as *const u8);
-        builder.symbol("stratum_print_bool", runtime::stratum_print_bool as *const u8);
-        builder.symbol("stratum_runtime_error", runtime::stratum_runtime_error as *const u8);
+        builder.symbol(
+            "stratum_print_float",
+            runtime::stratum_print_float as *const u8,
+        );
+        builder.symbol(
+            "stratum_print_bool",
+            runtime::stratum_print_bool as *const u8,
+        );
+        builder.symbol(
+            "stratum_runtime_error",
+            runtime::stratum_runtime_error as *const u8,
+        );
 
         // Function call support
-        builder.symbol("stratum_call_jit_direct", runtime::stratum_call_jit_direct as *const u8);
+        builder.symbol(
+            "stratum_call_jit_direct",
+            runtime::stratum_call_jit_direct as *const u8,
+        );
     }
 
     /// Get or declare a runtime function
@@ -140,7 +158,8 @@ impl JitCompiler {
         sig.params.push(AbiParam::new(CraneliftTypes::VALUE_SECOND));
         // Output: tag+pad (i64) + data (i64)
         sig.returns.push(AbiParam::new(CraneliftTypes::VALUE_FIRST));
-        sig.returns.push(AbiParam::new(CraneliftTypes::VALUE_SECOND));
+        sig.returns
+            .push(AbiParam::new(CraneliftTypes::VALUE_SECOND));
         sig
     }
 
@@ -164,7 +183,8 @@ impl JitCompiler {
 
         // Return type is also a packed value
         sig.returns.push(AbiParam::new(CraneliftTypes::VALUE_FIRST));
-        sig.returns.push(AbiParam::new(CraneliftTypes::VALUE_SECOND));
+        sig.returns
+            .push(AbiParam::new(CraneliftTypes::VALUE_SECOND));
 
         // Declare the function
         let name = format!("stratum_{}", function.name);
@@ -197,7 +217,8 @@ impl JitCompiler {
             .map_err(|e| JitError::Cranelift(e.to_string()))?;
 
         let ptr = self.module.get_finalized_function(func_id);
-        self.compiled_functions.insert(function.name.clone(), func_id);
+        self.compiled_functions
+            .insert(function.name.clone(), func_id);
 
         Ok(ptr)
     }
@@ -314,17 +335,23 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
 
     /// Read a u8 from the chunk, panicking if out of bounds
     fn read_u8(&self, offset: usize) -> u8 {
-        self.chunk.read_byte(offset).expect("bytecode read out of bounds")
+        self.chunk
+            .read_byte(offset)
+            .expect("bytecode read out of bounds")
     }
 
     /// Read a u16 from the chunk, panicking if out of bounds
     fn read_u16(&self, offset: usize) -> u16 {
-        self.chunk.read_u16(offset).expect("bytecode read out of bounds")
+        self.chunk
+            .read_u16(offset)
+            .expect("bytecode read out of bounds")
     }
 
     /// Read an i16 from the chunk, panicking if out of bounds
     fn read_i16(&self, offset: usize) -> i16 {
-        self.chunk.read_i16(offset).expect("bytecode read out of bounds")
+        self.chunk
+            .read_i16(offset)
+            .expect("bytecode read out of bounds")
     }
 
     /// Allocate a pair of variables for a value (tag+pad, data)
@@ -334,8 +361,10 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
         let data_var = Variable::from_u32(self.next_var as u32);
         self.next_var += 1;
 
-        self.builder.declare_var(tag_var, CraneliftTypes::VALUE_FIRST);
-        self.builder.declare_var(data_var, CraneliftTypes::VALUE_SECOND);
+        self.builder
+            .declare_var(tag_var, CraneliftTypes::VALUE_FIRST);
+        self.builder
+            .declare_var(data_var, CraneliftTypes::VALUE_SECOND);
 
         (tag_var, data_var)
     }
@@ -357,14 +386,20 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
         assert!(self.stack_depth > 0, "Stack underflow");
         self.stack_depth -= 1;
         let (tag_var, data_var) = self.stack_vars[self.stack_depth];
-        (self.builder.use_var(tag_var), self.builder.use_var(data_var))
+        (
+            self.builder.use_var(tag_var),
+            self.builder.use_var(data_var),
+        )
     }
 
     /// Peek at the top of the stack without popping
     fn peek(&mut self) -> (cranelift_codegen::ir::Value, cranelift_codegen::ir::Value) {
         assert!(self.stack_depth > 0, "Stack underflow");
         let (tag_var, data_var) = self.stack_vars[self.stack_depth - 1];
-        (self.builder.use_var(tag_var), self.builder.use_var(data_var))
+        (
+            self.builder.use_var(tag_var),
+            self.builder.use_var(data_var),
+        )
     }
 
     /// Get or create a block for a given bytecode offset
@@ -384,8 +419,10 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
 
         // Add parameters to entry block
         for _ in 0..self.arity {
-            self.builder.append_block_param(entry, CraneliftTypes::VALUE_FIRST);
-            self.builder.append_block_param(entry, CraneliftTypes::VALUE_SECOND);
+            self.builder
+                .append_block_param(entry, CraneliftTypes::VALUE_FIRST);
+            self.builder
+                .append_block_param(entry, CraneliftTypes::VALUE_SECOND);
         }
 
         self.builder.switch_to_block(entry);
@@ -430,7 +467,10 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
 
         // If no explicit return, return null
         if !self.block_terminated {
-            let null_tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
+            let null_tag = self
+                .builder
+                .ins()
+                .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
             let null_data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, 0);
             self.builder.ins().return_(&[null_tag, null_data]);
         }
@@ -488,19 +528,28 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
             }
 
             OpCode::Null => {
-                let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
+                let tag = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
                 let data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, 0);
                 self.push(tag, data);
             }
 
             OpCode::True => {
-                let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
+                let tag = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
                 let data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, 1);
                 self.push(tag, data);
             }
 
             OpCode::False => {
-                let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
+                let tag = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
                 let data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, 0);
                 self.push(tag, data);
             }
@@ -582,13 +631,21 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 let fallthrough = self.builder.create_block();
 
                 // Check if value is falsy (null or false)
-                let is_null = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
-                let is_bool = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Bool as i64);
+                let is_null = self
+                    .builder
+                    .ins()
+                    .icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
+                let is_bool = self
+                    .builder
+                    .ins()
+                    .icmp_imm(IntCC::Equal, tag, ValueTag::Bool as i64);
                 let is_false = self.builder.ins().icmp_imm(IntCC::Equal, data, 0);
                 let bool_and_false = self.builder.ins().band(is_bool, is_false);
                 let is_falsy = self.builder.ins().bor(is_null, bool_and_false);
 
-                self.builder.ins().brif(is_falsy, target_block, &[], fallthrough, &[]);
+                self.builder
+                    .ins()
+                    .brif(is_falsy, target_block, &[], fallthrough, &[]);
                 self.builder.switch_to_block(fallthrough);
                 self.builder.seal_block(fallthrough);
             }
@@ -603,8 +660,14 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 let fallthrough = self.builder.create_block();
 
                 // Check if value is truthy (not null and not false)
-                let is_null = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
-                let is_bool = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Bool as i64);
+                let is_null = self
+                    .builder
+                    .ins()
+                    .icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
+                let is_bool = self
+                    .builder
+                    .ins()
+                    .icmp_imm(IntCC::Equal, tag, ValueTag::Bool as i64);
                 let is_false = self.builder.ins().icmp_imm(IntCC::Equal, data, 0);
                 let bool_and_false = self.builder.ins().band(is_bool, is_false);
                 let is_falsy = self.builder.ins().bor(is_null, bool_and_false);
@@ -612,7 +675,9 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 let one = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, 1);
                 let is_truthy_bool = self.builder.ins().band(is_truthy, one);
 
-                self.builder.ins().brif(is_truthy_bool, target_block, &[], fallthrough, &[]);
+                self.builder
+                    .ins()
+                    .brif(is_truthy_bool, target_block, &[], fallthrough, &[]);
                 self.builder.switch_to_block(fallthrough);
                 self.builder.seal_block(fallthrough);
             }
@@ -630,7 +695,10 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 let (tag, data) = if self.stack_depth > 0 {
                     self.pop()
                 } else {
-                    let null_tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
+                    let null_tag = self
+                        .builder
+                        .ins()
+                        .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
                     let null_data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, 0);
                     (null_tag, null_data)
                 };
@@ -657,9 +725,18 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
 
             OpCode::IsNull => {
                 let (tag, _data) = self.pop();
-                let is_null = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
-                let result = self.builder.ins().uextend(CraneliftTypes::VALUE_SECOND, is_null);
-                let bool_tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
+                let is_null = self
+                    .builder
+                    .ins()
+                    .icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
+                let result = self
+                    .builder
+                    .ins()
+                    .uextend(CraneliftTypes::VALUE_SECOND, is_null);
+                let bool_tag = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
                 self.push(bool_tag, result);
             }
 
@@ -672,8 +749,13 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 let target_block = self.get_block(target);
                 let fallthrough = self.builder.create_block();
 
-                let is_null = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
-                self.builder.ins().brif(is_null, target_block, &[], fallthrough, &[]);
+                let is_null = self
+                    .builder
+                    .ins()
+                    .icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
+                self.builder
+                    .ins()
+                    .brif(is_null, target_block, &[], fallthrough, &[]);
                 self.builder.switch_to_block(fallthrough);
                 self.builder.seal_block(fallthrough);
             }
@@ -687,12 +769,17 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 let target_block = self.get_block(target);
                 let fallthrough = self.builder.create_block();
 
-                let is_null = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
+                let is_null = self
+                    .builder
+                    .ins()
+                    .icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
                 let is_not_null = self.builder.ins().bnot(is_null);
                 let one = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, 1);
                 let is_not_null_bool = self.builder.ins().band(is_not_null, one);
 
-                self.builder.ins().brif(is_not_null_bool, target_block, &[], fallthrough, &[]);
+                self.builder
+                    .ins()
+                    .brif(is_not_null_bool, target_block, &[], fallthrough, &[]);
                 self.builder.switch_to_block(fallthrough);
                 self.builder.seal_block(fallthrough);
             }
@@ -711,28 +798,49 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
     fn compile_constant(&mut self, value: &Value) -> JitResult<()> {
         match value {
             Value::Null => {
-                let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
+                let tag = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Null as i64);
                 let data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, 0);
                 self.push(tag, data);
             }
             Value::Bool(b) => {
-                let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
-                let data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, if *b { 1 } else { 0 });
+                let tag = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
+                let data = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_SECOND, if *b { 1 } else { 0 });
                 self.push(tag, data);
             }
             Value::Int(i) => {
-                let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Int as i64);
+                let tag = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Int as i64);
                 let data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, *i);
                 self.push(tag, data);
             }
             Value::Float(f) => {
-                let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Float as i64);
+                let tag = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Float as i64);
                 let bits = f.to_bits() as i64;
-                let data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, bits);
+                let data = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_SECOND, bits);
                 self.push(tag, data);
             }
             Value::String(s) => {
-                let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::String as i64);
+                let tag = self
+                    .builder
+                    .ins()
+                    .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::String as i64);
                 // Store the Rc pointer directly
                 let ptr = Rc::as_ptr(s) as i64;
                 let data = self.builder.ins().iconst(CraneliftTypes::VALUE_SECOND, ptr);
@@ -763,12 +871,19 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
         let merge_block = self.builder.create_block();
 
         // Add block params for the merge block (result tag and data)
-        self.builder.append_block_param(merge_block, CraneliftTypes::VALUE_FIRST);
-        self.builder.append_block_param(merge_block, CraneliftTypes::VALUE_SECOND);
+        self.builder
+            .append_block_param(merge_block, CraneliftTypes::VALUE_FIRST);
+        self.builder
+            .append_block_param(merge_block, CraneliftTypes::VALUE_SECOND);
 
         // Check if left is an integer
-        let is_int = self.builder.ins().icmp_imm(IntCC::Equal, left_tag, ValueTag::Int as i64);
-        self.builder.ins().brif(is_int, int_block, &[], float_block, &[]);
+        let is_int = self
+            .builder
+            .ins()
+            .icmp_imm(IntCC::Equal, left_tag, ValueTag::Int as i64);
+        self.builder
+            .ins()
+            .brif(is_int, int_block, &[], float_block, &[]);
 
         // Integer path
         self.builder.switch_to_block(int_block);
@@ -779,14 +894,23 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
             BinaryOp::Div => self.builder.ins().sdiv(left_data, right_data),
             BinaryOp::Mod => self.builder.ins().srem(left_data, right_data),
         };
-        let int_tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Int as i64);
+        let int_tag = self
+            .builder
+            .ins()
+            .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Int as i64);
         self.builder.ins().jump(merge_block, &[int_tag, int_result]);
         self.builder.seal_block(int_block);
 
         // Float path
         self.builder.switch_to_block(float_block);
-        let left_float = self.builder.ins().bitcast(CraneliftTypes::FLOAT, MemFlags::new(), left_data);
-        let right_float = self.builder.ins().bitcast(CraneliftTypes::FLOAT, MemFlags::new(), right_data);
+        let left_float =
+            self.builder
+                .ins()
+                .bitcast(CraneliftTypes::FLOAT, MemFlags::new(), left_data);
+        let right_float =
+            self.builder
+                .ins()
+                .bitcast(CraneliftTypes::FLOAT, MemFlags::new(), right_data);
         let float_result = match op {
             BinaryOp::Add => self.builder.ins().fadd(left_float, right_float),
             BinaryOp::Sub => self.builder.ins().fsub(left_float, right_float),
@@ -797,9 +921,17 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
                 return Err(JitError::UnsupportedInstruction("float modulo".to_string()));
             }
         };
-        let float_data = self.builder.ins().bitcast(CraneliftTypes::VALUE_SECOND, MemFlags::new(), float_result);
-        let float_tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Float as i64);
-        self.builder.ins().jump(merge_block, &[float_tag, float_data]);
+        let float_data =
+            self.builder
+                .ins()
+                .bitcast(CraneliftTypes::VALUE_SECOND, MemFlags::new(), float_result);
+        let float_tag = self
+            .builder
+            .ins()
+            .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Float as i64);
+        self.builder
+            .ins()
+            .jump(merge_block, &[float_tag, float_data]);
         self.builder.seal_block(float_block);
 
         // Merge block
@@ -821,25 +953,44 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
         let float_block = self.builder.create_block();
         let merge_block = self.builder.create_block();
 
-        self.builder.append_block_param(merge_block, CraneliftTypes::VALUE_FIRST);
-        self.builder.append_block_param(merge_block, CraneliftTypes::VALUE_SECOND);
+        self.builder
+            .append_block_param(merge_block, CraneliftTypes::VALUE_FIRST);
+        self.builder
+            .append_block_param(merge_block, CraneliftTypes::VALUE_SECOND);
 
-        let is_int = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Int as i64);
-        self.builder.ins().brif(is_int, int_block, &[], float_block, &[]);
+        let is_int = self
+            .builder
+            .ins()
+            .icmp_imm(IntCC::Equal, tag, ValueTag::Int as i64);
+        self.builder
+            .ins()
+            .brif(is_int, int_block, &[], float_block, &[]);
 
         // Integer path
         self.builder.switch_to_block(int_block);
         let neg_int = self.builder.ins().ineg(data);
-        let int_tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Int as i64);
+        let int_tag = self
+            .builder
+            .ins()
+            .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Int as i64);
         self.builder.ins().jump(merge_block, &[int_tag, neg_int]);
         self.builder.seal_block(int_block);
 
         // Float path
         self.builder.switch_to_block(float_block);
-        let float_val = self.builder.ins().bitcast(CraneliftTypes::FLOAT, MemFlags::new(), data);
+        let float_val = self
+            .builder
+            .ins()
+            .bitcast(CraneliftTypes::FLOAT, MemFlags::new(), data);
         let neg_float = self.builder.ins().fneg(float_val);
-        let neg_data = self.builder.ins().bitcast(CraneliftTypes::VALUE_SECOND, MemFlags::new(), neg_float);
-        let float_tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Float as i64);
+        let neg_data =
+            self.builder
+                .ins()
+                .bitcast(CraneliftTypes::VALUE_SECOND, MemFlags::new(), neg_float);
+        let float_tag = self
+            .builder
+            .ins()
+            .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Float as i64);
         self.builder.ins().jump(merge_block, &[float_tag, neg_data]);
         self.builder.seal_block(float_block);
 
@@ -863,8 +1014,14 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
         // For now, assume integers
 
         let result = self.builder.ins().icmp(cc, left_data, right_data);
-        let result_data = self.builder.ins().uextend(CraneliftTypes::VALUE_SECOND, result);
-        let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
+        let result_data = self
+            .builder
+            .ins()
+            .uextend(CraneliftTypes::VALUE_SECOND, result);
+        let tag = self
+            .builder
+            .ins()
+            .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
 
         self.push(tag, result_data);
         Ok(())
@@ -875,15 +1032,27 @@ impl<'a, 'b> FunctionCompiler<'a, 'b> {
         let (tag, data) = self.pop();
 
         // Value is falsy if null or (bool and false)
-        let is_null = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
-        let is_bool = self.builder.ins().icmp_imm(IntCC::Equal, tag, ValueTag::Bool as i64);
+        let is_null = self
+            .builder
+            .ins()
+            .icmp_imm(IntCC::Equal, tag, ValueTag::Null as i64);
+        let is_bool = self
+            .builder
+            .ins()
+            .icmp_imm(IntCC::Equal, tag, ValueTag::Bool as i64);
         let is_false = self.builder.ins().icmp_imm(IntCC::Equal, data, 0);
         let bool_and_false = self.builder.ins().band(is_bool, is_false);
         let is_falsy = self.builder.ins().bor(is_null, bool_and_false);
 
         // NOT falsy = truthy
-        let result = self.builder.ins().uextend(CraneliftTypes::VALUE_SECOND, is_falsy);
-        let tag = self.builder.ins().iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
+        let result = self
+            .builder
+            .ins()
+            .uextend(CraneliftTypes::VALUE_SECOND, is_falsy);
+        let tag = self
+            .builder
+            .ins()
+            .iconst(CraneliftTypes::VALUE_FIRST, ValueTag::Bool as i64);
 
         self.push(tag, result);
         Ok(())
@@ -914,14 +1083,16 @@ mod tests {
     fn jit_compile_simple_int() {
         let mut compiler = JitCompiler::new();
 
-        let func = compiler.compile_simple_int_function("add_numbers", |builder, result| {
-            // Compute 10 + 32
-            let a = builder.ins().iconst(CraneliftTypes::INT, 10);
-            let b = builder.ins().iconst(CraneliftTypes::INT, 32);
-            let sum = builder.ins().iadd(a, b);
-            builder.def_var(result, sum);
-            Ok(())
-        }).unwrap();
+        let func = compiler
+            .compile_simple_int_function("add_numbers", |builder, result| {
+                // Compute 10 + 32
+                let a = builder.ins().iconst(CraneliftTypes::INT, 10);
+                let b = builder.ins().iconst(CraneliftTypes::INT, 32);
+                let sum = builder.ins().iadd(a, b);
+                builder.def_var(result, sum);
+                Ok(())
+            })
+            .unwrap();
 
         assert_eq!(func(), 42);
     }
@@ -930,24 +1101,26 @@ mod tests {
     fn jit_compile_arithmetic() {
         let mut compiler = JitCompiler::new();
 
-        let func = compiler.compile_simple_int_function("complex_math", |builder, result| {
-            // Compute (5 * 8) + (100 / 4) - 15 = 40 + 25 - 15 = 50
-            let a = builder.ins().iconst(CraneliftTypes::INT, 5);
-            let b = builder.ins().iconst(CraneliftTypes::INT, 8);
-            let mul = builder.ins().imul(a, b);
+        let func = compiler
+            .compile_simple_int_function("complex_math", |builder, result| {
+                // Compute (5 * 8) + (100 / 4) - 15 = 40 + 25 - 15 = 50
+                let a = builder.ins().iconst(CraneliftTypes::INT, 5);
+                let b = builder.ins().iconst(CraneliftTypes::INT, 8);
+                let mul = builder.ins().imul(a, b);
 
-            let c = builder.ins().iconst(CraneliftTypes::INT, 100);
-            let d = builder.ins().iconst(CraneliftTypes::INT, 4);
-            let div = builder.ins().sdiv(c, d);
+                let c = builder.ins().iconst(CraneliftTypes::INT, 100);
+                let d = builder.ins().iconst(CraneliftTypes::INT, 4);
+                let div = builder.ins().sdiv(c, d);
 
-            let add = builder.ins().iadd(mul, div);
+                let add = builder.ins().iadd(mul, div);
 
-            let e = builder.ins().iconst(CraneliftTypes::INT, 15);
-            let sub = builder.ins().isub(add, e);
+                let e = builder.ins().iconst(CraneliftTypes::INT, 15);
+                let sub = builder.ins().isub(add, e);
 
-            builder.def_var(result, sub);
-            Ok(())
-        }).unwrap();
+                builder.def_var(result, sub);
+                Ok(())
+            })
+            .unwrap();
 
         assert_eq!(func(), 50);
     }
@@ -956,37 +1129,39 @@ mod tests {
     fn jit_compile_conditionals() {
         let mut compiler = JitCompiler::new();
 
-        let func = compiler.compile_simple_int_function("conditional", |builder, result| {
-            // if 10 > 5 { 100 } else { 200 }
-            let a = builder.ins().iconst(CraneliftTypes::INT, 10);
-            let b = builder.ins().iconst(CraneliftTypes::INT, 5);
-            let cmp = builder.ins().icmp(IntCC::SignedGreaterThan, a, b);
+        let func = compiler
+            .compile_simple_int_function("conditional", |builder, result| {
+                // if 10 > 5 { 100 } else { 200 }
+                let a = builder.ins().iconst(CraneliftTypes::INT, 10);
+                let b = builder.ins().iconst(CraneliftTypes::INT, 5);
+                let cmp = builder.ins().icmp(IntCC::SignedGreaterThan, a, b);
 
-            let then_block = builder.create_block();
-            let else_block = builder.create_block();
-            let merge_block = builder.create_block();
+                let then_block = builder.create_block();
+                let else_block = builder.create_block();
+                let merge_block = builder.create_block();
 
-            builder.append_block_param(merge_block, CraneliftTypes::INT);
+                builder.append_block_param(merge_block, CraneliftTypes::INT);
 
-            builder.ins().brif(cmp, then_block, &[], else_block, &[]);
+                builder.ins().brif(cmp, then_block, &[], else_block, &[]);
 
-            builder.switch_to_block(then_block);
-            builder.seal_block(then_block);
-            let then_val = builder.ins().iconst(CraneliftTypes::INT, 100);
-            builder.ins().jump(merge_block, &[then_val]);
+                builder.switch_to_block(then_block);
+                builder.seal_block(then_block);
+                let then_val = builder.ins().iconst(CraneliftTypes::INT, 100);
+                builder.ins().jump(merge_block, &[then_val]);
 
-            builder.switch_to_block(else_block);
-            builder.seal_block(else_block);
-            let else_val = builder.ins().iconst(CraneliftTypes::INT, 200);
-            builder.ins().jump(merge_block, &[else_val]);
+                builder.switch_to_block(else_block);
+                builder.seal_block(else_block);
+                let else_val = builder.ins().iconst(CraneliftTypes::INT, 200);
+                builder.ins().jump(merge_block, &[else_val]);
 
-            builder.switch_to_block(merge_block);
-            builder.seal_block(merge_block);
-            let phi_val = builder.block_params(merge_block)[0];
-            builder.def_var(result, phi_val);
+                builder.switch_to_block(merge_block);
+                builder.seal_block(merge_block);
+                let phi_val = builder.block_params(merge_block)[0];
+                builder.def_var(result, phi_val);
 
-            Ok(())
-        }).unwrap();
+                Ok(())
+            })
+            .unwrap();
 
         assert_eq!(func(), 100);
     }

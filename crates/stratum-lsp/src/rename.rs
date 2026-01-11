@@ -4,8 +4,8 @@
 //! rename a symbol and all its references throughout the code.
 
 use stratum_core::ast::{
-    Block, CallArg, EnumDef, Expr, ExprKind, Function, Item, ItemKind, Module, Pattern,
-    PatternKind, Stmt, StmtKind, StructDef, TopLevelItem, TopLevelLet, InterfaceDef, ImplDef,
+    Block, CallArg, EnumDef, Expr, ExprKind, Function, ImplDef, InterfaceDef, Item, ItemKind,
+    Module, Pattern, PatternKind, Stmt, StmtKind, StructDef, TopLevelItem, TopLevelLet,
 };
 use stratum_core::lexer::{LineIndex, Span};
 use stratum_core::parser::Parser;
@@ -17,7 +17,10 @@ use crate::cache::CachedData;
 use crate::definition::{DefinitionInfo, SymbolIndex};
 
 /// Prepare for rename using cached data
-pub fn prepare_rename_cached(data: &CachedData<'_>, position: Position) -> Option<PrepareRenameResponse> {
+pub fn prepare_rename_cached(
+    data: &CachedData<'_>,
+    position: Position,
+) -> Option<PrepareRenameResponse> {
     // Convert LSP position to byte offset
     let offset = position_to_offset(data.line_index, position)?;
 
@@ -195,8 +198,7 @@ fn is_valid_identifier(name: &str) -> bool {
 fn is_keyword(name: &str) -> bool {
     matches!(
         name,
-        "fx"
-            | "let"
+        "fx" | "let"
             | "if"
             | "else"
             | "for"
@@ -396,7 +398,11 @@ fn collect_refs_in_stmt(stmt: &Stmt, name: &str, scope: Option<Span>, refs: &mut
             collect_refs_in_expr(expr, name, scope, refs);
         }
         StmtKind::Return(None) | StmtKind::Break | StmtKind::Continue => {}
-        StmtKind::For { pattern, iter, body } => {
+        StmtKind::For {
+            pattern,
+            iter,
+            body,
+        } => {
             collect_refs_in_pattern(pattern, name, refs);
             collect_refs_in_expr(iter, name, scope, refs);
             collect_refs_in_block(body, name, scope, refs);
@@ -919,7 +925,11 @@ fn find_ident_in_stmt(stmt: &Stmt, offset: u32) -> Option<IdentAtPosition> {
         }
         StmtKind::Return(Some(expr)) => find_ident_in_expr(expr, offset),
         StmtKind::Return(None) | StmtKind::Break | StmtKind::Continue => None,
-        StmtKind::For { pattern, iter, body } => {
+        StmtKind::For {
+            pattern,
+            iter,
+            body,
+        } => {
             if let Some(info) = find_ident_in_pattern(pattern, offset) {
                 return Some(info);
             }

@@ -107,9 +107,7 @@ fn validate_package_name(name: &str) -> Result<()> {
     // Only alphanumeric, hyphens, and underscores
     for c in name.chars() {
         if !c.is_ascii_alphanumeric() && c != '-' && c != '_' {
-            bail!(
-                "Package name can only contain letters, numbers, hyphens, and underscores"
-            );
+            bail!("Package name can only contain letters, numbers, hyphens, and underscores");
         }
     }
 

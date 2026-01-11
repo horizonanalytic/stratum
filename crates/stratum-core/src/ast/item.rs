@@ -88,10 +88,11 @@ impl Attribute {
     /// Check if this compile directive has the "hot" argument
     #[must_use]
     pub fn is_compile_hot(&self) -> bool {
-        self.is_compile() && self.args.iter().any(|arg| match arg {
-            AttributeArg::Ident(ident) => ident.name == "hot",
-            _ => false,
-        })
+        self.is_compile()
+            && self.args.iter().any(|arg| match arg {
+                AttributeArg::Ident(ident) => ident.name == "hot",
+                _ => false,
+            })
     }
 
     /// Get the execution mode specified by this attribute, if any
@@ -141,20 +142,40 @@ impl Module {
     /// Create a new module from top-level items
     #[must_use]
     pub fn new(inner_attributes: Vec<Attribute>, top_level: Vec<TopLevelItem>, span: Span) -> Self {
-        Self { inner_attributes, top_level, span, trivia: Trivia::empty() }
+        Self {
+            inner_attributes,
+            top_level,
+            span,
+            trivia: Trivia::empty(),
+        }
     }
 
     /// Create a new module with trivia
     #[must_use]
-    pub fn with_trivia(inner_attributes: Vec<Attribute>, top_level: Vec<TopLevelItem>, span: Span, trivia: Trivia) -> Self {
-        Self { inner_attributes, top_level, span, trivia }
+    pub fn with_trivia(
+        inner_attributes: Vec<Attribute>,
+        top_level: Vec<TopLevelItem>,
+        span: Span,
+        trivia: Trivia,
+    ) -> Self {
+        Self {
+            inner_attributes,
+            top_level,
+            span,
+            trivia,
+        }
     }
 
     /// Create a new module from just items (for backwards compatibility)
     #[must_use]
     pub fn from_items(items: Vec<Item>, span: Span) -> Self {
         let top_level = items.into_iter().map(TopLevelItem::Item).collect();
-        Self { inner_attributes: Vec::new(), top_level, span, trivia: Trivia::empty() }
+        Self {
+            inner_attributes: Vec::new(),
+            top_level,
+            span,
+            trivia: Trivia::empty(),
+        }
     }
 
     /// Get all items in the module (excluding top-level lets and statements)
@@ -184,7 +205,9 @@ impl Module {
     /// Check if this module has any top-level statements (not lets or items)
     #[must_use]
     pub fn has_top_level_statements(&self) -> bool {
-        self.top_level.iter().any(|tl| matches!(tl, TopLevelItem::Statement(_)))
+        self.top_level
+            .iter()
+            .any(|tl| matches!(tl, TopLevelItem::Statement(_)))
     }
 
     /// Get the default execution mode for this module from inner attributes
@@ -245,7 +268,13 @@ impl TopLevelLet {
         value: super::Expr,
         span: Span,
     ) -> Self {
-        Self { pattern, ty, value, span, trivia: Trivia::empty() }
+        Self {
+            pattern,
+            ty,
+            value,
+            span,
+            trivia: Trivia::empty(),
+        }
     }
 
     /// Create a new top-level let declaration with trivia
@@ -257,7 +286,13 @@ impl TopLevelLet {
         span: Span,
         trivia: Trivia,
     ) -> Self {
-        Self { pattern, ty, value, span, trivia }
+        Self {
+            pattern,
+            ty,
+            value,
+            span,
+            trivia,
+        }
     }
 }
 
@@ -409,9 +444,7 @@ impl Function {
     /// Returns `None` if no execution mode directive is specified on this function.
     #[must_use]
     pub fn execution_mode(&self) -> Option<ExecutionMode> {
-        self.attributes
-            .iter()
-            .find_map(Attribute::execution_mode)
+        self.attributes.iter().find_map(Attribute::execution_mode)
     }
 
     /// Resolve the execution mode for this function, considering module defaults

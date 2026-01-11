@@ -281,7 +281,10 @@ pub extern "C" fn stratum_add_float(a: f64, b: f64) -> f64 {
 /// # Safety
 /// Both pointers must be valid pointers to String data
 #[no_mangle]
-pub unsafe extern "C" fn stratum_concat_strings(a: *const String, b: *const String) -> *const String {
+pub unsafe extern "C" fn stratum_concat_strings(
+    a: *const String,
+    b: *const String,
+) -> *const String {
     let a_str = &*a;
     let b_str = &*b;
     let result = Rc::new(format!("{}{}", a_str, b_str));
@@ -434,11 +437,8 @@ impl JitContext {
 
     /// Register a compiled function
     pub fn register(&mut self, name: String, ptr: *const u8, arity: u8) {
-        self.functions.insert(name.clone(), CompiledFunction {
-            ptr,
-            arity,
-            name,
-        });
+        self.functions
+            .insert(name.clone(), CompiledFunction { ptr, arity, name });
     }
 
     /// Get a compiled function by name
@@ -464,10 +464,7 @@ impl Default for JitContext {
 ///
 /// This function is safe to call because it validates the arity and the function
 /// pointer is guaranteed to be valid when obtained from `JitCompiler::compile_function`.
-pub fn call_jit_function(
-    func: &CompiledFunction,
-    args: &[Value],
-) -> Value {
+pub fn call_jit_function(func: &CompiledFunction, args: &[Value]) -> Value {
     assert_eq!(args.len(), func.arity as usize, "Argument count mismatch");
     // SAFETY: The function pointer is valid because it comes from JitCompiler
     // and the argument count matches the arity.
@@ -478,10 +475,7 @@ pub fn call_jit_function(
 ///
 /// # Safety
 /// The function pointer must be valid and the arguments must match the arity.
-unsafe fn call_jit_function_unsafe(
-    func: &CompiledFunction,
-    args: &[Value],
-) -> Value {
+unsafe fn call_jit_function_unsafe(func: &CompiledFunction, args: &[Value]) -> Value {
     // Convert arguments to packed values
     let packed_args: Vec<PackedValue> = args.iter().map(value_to_packed).collect();
 
@@ -494,48 +488,75 @@ unsafe fn call_jit_function_unsafe(
             type Fn0 = extern "C" fn() -> ReturnPair;
             let f: Fn0 = std::mem::transmute(func.ptr);
             let ret = f();
-            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
+            packed_to_value(PackedValue {
+                tag_padded: ret.tag,
+                data: ret.data,
+            })
         }
         1 => {
             type Fn1 = extern "C" fn(u64, u64) -> ReturnPair;
             let f: Fn1 = std::mem::transmute(func.ptr);
             let ret = f(packed_args[0].tag_padded, packed_args[0].data);
-            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
+            packed_to_value(PackedValue {
+                tag_padded: ret.tag,
+                data: ret.data,
+            })
         }
         2 => {
             type Fn2 = extern "C" fn(u64, u64, u64, u64) -> ReturnPair;
             let f: Fn2 = std::mem::transmute(func.ptr);
             let ret = f(
-                packed_args[0].tag_padded, packed_args[0].data,
-                packed_args[1].tag_padded, packed_args[1].data,
+                packed_args[0].tag_padded,
+                packed_args[0].data,
+                packed_args[1].tag_padded,
+                packed_args[1].data,
             );
-            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
+            packed_to_value(PackedValue {
+                tag_padded: ret.tag,
+                data: ret.data,
+            })
         }
         3 => {
             type Fn3 = extern "C" fn(u64, u64, u64, u64, u64, u64) -> ReturnPair;
             let f: Fn3 = std::mem::transmute(func.ptr);
             let ret = f(
-                packed_args[0].tag_padded, packed_args[0].data,
-                packed_args[1].tag_padded, packed_args[1].data,
-                packed_args[2].tag_padded, packed_args[2].data,
+                packed_args[0].tag_padded,
+                packed_args[0].data,
+                packed_args[1].tag_padded,
+                packed_args[1].data,
+                packed_args[2].tag_padded,
+                packed_args[2].data,
             );
-            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
+            packed_to_value(PackedValue {
+                tag_padded: ret.tag,
+                data: ret.data,
+            })
         }
         4 => {
             type Fn4 = extern "C" fn(u64, u64, u64, u64, u64, u64, u64, u64) -> ReturnPair;
             let f: Fn4 = std::mem::transmute(func.ptr);
             let ret = f(
-                packed_args[0].tag_padded, packed_args[0].data,
-                packed_args[1].tag_padded, packed_args[1].data,
-                packed_args[2].tag_padded, packed_args[2].data,
-                packed_args[3].tag_padded, packed_args[3].data,
+                packed_args[0].tag_padded,
+                packed_args[0].data,
+                packed_args[1].tag_padded,
+                packed_args[1].data,
+                packed_args[2].tag_padded,
+                packed_args[2].data,
+                packed_args[3].tag_padded,
+                packed_args[3].data,
             );
-            packed_to_value(PackedValue { tag_padded: ret.tag, data: ret.data })
+            packed_to_value(PackedValue {
+                tag_padded: ret.tag,
+                data: ret.data,
+            })
         }
         _ => {
             // For functions with more arguments, we'd need a more general approach
             // For now, panic with a clear message
-            panic!("JIT functions with more than 4 arguments not yet supported (got {})", func.arity);
+            panic!(
+                "JIT functions with more than 4 arguments not yet supported (got {})",
+                func.arity
+            );
         }
     }
 }

@@ -89,10 +89,7 @@ pub fn uninstall_extension() -> Result<()> {
     println!("Uninstalling Stratum VS Code extension...");
 
     // Try both possible extension IDs
-    let extension_ids = [
-        "horizon-analytic-studios.stratum",
-        "cache.stratum",
-    ];
+    let extension_ids = ["horizon-analytic-studios.stratum", "cache.stratum"];
 
     let mut uninstalled = false;
     for ext_id in extension_ids {

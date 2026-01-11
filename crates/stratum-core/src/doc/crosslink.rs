@@ -83,8 +83,13 @@ impl<'a> CrossLinker<'a> {
 
                 // Check if this word is a type we should link
                 if self.should_link(&current_word) {
-                    if let Some(symbol) = self.project.lookup_in_module(&current_word, &self.config.current_module) {
-                        let link = self.project.link_to_symbol(symbol, &self.config.current_module);
+                    if let Some(symbol) = self
+                        .project
+                        .lookup_in_module(&current_word, &self.config.current_module)
+                    {
+                        let link = self
+                            .project
+                            .link_to_symbol(symbol, &self.config.current_module);
                         result.push_str(&format!(
                             "<a href=\"{}\" class=\"type-link\">{}</a>",
                             link, current_word
@@ -118,7 +123,10 @@ impl<'a> CrossLinker<'a> {
 
         // Only link words that start with uppercase (type names)
         // or are in the project's symbol index
-        word.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+        word.chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false)
             || self.project.lookup(word).is_some()
     }
 
@@ -130,8 +138,13 @@ impl<'a> CrossLinker<'a> {
         let name = parts.last()?;
 
         // Try to find the symbol
-        if let Some(symbol) = self.project.lookup_in_module(name, &self.config.current_module) {
-            let link = self.project.link_to_symbol(symbol, &self.config.current_module);
+        if let Some(symbol) = self
+            .project
+            .lookup_in_module(name, &self.config.current_module)
+        {
+            let link = self
+                .project
+                .link_to_symbol(symbol, &self.config.current_module);
             Some((reference.to_string(), link))
         } else {
             None
@@ -143,11 +156,33 @@ impl<'a> CrossLinker<'a> {
 fn is_keyword(word: &str) -> bool {
     matches!(
         word,
-        "fx" | "let" | "if" | "else" | "while" | "for" | "in" | "match"
-            | "return" | "break" | "continue" | "struct" | "enum"
-            | "interface" | "impl" | "import" | "as" | "true" | "false"
-            | "nil" | "self" | "async" | "await" | "try" | "catch"
-            | "throw" | "pub" | "mut"
+        "fx" | "let"
+            | "if"
+            | "else"
+            | "while"
+            | "for"
+            | "in"
+            | "match"
+            | "return"
+            | "break"
+            | "continue"
+            | "struct"
+            | "enum"
+            | "interface"
+            | "impl"
+            | "import"
+            | "as"
+            | "true"
+            | "false"
+            | "nil"
+            | "self"
+            | "async"
+            | "await"
+            | "try"
+            | "catch"
+            | "throw"
+            | "pub"
+            | "mut"
     )
 }
 
@@ -165,7 +200,12 @@ pub fn extract_type_names(signature: &str) -> Vec<String> {
         } else {
             if !current.is_empty() {
                 // Check if it looks like a type (starts with uppercase)
-                if current.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                if current
+                    .chars()
+                    .next()
+                    .map(|c| c.is_uppercase())
+                    .unwrap_or(false)
+                {
                     types.push(current.clone());
                 }
                 current.clear();
@@ -175,7 +215,13 @@ pub fn extract_type_names(signature: &str) -> Vec<String> {
     }
 
     // Don't forget the last word
-    if !current.is_empty() && current.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+    if !current.is_empty()
+        && current
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false)
+    {
         types.push(current);
     }
 
@@ -210,10 +256,13 @@ mod tests {
     #[test]
     fn test_link_signature() {
         let project = create_test_project();
-        let linker = CrossLinker::new(&project, CrossLinkConfig {
-            current_module: "utils".to_string(),
-            link_external: true,
-        });
+        let linker = CrossLinker::new(
+            &project,
+            CrossLinkConfig {
+                current_module: "utils".to_string(),
+                link_external: true,
+            },
+        );
 
         let result = linker.link_signature("fx greet(user: User) -> String");
         assert!(result.contains("<a href=\"#user\" class=\"type-link\">User</a>"));
@@ -236,10 +285,13 @@ mod tests {
     #[test]
     fn test_builtin_not_linked() {
         let project = create_test_project();
-        let linker = CrossLinker::new(&project, CrossLinkConfig {
-            current_module: "utils".to_string(),
-            link_external: true,
-        });
+        let linker = CrossLinker::new(
+            &project,
+            CrossLinkConfig {
+                current_module: "utils".to_string(),
+                link_external: true,
+            },
+        );
 
         let result = linker.link_signature("Int -> Float");
         // Builtins should not have links

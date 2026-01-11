@@ -7,16 +7,21 @@ use std::hash::{Hash, Hasher};
 use std::rc::{Rc, Weak};
 use std::sync::{Arc, Mutex};
 
+use futures_util::stream::{SplitSink, SplitStream};
 use image::{DynamicImage, GenericImageView};
 use regex::Regex as CompiledRegex;
-use tokio::net::{TcpListener as TokioTcpListener, TcpStream as TokioTcpStream, UdpSocket as TokioUdpSocket};
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use futures_util::stream::{SplitSink, SplitStream};
+use tokio::net::{
+    TcpListener as TokioTcpListener, TcpStream as TokioTcpStream, UdpSocket as TokioUdpSocket,
+};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use super::Chunk;
 use crate::ast::ExecutionMode;
-use crate::data::{AggSpec, Cube, CubeBuilder, CubeQuery, DataFrame, GroupedDataFrame, JoinSpec, Rolling, Series, SqlContext};
+use crate::data::{
+    AggSpec, Cube, CubeBuilder, CubeQuery, DataFrame, GroupedDataFrame, JoinSpec, Rolling, Series,
+    SqlContext,
+};
 
 /// Database connection types supported by Stratum
 #[derive(Clone)]
@@ -220,9 +225,12 @@ impl UdpSocketWrapper {
 #[derive(Debug)]
 pub struct WebSocketWrapper {
     /// The write half of the WebSocket (for sending messages)
-    pub sink: Arc<tokio::sync::Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TokioTcpStream>>, WsMessage>>>,
+    pub sink: Arc<
+        tokio::sync::Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TokioTcpStream>>, WsMessage>>,
+    >,
     /// The read half of the WebSocket (for receiving messages)
-    pub stream: Arc<tokio::sync::Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TokioTcpStream>>>>>,
+    pub stream:
+        Arc<tokio::sync::Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TokioTcpStream>>>>>,
     /// Remote URL
     pub url: String,
     /// Connection state
@@ -263,7 +271,8 @@ impl WebSocketWrapper {
 
     /// Mark the WebSocket as closed
     pub fn set_closed(&self) {
-        self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -353,7 +362,8 @@ impl WebSocketServerConnWrapper {
 
     /// Mark the WebSocket as closed
     pub fn set_closed(&self) {
-        self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -1375,9 +1385,7 @@ impl PartialEq for Value {
             (Value::Closure(a), Value::Closure(b)) => Rc::ptr_eq(a, b),
             (Value::Struct(a), Value::Struct(b)) => Rc::ptr_eq(a, b),
             (Value::EnumVariant(a), Value::EnumVariant(b)) => {
-                a.enum_name == b.enum_name
-                    && a.variant_name == b.variant_name
-                    && a.data == b.data
+                a.enum_name == b.enum_name && a.variant_name == b.variant_name && a.data == b.data
             }
             (Value::Range(a), Value::Range(b)) => {
                 a.start == b.start && a.end == b.end && a.inclusive == b.inclusive
@@ -1460,7 +1468,11 @@ impl fmt::Debug for Value {
             Value::UdpSocket(s) => write!(f, "<udp socket {}>", s.local_addr),
             Value::WebSocket(ws) => write!(f, "<websocket {}>", ws.url),
             Value::WebSocketServer(wss) => write!(f, "<websocket server {}>", wss.local_addr),
-            Value::WebSocketServerConn(wsc) => write!(f, "<websocket conn {} -> {}>", wsc.local_addr, wsc.peer_addr),
+            Value::WebSocketServerConn(wsc) => write!(
+                f,
+                "<websocket conn {} -> {}>",
+                wsc.local_addr, wsc.peer_addr
+            ),
             Value::Future(fut) => {
                 let fut = fut.borrow();
                 match &fut.status {
@@ -1479,13 +1491,23 @@ impl fmt::Debug for Value {
                 }
             }
             Value::DataFrame(df) => {
-                write!(f, "<DataFrame [{} cols x {} rows]>", df.num_columns(), df.num_rows())
+                write!(
+                    f,
+                    "<DataFrame [{} cols x {} rows]>",
+                    df.num_columns(),
+                    df.num_rows()
+                )
             }
             Value::Series(s) => {
                 write!(f, "<Series '{}' [{} rows]>", s.name(), s.len())
             }
             Value::Rolling(r) => {
-                write!(f, "<Rolling window={} on '{}'>", r.window_size(), r.series().name())
+                write!(
+                    f,
+                    "<Rolling window={} on '{}'>",
+                    r.window_size(),
+                    r.series().name()
+                )
             }
             Value::GroupedDataFrame(gdf) => {
                 write!(
@@ -1524,7 +1546,11 @@ impl fmt::Debug for Value {
                 let dims = cube.dimension_names().len();
                 let measures = cube.measure_names().len();
                 let rows = cube.row_count();
-                write!(f, "<Cube '{}' [{} dims x {} measures x {} rows]>", name, dims, measures, rows)
+                write!(
+                    f,
+                    "<Cube '{}' [{} dims x {} measures x {} rows]>",
+                    name, dims, measures, rows
+                )
             }
             Value::CubeBuilder(builder) => {
                 let status = if builder.lock().map(|b| b.is_some()).unwrap_or(false) {
@@ -1558,7 +1584,12 @@ impl fmt::Debug for Value {
                 }
             }
             Value::XmlDocument(doc) => {
-                write!(f, "<XmlDocument root='{}' size={}>", doc.root_name, doc.content.len())
+                write!(
+                    f,
+                    "<XmlDocument root='{}' size={}>",
+                    doc.root_name,
+                    doc.content.len()
+                )
             }
             Value::Image(img) => {
                 write!(f, "<Image {}x{}>", img.width(), img.height())
@@ -1651,7 +1682,9 @@ impl fmt::Display for Value {
             Value::UdpSocket(s) => write!(f, "<udp {}>", s.local_addr),
             Value::WebSocket(ws) => write!(f, "<websocket {}>", ws.url),
             Value::WebSocketServer(wss) => write!(f, "<websocket server {}>", wss.local_addr),
-            Value::WebSocketServerConn(wsc) => write!(f, "<websocket {} -> {}>", wsc.local_addr, wsc.peer_addr),
+            Value::WebSocketServerConn(wsc) => {
+                write!(f, "<websocket {} -> {}>", wsc.local_addr, wsc.peer_addr)
+            }
             Value::Future(fut) => {
                 let fut = fut.borrow();
                 match &fut.status {

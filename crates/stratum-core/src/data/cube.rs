@@ -8,9 +8,11 @@ use std::fmt;
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
-use elasticube_core::{AggFunc, CacheStats, ElastiCube, ElastiCubeBuilder, QueryBuilder, QueryCache};
+use elasticube_core::{
+    AggFunc, CacheStats, ElastiCube, ElastiCubeBuilder, QueryBuilder, QueryCache,
+};
 
-use super::{DataError, DataResult, DataFrame};
+use super::{DataError, DataFrame, DataResult};
 
 /// OLAP Cube for multi-dimensional analytical processing
 ///
@@ -58,7 +60,11 @@ impl Cube {
     }
 
     /// Create a new Cube with name and caching enabled
-    pub fn with_name_and_cache(cube: ElastiCube, name: impl Into<String>, cache_size: usize) -> Self {
+    pub fn with_name_and_cache(
+        cube: ElastiCube,
+        name: impl Into<String>,
+        cache_size: usize,
+    ) -> Self {
         Self {
             inner: Arc::new(cube),
             name: Some(name.into()),
@@ -289,21 +295,25 @@ impl Cube {
             let ctx = SessionContext::new();
 
             // Register the data as a table
-            let table = datafusion::datasource::MemTable::try_new(
-                schema,
-                vec![data.to_vec()],
-            )
-            .map_err(|e| DataError::Cube(format!("failed to create temp table: {e}")))?;
+            let table = datafusion::datasource::MemTable::try_new(schema, vec![data.to_vec()])
+                .map_err(|e| DataError::Cube(format!("failed to create temp table: {e}")))?;
 
             ctx.register_table("cube_data", Arc::new(table))
                 .map_err(|e| DataError::Cube(format!("failed to register table: {e}")))?;
 
             // Query for distinct values
-            let query = format!("SELECT DISTINCT \"{}\" FROM cube_data ORDER BY \"{}\"", dimension, dimension);
-            let df = ctx.sql(&query).await
+            let query = format!(
+                "SELECT DISTINCT \"{}\" FROM cube_data ORDER BY \"{}\"",
+                dimension, dimension
+            );
+            let df = ctx
+                .sql(&query)
+                .await
                 .map_err(|e| DataError::Cube(format!("failed to query dimension values: {e}")))?;
 
-            let batches = df.collect().await
+            let batches = df
+                .collect()
+                .await
                 .map_err(|e| DataError::Cube(format!("failed to collect dimension values: {e}")))?;
 
             // Extract values from the result
@@ -343,7 +353,9 @@ impl Cube {
 
                     for i in 0..col.len() {
                         if col.is_valid(i) {
-                            values.push(crate::bytecode::Value::string(formatter.value(i).to_string()));
+                            values.push(crate::bytecode::Value::string(
+                                formatter.value(i).to_string(),
+                            ));
                         }
                     }
                 }
@@ -704,7 +716,11 @@ impl CubeQuery {
     }
 
     /// Create a CubeQuery from an Arc<ElastiCube> with optional name and cache
-    pub fn from_arc_with_cache(cube: Arc<ElastiCube>, name: Option<String>, cache: Option<Arc<QueryCache>>) -> Self {
+    pub fn from_arc_with_cache(
+        cube: Arc<ElastiCube>,
+        name: Option<String>,
+        cache: Option<Arc<QueryCache>>,
+    ) -> Self {
         Self {
             cube,
             cube_name: name,
@@ -734,7 +750,8 @@ impl CubeQuery {
     /// Each filter is a (dimension, values) pair where values can contain multiple options.
     pub fn dice(mut self, filters: &[(impl AsRef<str>, impl AsRef<str>)]) -> Self {
         for (dim, val) in filters {
-            self.dices.push((dim.as_ref().to_string(), vec![val.as_ref().to_string()]));
+            self.dices
+                .push((dim.as_ref().to_string(), vec![val.as_ref().to_string()]));
         }
         self
     }
@@ -835,7 +852,8 @@ impl CubeQuery {
     #[must_use]
     pub fn current_level(&self, hierarchy: &str) -> Option<String> {
         // Check if we have any drill-down operations for this hierarchy
-        let drill_down_level = self.drill_downs
+        let drill_down_level = self
+            .drill_downs
             .iter()
             .filter(|(h, _)| h == hierarchy)
             .last()
@@ -857,7 +875,11 @@ impl CubeQuery {
     /// Build a QueryBuilder with all accumulated operations
     fn build_query(&self) -> DataResult<QueryBuilder> {
         // Clone the Arc to allow query() to take ownership
-        let mut qb = self.cube.clone().query().map_err(|e| DataError::Cube(e.to_string()))?;
+        let mut qb = self
+            .cube
+            .clone()
+            .query()
+            .map_err(|e| DataError::Cube(e.to_string()))?;
 
         // Apply shared cache if available
         if let Some(cache) = &self.cache {
@@ -876,7 +898,8 @@ impl CubeQuery {
                 qb = qb.slice(dim, &vals[0]);
             } else {
                 // Multiple values - build OR filter
-                let filters: Vec<(&str, &str)> = vals.iter().map(|v| (dim.as_str(), v.as_str())).collect();
+                let filters: Vec<(&str, &str)> =
+                    vals.iter().map(|v| (dim.as_str(), v.as_str())).collect();
                 qb = qb.dice(&filters);
             }
         }
@@ -1018,10 +1041,7 @@ impl CubeQuery {
         };
 
         // Build SELECT expressions
-        let mut select_parts: Vec<String> = row_dims
-            .iter()
-            .map(|d| format!("\"{}\"", d))
-            .collect();
+        let mut select_parts: Vec<String> = row_dims.iter().map(|d| format!("\"{}\"", d)).collect();
 
         // Add CASE WHEN for each column value
         for val in &col_values {
@@ -1033,10 +1053,7 @@ impl CubeQuery {
         }
 
         // Build GROUP BY
-        let group_by_cols: Vec<String> = row_dims
-            .iter()
-            .map(|d| format!("\"{}\"", d))
-            .collect();
+        let group_by_cols: Vec<String> = row_dims.iter().map(|d| format!("\"{}\"", d)).collect();
 
         // Build the full SQL query
         let sql = if group_by_cols.is_empty() {
@@ -1170,10 +1187,9 @@ impl CubeQuery {
                 .await
                 .map_err(|e| DataError::Cube(format!("failed to execute cross_join query: {e}")))?;
 
-            let batches = df
-                .collect()
-                .await
-                .map_err(|e| DataError::Cube(format!("failed to collect cross_join results: {e}")))?;
+            let batches = df.collect().await.map_err(|e| {
+                DataError::Cube(format!("failed to collect cross_join results: {e}"))
+            })?;
 
             if batches.is_empty() {
                 return Err(DataError::EmptyData);
@@ -1278,7 +1294,8 @@ impl fmt::Debug for CubeQuery {
 impl fmt::Display for CubeQuery {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = self.cube_name.as_deref().unwrap_or("unnamed");
-        let ops = self.slices.len() + self.dices.len() + self.drill_downs.len() + self.roll_ups.len();
+        let ops =
+            self.slices.len() + self.dices.len() + self.drill_downs.len() + self.roll_ups.len();
         write!(f, "<CubeQuery on '{}' [{} ops pending]>", name, ops)
     }
 }
@@ -1382,9 +1399,7 @@ mod tests {
     #[test]
     fn test_cube_column_not_found() {
         let df = create_test_dataframe();
-        let result = Cube::from_dataframe(&df)
-            .unwrap()
-            .dimension("nonexistent");
+        let result = Cube::from_dataframe(&df).unwrap().dimension("nonexistent");
 
         assert!(result.is_err());
         match result {
@@ -1425,11 +1440,13 @@ mod tests {
             .build()
             .unwrap();
 
-        let query = CubeQuery::new(&cube)
-            .slice("region", "North");
+        let query = CubeQuery::new(&cube).slice("region", "North");
 
         assert_eq!(query.slices().len(), 1);
-        assert_eq!(query.slices()[0], ("region".to_string(), "North".to_string()));
+        assert_eq!(
+            query.slices()[0],
+            ("region".to_string(), "North".to_string())
+        );
     }
 
     #[test]
@@ -1463,8 +1480,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let query = CubeQuery::new(&cube)
-            .dice(&[("region", "North")]);
+        let query = CubeQuery::new(&cube).dice(&[("region", "North")]);
 
         assert_eq!(query.dices().len(), 1);
         assert_eq!(query.dices()[0].0, "region");
@@ -1523,8 +1539,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let query = CubeQuery::new(&cube)
-            .roll_up(vec!["region".to_string()]);
+        let query = CubeQuery::new(&cube).roll_up(vec!["region".to_string()]);
 
         // Check that roll_up was recorded
         let display = format!("{:?}", query);
@@ -1564,8 +1579,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let query = CubeQuery::new(&cube)
-            .slice("region", "North");
+        let query = CubeQuery::new(&cube).slice("region", "North");
 
         let cloned = query.clone_query();
         assert_eq!(cloned.slices().len(), 1);
@@ -1609,8 +1623,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let query = CubeQuery::new(&cube)
-            .where_clause("revenue > 100");
+        let query = CubeQuery::new(&cube).where_clause("revenue > 100");
 
         // The query should have the filter stored
         let cloned = query.clone_query();
@@ -1653,7 +1666,10 @@ mod tests {
 
         // Test full query builder chain
         let query = CubeQuery::new(&cube)
-            .select(vec!["region".to_string(), "SUM(revenue) as total".to_string()])
+            .select(vec![
+                "region".to_string(),
+                "SUM(revenue) as total".to_string(),
+            ])
             .where_clause("revenue > 50")
             .group_by(vec!["region".to_string()])
             .order_by(vec!["total DESC".to_string()])
@@ -1785,7 +1801,10 @@ mod tests {
         // Create a query with drill-down - should return the drilled level
         let drilled_query = CubeQuery::new(&cube)
             .drill_down("time", vec!["year".to_string(), "quarter".to_string()]);
-        assert_eq!(drilled_query.current_level("time"), Some("quarter".to_string()));
+        assert_eq!(
+            drilled_query.current_level("time"),
+            Some("quarter".to_string())
+        );
     }
 
     #[test]
@@ -1964,9 +1983,7 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(StringArray::from(vec![
-                    "North", "North", "South", "South",
-                ])),
+                Arc::new(StringArray::from(vec!["North", "North", "South", "South"])),
                 Arc::new(StringArray::from(vec!["Q1", "Q2", "Q1", "Q2"])),
                 Arc::new(Float64Array::from(vec![100.0, 150.0, 200.0, 250.0])),
             ],
@@ -2180,7 +2197,10 @@ mod tests {
 
         // First query - should be a cache miss
         let query1 = CubeQuery::new(&cube)
-            .select(vec!["region".to_string(), "SUM(revenue) as total".to_string()])
+            .select(vec![
+                "region".to_string(),
+                "SUM(revenue) as total".to_string(),
+            ])
             .group_by(vec!["region".to_string()]);
         let result1 = query1.to_dataframe();
         assert!(result1.is_ok());
@@ -2192,7 +2212,10 @@ mod tests {
 
         // Second identical query - should be a cache hit
         let query2 = CubeQuery::new(&cube)
-            .select(vec!["region".to_string(), "SUM(revenue) as total".to_string()])
+            .select(vec![
+                "region".to_string(),
+                "SUM(revenue) as total".to_string(),
+            ])
             .group_by(vec!["region".to_string()]);
         let result2 = query2.to_dataframe();
         assert!(result2.is_ok());
@@ -2256,8 +2279,7 @@ mod tests {
         let _ = query1.to_dataframe();
 
         // Different query - should be a new cache miss
-        let query2 = CubeQuery::new(&cube)
-            .select(vec!["SUM(revenue) as total".to_string()]);
+        let query2 = CubeQuery::new(&cube).select(vec!["SUM(revenue) as total".to_string()]);
         let _ = query2.to_dataframe();
 
         // Should have 2 cache misses, 2 entries

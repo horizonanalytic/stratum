@@ -71,7 +71,12 @@ impl DocumentCache {
 
     /// Apply an incremental text change to the document
     /// This invalidates all cached analysis results
-    pub fn apply_change(&mut self, range: Option<tower_lsp::lsp_types::Range>, text: String, version: i32) {
+    pub fn apply_change(
+        &mut self,
+        range: Option<tower_lsp::lsp_types::Range>,
+        text: String,
+        version: i32,
+    ) {
         if let Some(range) = range {
             // Incremental change - apply the edit
             let start_offset = self.position_to_offset(range.start);
@@ -82,9 +87,8 @@ impl DocumentCache {
                 let end = end as usize;
 
                 // Replace the range with the new text
-                let mut new_content = String::with_capacity(
-                    self.content.len() - (end - start) + text.len()
-                );
+                let mut new_content =
+                    String::with_capacity(self.content.len() - (end - start) + text.len());
                 new_content.push_str(&self.content[..start]);
                 new_content.push_str(&text);
                 new_content.push_str(&self.content[end..]);
@@ -271,8 +275,14 @@ mod tests {
 
         // Apply an incremental change - change "42" to "100"
         let range = Range {
-            start: Position { line: 0, character: 8 },
-            end: Position { line: 0, character: 10 },
+            start: Position {
+                line: 0,
+                character: 8,
+            },
+            end: Position {
+                line: 0,
+                character: 10,
+            },
         };
         cache.apply_change(Some(range), "100".to_string(), 2);
 
@@ -281,10 +291,8 @@ mod tests {
 
     #[test]
     fn test_symbol_index_caching() {
-        let mut cache = DocumentCache::new(
-            "fx hello() { 42 }\nstruct Point { x: Int }".to_string(),
-            1,
-        );
+        let mut cache =
+            DocumentCache::new("fx hello() { 42 }\nstruct Point { x: Int }".to_string(), 1);
 
         // Build symbol index
         let index = cache.get_or_build_symbol_index();

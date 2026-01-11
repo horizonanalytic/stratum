@@ -392,11 +392,7 @@ fn main() -> Result<()> {
         }
 
         Some(Commands::Init { lib, name, git }) => {
-            let options = init::InitOptions {
-                lib,
-                name,
-                git,
-            };
+            let options = init::InitOptions { lib, name, git };
             init::init_project(options)?;
         }
 
@@ -438,7 +434,11 @@ fn main() -> Result<()> {
             add::add_dependency(options)?;
         }
 
-        Some(Commands::Remove { package, dev, build }) => {
+        Some(Commands::Remove {
+            package,
+            dev,
+            build,
+        }) => {
             let section = if dev {
                 Some(add::DependencySection::Dev)
             } else if build {
@@ -451,7 +451,11 @@ fn main() -> Result<()> {
             remove::remove_dependency(options)?;
         }
 
-        Some(Commands::Update { packages, dry_run, sync }) => {
+        Some(Commands::Update {
+            packages,
+            dry_run,
+            sync,
+        }) => {
             if sync {
                 update::sync_lockfile()?;
             } else {
@@ -461,7 +465,13 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(Commands::Run { file, interpret_all, compile_all, jit: _, memory_profile }) => {
+        Some(Commands::Run {
+            file,
+            interpret_all,
+            compile_all,
+            jit: _,
+            memory_profile,
+        }) => {
             let mode_override = if interpret_all {
                 Some(stratum_core::ExecutionModeOverride::InterpretAll)
             } else if compile_all {
@@ -484,14 +494,25 @@ fn main() -> Result<()> {
             format,
             coverage_dir,
         }) => {
-            run_tests(&file, filter.as_deref(), verbose, coverage, &format, coverage_dir.as_deref())?;
+            run_tests(
+                &file,
+                filter.as_deref(),
+                verbose,
+                coverage,
+                &format,
+                coverage_dir.as_deref(),
+            )?;
         }
 
         Some(Commands::Fmt { files, check }) => {
             format_files(&files, check)?;
         }
 
-        Some(Commands::Build { file, output, release }) => {
+        Some(Commands::Build {
+            file,
+            output,
+            release,
+        }) => {
             build_executable(&file, output, release)?;
         }
 
@@ -537,52 +558,58 @@ fn main() -> Result<()> {
             publish::publish_package(options)?;
         }
 
-        Some(Commands::Extension(cmd)) => {
-            match cmd {
-                ExtensionCommand::Install { vsix } => {
-                    extension::install_extension(vsix)?;
-                }
-                ExtensionCommand::List => {
-                    extension::list_extensions()?;
-                }
-                ExtensionCommand::Uninstall => {
-                    extension::uninstall_extension()?;
-                }
+        Some(Commands::Extension(cmd)) => match cmd {
+            ExtensionCommand::Install { vsix } => {
+                extension::install_extension(vsix)?;
             }
-        }
+            ExtensionCommand::List => {
+                extension::list_extensions()?;
+            }
+            ExtensionCommand::Uninstall => {
+                extension::uninstall_extension()?;
+            }
+        },
 
-        Some(Commands::SelfCmd(cmd)) => {
-            match cmd {
-                SelfCommand::Update { force, tier, yes, dry_run } => {
-                    let options = self_cmd::UpdateOptions {
-                        force,
-                        tier,
-                        yes,
-                        dry_run,
-                    };
-                    self_cmd::update(options)?;
-                }
-                SelfCommand::Uninstall { purge, yes } => {
-                    let options = self_cmd::UninstallOptions { purge, yes };
-                    self_cmd::uninstall(options)?;
-                }
-                SelfCommand::Install { version, tier, yes, activate } => {
-                    let options = self_cmd::InstallVersionOptions {
-                        version,
-                        tier,
-                        yes,
-                        activate,
-                    };
-                    self_cmd::install_version(options)?;
-                }
-                SelfCommand::Use { version } => {
-                    self_cmd::use_version(&version)?;
-                }
-                SelfCommand::List { available } => {
-                    self_cmd::list_versions(available)?;
-                }
+        Some(Commands::SelfCmd(cmd)) => match cmd {
+            SelfCommand::Update {
+                force,
+                tier,
+                yes,
+                dry_run,
+            } => {
+                let options = self_cmd::UpdateOptions {
+                    force,
+                    tier,
+                    yes,
+                    dry_run,
+                };
+                self_cmd::update(options)?;
             }
-        }
+            SelfCommand::Uninstall { purge, yes } => {
+                let options = self_cmd::UninstallOptions { purge, yes };
+                self_cmd::uninstall(options)?;
+            }
+            SelfCommand::Install {
+                version,
+                tier,
+                yes,
+                activate,
+            } => {
+                let options = self_cmd::InstallVersionOptions {
+                    version,
+                    tier,
+                    yes,
+                    activate,
+                };
+                self_cmd::install_version(options)?;
+            }
+            SelfCommand::Use { version } => {
+                self_cmd::use_version(&version)?;
+            }
+            SelfCommand::List { available } => {
+                self_cmd::list_versions(available)?;
+            }
+        },
 
         None => {
             // Default behavior: start REPL
@@ -743,7 +770,10 @@ fn run_tests(
         let duration_ms = result.duration.as_secs_f64() * 1000.0;
 
         if result.should_panic && result.passed {
-            println!("  {} {} (expected panic) [{:.2}ms]", status, result.name, duration_ms);
+            println!(
+                "  {} {} (expected panic) [{:.2}ms]",
+                status, result.name, duration_ms
+            );
         } else {
             println!("  {} {} [{:.2}ms]", status, result.name, duration_ms);
         }
@@ -844,8 +874,8 @@ fn build_executable(path: &PathBuf, output: Option<PathBuf>, release: bool) -> R
         })?;
 
     // Create AOT compiler
-    let mut aot = AotCompiler::new()
-        .map_err(|e| anyhow::anyhow!("Failed to create AOT compiler: {e}"))?;
+    let mut aot =
+        AotCompiler::new().map_err(|e| anyhow::anyhow!("Failed to create AOT compiler: {e}"))?;
 
     // Find all functions in the module that should be compiled
     let mut has_main = false;
@@ -858,8 +888,9 @@ fn build_executable(path: &PathBuf, output: Option<PathBuf>, release: bool) -> R
             ) || true; // For now, compile all functions in build mode
 
             if should_compile {
-                aot.compile_function(func)
-                    .map_err(|e| anyhow::anyhow!("Failed to compile function '{}': {e}", func.name))?;
+                aot.compile_function(func).map_err(|e| {
+                    anyhow::anyhow!("Failed to compile function '{}': {e}", func.name)
+                })?;
                 if func.name == "main" {
                     has_main = true;
                 }
@@ -891,7 +922,8 @@ fn build_executable(path: &PathBuf, output: Option<PathBuf>, release: bool) -> R
         extra_flags: Vec::new(),
     });
 
-    linker.link(product)
+    linker
+        .link(product)
         .map_err(|e| anyhow::anyhow!("Failed to link: {e}"))?;
 
     println!("Built: {}", output_path.display());
@@ -1098,7 +1130,10 @@ fn generate_index(files: &[PathBuf], format: &str) -> String {
         let mut output = String::from("# Documentation\n\n");
         output.push_str("## Modules\n\n");
         for file in files {
-            let name = file.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+            let name = file
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
             output.push_str(&format!("- [{}]({}.md)\n", name, name));
         }
         output
@@ -1123,8 +1158,14 @@ fn generate_index(files: &[PathBuf], format: &str) -> String {
         output.push_str("  <h2>Modules</h2>\n");
         output.push_str("  <ul>\n");
         for file in files {
-            let name = file.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
-            output.push_str(&format!("    <li><a href=\"{}.html\">{}</a></li>\n", name, name));
+            let name = file
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
+            output.push_str(&format!(
+                "    <li><a href=\"{}.html\">{}</a></li>\n",
+                name, name
+            ));
         }
         output.push_str("  </ul>\n");
         output.push_str("</body>\n");
@@ -1234,10 +1275,7 @@ fn format_files(files: &[PathBuf], check: bool) -> Result<()> {
     // Report results
     if check {
         if !unformatted_files.is_empty() {
-            eprintln!(
-                "\n{} file(s) would be reformatted",
-                unformatted_files.len()
-            );
+            eprintln!("\n{} file(s) would be reformatted", unformatted_files.len());
             return Err(anyhow::anyhow!("Some files are not formatted"));
         }
         if !error_files.is_empty() {
@@ -1245,10 +1283,7 @@ fn format_files(files: &[PathBuf], check: bool) -> Result<()> {
         }
         println!("All files are properly formatted");
     } else if !error_files.is_empty() {
-        return Err(anyhow::anyhow!(
-            "{} file(s) had errors",
-            error_files.len()
-        ));
+        return Err(anyhow::anyhow!("{} file(s) had errors", error_files.len()));
     }
 
     Ok(())
@@ -1282,9 +1317,15 @@ mod tests {
     #[test]
     fn test_run_with_interpret_all_flag() {
         use clap::Parser as ClapParser;
-        let cli = Cli::try_parse_from(&["stratum", "run", "test.strat", "--interpret-all"]).unwrap();
+        let cli =
+            Cli::try_parse_from(&["stratum", "run", "test.strat", "--interpret-all"]).unwrap();
         match cli.command {
-            Some(Commands::Run { interpret_all, compile_all, jit, .. }) => {
+            Some(Commands::Run {
+                interpret_all,
+                compile_all,
+                jit,
+                ..
+            }) => {
                 assert!(interpret_all);
                 assert!(!compile_all);
                 assert!(!jit);
@@ -1298,7 +1339,12 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "run", "test.strat", "--compile-all"]).unwrap();
         match cli.command {
-            Some(Commands::Run { interpret_all, compile_all, jit, .. }) => {
+            Some(Commands::Run {
+                interpret_all,
+                compile_all,
+                jit,
+                ..
+            }) => {
                 assert!(!interpret_all);
                 assert!(compile_all);
                 assert!(!jit);
@@ -1312,7 +1358,12 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "run", "test.strat", "--jit"]).unwrap();
         match cli.command {
-            Some(Commands::Run { interpret_all, compile_all, jit, .. }) => {
+            Some(Commands::Run {
+                interpret_all,
+                compile_all,
+                jit,
+                ..
+            }) => {
                 assert!(!interpret_all);
                 assert!(!compile_all);
                 assert!(jit);
@@ -1325,14 +1376,21 @@ mod tests {
     fn test_run_flags_conflict() {
         use clap::Parser as ClapParser;
         // --interpret-all and --compile-all are mutually exclusive
-        let result = Cli::try_parse_from(&["stratum", "run", "test.strat", "--interpret-all", "--compile-all"]);
+        let result = Cli::try_parse_from(&[
+            "stratum",
+            "run",
+            "test.strat",
+            "--interpret-all",
+            "--compile-all",
+        ]);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_run_with_memory_profile_flag() {
         use clap::Parser as ClapParser;
-        let cli = Cli::try_parse_from(&["stratum", "run", "test.strat", "--memory-profile"]).unwrap();
+        let cli =
+            Cli::try_parse_from(&["stratum", "run", "test.strat", "--memory-profile"]).unwrap();
         match cli.command {
             Some(Commands::Run { memory_profile, .. }) => {
                 assert!(memory_profile);
@@ -1344,9 +1402,15 @@ mod tests {
     #[test]
     fn test_run_with_memory_profile_and_jit() {
         use clap::Parser as ClapParser;
-        let cli = Cli::try_parse_from(&["stratum", "run", "test.strat", "--memory-profile", "--jit"]).unwrap();
+        let cli =
+            Cli::try_parse_from(&["stratum", "run", "test.strat", "--memory-profile", "--jit"])
+                .unwrap();
         match cli.command {
-            Some(Commands::Run { memory_profile, jit, .. }) => {
+            Some(Commands::Run {
+                memory_profile,
+                jit,
+                ..
+            }) => {
                 assert!(memory_profile);
                 assert!(jit);
             }
@@ -1398,7 +1462,12 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "add", "http"]).unwrap();
         match cli.command {
-            Some(Commands::Add { package, dev, build, .. }) => {
+            Some(Commands::Add {
+                package,
+                dev,
+                build,
+                ..
+            }) => {
                 assert_eq!(package, "http");
                 assert!(!dev);
                 assert!(!build);
@@ -1424,7 +1493,12 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "add", "--dev", "test-utils"]).unwrap();
         match cli.command {
-            Some(Commands::Add { package, dev, build, .. }) => {
+            Some(Commands::Add {
+                package,
+                dev,
+                build,
+                ..
+            }) => {
                 assert_eq!(package, "test-utils");
                 assert!(dev);
                 assert!(!build);
@@ -1438,7 +1512,12 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "add", "--build", "build-helper"]).unwrap();
         match cli.command {
-            Some(Commands::Add { package, dev, build, .. }) => {
+            Some(Commands::Add {
+                package,
+                dev,
+                build,
+                ..
+            }) => {
                 assert_eq!(package, "build-helper");
                 assert!(!dev);
                 assert!(build);
@@ -1450,9 +1529,12 @@ mod tests {
     #[test]
     fn test_add_with_features() {
         use clap::Parser as ClapParser;
-        let cli = Cli::try_parse_from(&["stratum", "add", "json", "--features", "pretty,async"]).unwrap();
+        let cli =
+            Cli::try_parse_from(&["stratum", "add", "json", "--features", "pretty,async"]).unwrap();
         match cli.command {
-            Some(Commands::Add { package, features, .. }) => {
+            Some(Commands::Add {
+                package, features, ..
+            }) => {
                 assert_eq!(package, "json");
                 assert_eq!(features, vec!["pretty", "async"]);
             }
@@ -1463,7 +1545,8 @@ mod tests {
     #[test]
     fn test_add_path_dependency() {
         use clap::Parser as ClapParser;
-        let cli = Cli::try_parse_from(&["stratum", "add", "local-lib", "--path", "../local-lib"]).unwrap();
+        let cli = Cli::try_parse_from(&["stratum", "add", "local-lib", "--path", "../local-lib"])
+            .unwrap();
         match cli.command {
             Some(Commands::Add { package, path, .. }) => {
                 assert_eq!(package, "local-lib");
@@ -1477,12 +1560,22 @@ mod tests {
     fn test_add_git_dependency() {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&[
-            "stratum", "add", "remote-lib",
-            "--git", "https://github.com/example/lib",
-            "--branch", "main"
-        ]).unwrap();
+            "stratum",
+            "add",
+            "remote-lib",
+            "--git",
+            "https://github.com/example/lib",
+            "--branch",
+            "main",
+        ])
+        .unwrap();
         match cli.command {
-            Some(Commands::Add { package, git, branch, .. }) => {
+            Some(Commands::Add {
+                package,
+                git,
+                branch,
+                ..
+            }) => {
                 assert_eq!(package, "remote-lib");
                 assert_eq!(git, Some("https://github.com/example/lib".to_string()));
                 assert_eq!(branch, Some("main".to_string()));
@@ -1504,7 +1597,11 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "remove", "http"]).unwrap();
         match cli.command {
-            Some(Commands::Remove { package, dev, build }) => {
+            Some(Commands::Remove {
+                package,
+                dev,
+                build,
+            }) => {
                 assert_eq!(package, "http");
                 assert!(!dev);
                 assert!(!build);
@@ -1518,7 +1615,11 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "remove", "--dev", "test-utils"]).unwrap();
         match cli.command {
-            Some(Commands::Remove { package, dev, build }) => {
+            Some(Commands::Remove {
+                package,
+                dev,
+                build,
+            }) => {
                 assert_eq!(package, "test-utils");
                 assert!(dev);
                 assert!(!build);
@@ -1532,7 +1633,11 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "remove", "--build", "build-helper"]).unwrap();
         match cli.command {
-            Some(Commands::Remove { package, dev, build }) => {
+            Some(Commands::Remove {
+                package,
+                dev,
+                build,
+            }) => {
                 assert_eq!(package, "build-helper");
                 assert!(!dev);
                 assert!(build);
@@ -1546,7 +1651,11 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "update"]).unwrap();
         match cli.command {
-            Some(Commands::Update { packages, dry_run, sync }) => {
+            Some(Commands::Update {
+                packages,
+                dry_run,
+                sync,
+            }) => {
                 assert!(packages.is_empty());
                 assert!(!dry_run);
                 assert!(!sync);
@@ -1560,7 +1669,11 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "update", "http", "json"]).unwrap();
         match cli.command {
-            Some(Commands::Update { packages, dry_run, sync }) => {
+            Some(Commands::Update {
+                packages,
+                dry_run,
+                sync,
+            }) => {
                 assert_eq!(packages, vec!["http", "json"]);
                 assert!(!dry_run);
                 assert!(!sync);
@@ -1574,7 +1687,11 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "update", "--dry-run"]).unwrap();
         match cli.command {
-            Some(Commands::Update { packages, dry_run, sync }) => {
+            Some(Commands::Update {
+                packages,
+                dry_run,
+                sync,
+            }) => {
                 assert!(packages.is_empty());
                 assert!(dry_run);
                 assert!(!sync);
@@ -1588,7 +1705,11 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "update", "--sync"]).unwrap();
         match cli.command {
-            Some(Commands::Update { packages, dry_run, sync }) => {
+            Some(Commands::Update {
+                packages,
+                dry_run,
+                sync,
+            }) => {
                 assert!(packages.is_empty());
                 assert!(!dry_run);
                 assert!(sync);
@@ -1627,7 +1748,14 @@ mod tests {
     #[test]
     fn test_extension_install_with_vsix() {
         use clap::Parser as ClapParser;
-        let cli = Cli::try_parse_from(&["stratum", "extension", "install", "--vsix", "/path/to/ext.vsix"]).unwrap();
+        let cli = Cli::try_parse_from(&[
+            "stratum",
+            "extension",
+            "install",
+            "--vsix",
+            "/path/to/ext.vsix",
+        ])
+        .unwrap();
         match cli.command {
             Some(Commands::Extension(ExtensionCommand::Install { vsix })) => {
                 assert_eq!(vsix, Some(PathBuf::from("/path/to/ext.vsix")));
@@ -1640,14 +1768,20 @@ mod tests {
     fn test_extension_list() {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "extension", "list"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Extension(ExtensionCommand::List))));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Extension(ExtensionCommand::List))
+        ));
     }
 
     #[test]
     fn test_extension_uninstall() {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "extension", "uninstall"]).unwrap();
-        assert!(matches!(cli.command, Some(Commands::Extension(ExtensionCommand::Uninstall))));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Extension(ExtensionCommand::Uninstall))
+        ));
     }
 
     #[test]
@@ -1655,7 +1789,12 @@ mod tests {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&["stratum", "self", "update"]).unwrap();
         match cli.command {
-            Some(Commands::SelfCmd(SelfCommand::Update { force, tier, yes, dry_run })) => {
+            Some(Commands::SelfCmd(SelfCommand::Update {
+                force,
+                tier,
+                yes,
+                dry_run,
+            })) => {
                 assert!(!force);
                 assert!(tier.is_none());
                 assert!(!yes);
@@ -1669,11 +1808,23 @@ mod tests {
     fn test_self_update_with_flags() {
         use clap::Parser as ClapParser;
         let cli = Cli::try_parse_from(&[
-            "stratum", "self", "update",
-            "--force", "--tier", "full", "-y", "--dry-run"
-        ]).unwrap();
+            "stratum",
+            "self",
+            "update",
+            "--force",
+            "--tier",
+            "full",
+            "-y",
+            "--dry-run",
+        ])
+        .unwrap();
         match cli.command {
-            Some(Commands::SelfCmd(SelfCommand::Update { force, tier, yes, dry_run })) => {
+            Some(Commands::SelfCmd(SelfCommand::Update {
+                force,
+                tier,
+                yes,
+                dry_run,
+            })) => {
                 assert!(force);
                 assert_eq!(tier, Some("full".to_string()));
                 assert!(yes);

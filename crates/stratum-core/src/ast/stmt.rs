@@ -19,7 +19,11 @@ impl Stmt {
     /// Create a new statement
     #[must_use]
     pub fn new(kind: StmtKind, span: Span) -> Self {
-        Self { kind, span, trivia: Trivia::empty() }
+        Self {
+            kind,
+            span,
+            trivia: Trivia::empty(),
+        }
     }
 
     /// Create a new statement with trivia

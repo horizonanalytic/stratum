@@ -16,38 +16,37 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 
+use aes_gcm::{
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+    Aes256Gcm, Nonce,
+};
 use base64::Engine;
 use chrono::{DateTime as ChronoDateTime, Datelike, Local, NaiveDateTime, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
+use hex;
 use hmac::{Hmac, Mac};
 use md5::Md5;
+use pbkdf2::pbkdf2_hmac_array;
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 use rand::Rng;
 use regex::{Regex, RegexBuilder};
 use serde_json;
 use sha2::{Digest, Sha256, Sha512};
 use uuid::Uuid;
-use hex;
-use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
-    Aes256Gcm, Nonce,
-};
-use pbkdf2::pbkdf2_hmac_array;
 
 use crate::bytecode::{
-    FutureState, HashableValue, TcpListenerWrapper, TcpStreamWrapper, UdpSocketWrapper,
-    WebSocketWrapper, WebSocketServerWrapper, WebSocketServerConnWrapper, Value,
-    WeakRefValue, XmlDocumentWrapper, ImageWrapper,
+    FutureState, HashableValue, ImageWrapper, TcpListenerWrapper, TcpStreamWrapper,
+    UdpSocketWrapper, Value, WeakRefValue, WebSocketServerConnWrapper, WebSocketServerWrapper,
+    WebSocketWrapper, XmlDocumentWrapper,
 };
-use image::{DynamicImage, ImageFormat, imageops::FilterType};
-use sxd_document::parser as xml_parser;
-use sxd_xpath::{evaluate_xpath, Context, Factory, Value as XPathValue};
-use std::sync::Arc;
 use crate::data::{
     read_csv_with_options, read_json, read_parquet, sql_query, write_csv, write_json,
-    write_parquet, AggOp, AggSpec, CubeBuilder, DataFrame, JoinSpec, Series,
-    SqlContext,
+    write_parquet, AggOp, AggSpec, CubeBuilder, DataFrame, JoinSpec, Series, SqlContext,
 };
+use image::{imageops::FilterType, DynamicImage, ImageFormat};
+use std::sync::Arc;
+use sxd_document::parser as xml_parser;
+use sxd_xpath::{evaluate_xpath, Context, Factory, Value as XPathValue};
 
 /// Result type for native namespace methods
 pub type NativeResult = Result<Value, String>;
@@ -75,7 +74,10 @@ pub fn file_method(method: &str, args: &[Value]) -> NativeResult {
 
 fn file_read_text(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("File.read_text() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "File.read_text() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     fs::read_to_string(&path)
@@ -85,51 +87,63 @@ fn file_read_text(args: &[Value]) -> NativeResult {
 
 fn file_read_bytes(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("File.read_bytes() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "File.read_bytes() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
-    let bytes = fs::read(&path)
-        .map_err(|e| format!("failed to read file '{}': {}", path, e))?;
+    let bytes = fs::read(&path).map_err(|e| format!("failed to read file '{}': {}", path, e))?;
     let values: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
     Ok(Value::list(values))
 }
 
 fn file_read_lines(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("File.read_lines() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "File.read_lines() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("failed to read file '{}': {}", path, e))?;
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("failed to read file '{}': {}", path, e))?;
     let lines: Vec<Value> = content.lines().map(Value::string).collect();
     Ok(Value::list(lines))
 }
 
 fn file_write_text(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("File.write_text() expects 2 arguments, got {}", args.len()));
+        return Err(format!(
+            "File.write_text() expects 2 arguments, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     let content = get_string_arg(&args[1], "content")?;
-    fs::write(&path, &content)
-        .map_err(|e| format!("failed to write file '{}': {}", path, e))?;
+    fs::write(&path, &content).map_err(|e| format!("failed to write file '{}': {}", path, e))?;
     Ok(Value::Null)
 }
 
 fn file_write_bytes(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("File.write_bytes() expects 2 arguments, got {}", args.len()));
+        return Err(format!(
+            "File.write_bytes() expects 2 arguments, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     let bytes = get_bytes_arg(&args[1])?;
-    fs::write(&path, &bytes)
-        .map_err(|e| format!("failed to write file '{}': {}", path, e))?;
+    fs::write(&path, &bytes).map_err(|e| format!("failed to write file '{}': {}", path, e))?;
     Ok(Value::Null)
 }
 
 fn file_append(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("File.append() expects 2 arguments, got {}", args.len()));
+        return Err(format!(
+            "File.append() expects 2 arguments, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     let content = get_string_arg(&args[1], "content")?;
@@ -148,7 +162,10 @@ fn file_append(args: &[Value]) -> NativeResult {
 
 fn file_exists(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("File.exists() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "File.exists() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     Ok(Value::Bool(Path::new(&path).is_file()))
@@ -156,27 +173,35 @@ fn file_exists(args: &[Value]) -> NativeResult {
 
 fn file_size(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("File.size() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "File.size() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
-    let metadata = fs::metadata(&path)
-        .map_err(|e| format!("failed to get metadata for '{}': {}", path, e))?;
+    let metadata =
+        fs::metadata(&path).map_err(|e| format!("failed to get metadata for '{}': {}", path, e))?;
     Ok(Value::Int(metadata.len() as i64))
 }
 
 fn file_delete(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("File.delete() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "File.delete() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
-    fs::remove_file(&path)
-        .map_err(|e| format!("failed to delete file '{}': {}", path, e))?;
+    fs::remove_file(&path).map_err(|e| format!("failed to delete file '{}': {}", path, e))?;
     Ok(Value::Null)
 }
 
 fn file_copy(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("File.copy() expects 2 arguments, got {}", args.len()));
+        return Err(format!(
+            "File.copy() expects 2 arguments, got {}",
+            args.len()
+        ));
     }
     let src = get_string_arg(&args[0], "source")?;
     let dst = get_string_arg(&args[1], "destination")?;
@@ -187,7 +212,10 @@ fn file_copy(args: &[Value]) -> NativeResult {
 
 fn file_rename(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("File.rename() expects 2 arguments, got {}", args.len()));
+        return Err(format!(
+            "File.rename() expects 2 arguments, got {}",
+            args.len()
+        ));
     }
     let src = get_string_arg(&args[0], "source")?;
     let dst = get_string_arg(&args[1], "destination")?;
@@ -217,8 +245,8 @@ fn dir_list(args: &[Value]) -> NativeResult {
         return Err(format!("Dir.list() expects 1 argument, got {}", args.len()));
     }
     let path = get_string_arg(&args[0], "path")?;
-    let entries = fs::read_dir(&path)
-        .map_err(|e| format!("failed to read directory '{}': {}", path, e))?;
+    let entries =
+        fs::read_dir(&path).map_err(|e| format!("failed to read directory '{}': {}", path, e))?;
 
     let mut files: Vec<Value> = Vec::new();
     for entry in entries {
@@ -232,17 +260,22 @@ fn dir_list(args: &[Value]) -> NativeResult {
 
 fn dir_create(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Dir.create() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Dir.create() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
-    fs::create_dir(&path)
-        .map_err(|e| format!("failed to create directory '{}': {}", path, e))?;
+    fs::create_dir(&path).map_err(|e| format!("failed to create directory '{}': {}", path, e))?;
     Ok(Value::Null)
 }
 
 fn dir_create_all(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Dir.create_all() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Dir.create_all() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     fs::create_dir_all(&path)
@@ -252,17 +285,22 @@ fn dir_create_all(args: &[Value]) -> NativeResult {
 
 fn dir_remove(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Dir.remove() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Dir.remove() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
-    fs::remove_dir(&path)
-        .map_err(|e| format!("failed to remove directory '{}': {}", path, e))?;
+    fs::remove_dir(&path).map_err(|e| format!("failed to remove directory '{}': {}", path, e))?;
     Ok(Value::Null)
 }
 
 fn dir_remove_all(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Dir.remove_all() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Dir.remove_all() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     fs::remove_dir_all(&path)
@@ -272,7 +310,10 @@ fn dir_remove_all(args: &[Value]) -> NativeResult {
 
 fn dir_exists(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Dir.exists() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Dir.exists() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     Ok(Value::Bool(Path::new(&path).is_dir()))
@@ -313,7 +354,10 @@ fn path_join(args: &[Value]) -> NativeResult {
 
 fn path_extension(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.extension() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.extension() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     match Path::new(&path).extension() {
@@ -324,7 +368,10 @@ fn path_extension(args: &[Value]) -> NativeResult {
 
 fn path_filename(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.filename() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.filename() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     match Path::new(&path).file_name() {
@@ -335,7 +382,10 @@ fn path_filename(args: &[Value]) -> NativeResult {
 
 fn path_parent(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.parent() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.parent() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     match Path::new(&path).parent() {
@@ -346,7 +396,10 @@ fn path_parent(args: &[Value]) -> NativeResult {
 
 fn path_stem(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.stem() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.stem() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     match Path::new(&path).file_stem() {
@@ -357,7 +410,10 @@ fn path_stem(args: &[Value]) -> NativeResult {
 
 fn path_is_absolute(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.is_absolute() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.is_absolute() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     Ok(Value::Bool(Path::new(&path).is_absolute()))
@@ -365,7 +421,10 @@ fn path_is_absolute(args: &[Value]) -> NativeResult {
 
 fn path_is_relative(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.is_relative() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.is_relative() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     Ok(Value::Bool(Path::new(&path).is_relative()))
@@ -373,7 +432,10 @@ fn path_is_relative(args: &[Value]) -> NativeResult {
 
 fn path_normalize(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.normalize() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.normalize() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     match fs::canonicalize(&path) {
@@ -384,7 +446,10 @@ fn path_normalize(args: &[Value]) -> NativeResult {
 
 fn path_exists(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.exists() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.exists() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     Ok(Value::Bool(Path::new(&path).exists()))
@@ -392,7 +457,10 @@ fn path_exists(args: &[Value]) -> NativeResult {
 
 fn path_is_file(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.is_file() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.is_file() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     Ok(Value::Bool(Path::new(&path).is_file()))
@@ -400,7 +468,10 @@ fn path_is_file(args: &[Value]) -> NativeResult {
 
 fn path_is_dir(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Path.is_dir() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Path.is_dir() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
     Ok(Value::Bool(Path::new(&path).is_dir()))
@@ -423,7 +494,10 @@ pub fn env_method(method: &str, args: &[Value]) -> NativeResult {
 
 fn env_get(args: &[Value]) -> NativeResult {
     if args.is_empty() || args.len() > 2 {
-        return Err(format!("Env.get() expects 1-2 arguments, got {}", args.len()));
+        return Err(format!(
+            "Env.get() expects 1-2 arguments, got {}",
+            args.len()
+        ));
     }
     let name = get_string_arg(&args[0], "name")?;
     match env::var(&name) {
@@ -450,7 +524,10 @@ fn env_set(args: &[Value]) -> NativeResult {
 
 fn env_remove(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Env.remove() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Env.remove() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let name = get_string_arg(&args[0], "name")?;
     env::remove_var(&name);
@@ -502,7 +579,12 @@ fn args_get(args: &[Value]) -> NativeResult {
     }
     let index = match &args[0] {
         Value::Int(i) => *i as usize,
-        _ => return Err(format!("Args.get() expects Int index, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "Args.get() expects Int index, got {}",
+                args[0].type_name()
+            ))
+        }
     };
     let cli_args: Vec<String> = env::args().collect();
     if index < cli_args.len() {
@@ -530,21 +612,31 @@ pub fn shell_method(method: &str, args: &[Value]) -> NativeResult {
 
 fn shell_run(args: &[Value]) -> NativeResult {
     if args.is_empty() || args.len() > 2 {
-        return Err(format!("Shell.run() expects 1-2 arguments, got {}", args.len()));
+        return Err(format!(
+            "Shell.run() expects 1-2 arguments, got {}",
+            args.len()
+        ));
     }
     let program = get_string_arg(&args[0], "program")?;
     let cmd_args: Vec<String> = if args.len() == 2 {
         match &args[1] {
-            Value::List(list) => {
-                list.borrow()
-                    .iter()
-                    .map(|v| match v {
-                        Value::String(s) => Ok(s.to_string()),
-                        _ => Err(format!("Shell.run() argument must be string, got {}", v.type_name())),
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
+            Value::List(list) => list
+                .borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => Ok(s.to_string()),
+                    _ => Err(format!(
+                        "Shell.run() argument must be string, got {}",
+                        v.type_name()
+                    )),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => {
+                return Err(format!(
+                    "Shell.run() expects List as second argument, got {}",
+                    args[1].type_name()
+                ))
             }
-            _ => return Err(format!("Shell.run() expects List as second argument, got {}", args[1].type_name())),
         }
     } else {
         Vec::new()
@@ -581,7 +673,10 @@ fn shell_run(args: &[Value]) -> NativeResult {
 
 fn shell_exec(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Shell.exec() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Shell.exec() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let command = get_string_arg(&args[0], "command")?;
 
@@ -599,12 +694,16 @@ fn shell_exec(args: &[Value]) -> NativeResult {
         .map_err(|e| format!("failed to execute command: {}", e))?;
 
     if output.status.success() {
-        Ok(Value::string(String::from_utf8_lossy(&output.stdout).trim_end()))
+        Ok(Value::string(
+            String::from_utf8_lossy(&output.stdout).trim_end(),
+        ))
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("command failed with exit code {}: {}",
+        Err(format!(
+            "command failed with exit code {}: {}",
             output.status.code().unwrap_or(-1),
-            stderr.trim()))
+            stderr.trim()
+        ))
     }
 }
 
@@ -630,7 +729,9 @@ fn build_http_client(timeout_ms: Option<i64>) -> Result<reqwest::blocking::Clien
     if let Some(ms) = timeout_ms {
         builder = builder.timeout(StdDuration::from_millis(ms as u64));
     }
-    builder.build().map_err(|e| format!("failed to build HTTP client: {}", e))
+    builder
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {}", e))
 }
 
 /// Extract options from a Value::Map (headers, timeout)
@@ -681,7 +782,9 @@ fn response_to_value(response: reqwest::blocking::Response) -> NativeResult {
     }
 
     // Get body text
-    let body = response.text().map_err(|e| format!("failed to read response body: {}", e))?;
+    let body = response
+        .text()
+        .map_err(|e| format!("failed to read response body: {}", e))?;
 
     // Build result map
     let mut result = HashMap::new();
@@ -707,7 +810,10 @@ fn response_to_value(response: reqwest::blocking::Response) -> NativeResult {
 
 fn http_get(args: &[Value]) -> NativeResult {
     if args.is_empty() || args.len() > 2 {
-        return Err(format!("Http.get() expects 1-2 arguments, got {}", args.len()));
+        return Err(format!(
+            "Http.get() expects 1-2 arguments, got {}",
+            args.len()
+        ));
     }
 
     let url = get_string_arg(&args[0], "url")?;
@@ -724,7 +830,8 @@ fn http_get(args: &[Value]) -> NativeResult {
         request = request.header(&name, &value);
     }
 
-    let response = request.send()
+    let response = request
+        .send()
         .map_err(|e| format!("HTTP GET request failed: {}", e))?;
 
     response_to_value(response)
@@ -732,7 +839,10 @@ fn http_get(args: &[Value]) -> NativeResult {
 
 fn http_post(args: &[Value]) -> NativeResult {
     if args.is_empty() || args.len() > 3 {
-        return Err(format!("Http.post() expects 1-3 arguments, got {}", args.len()));
+        return Err(format!(
+            "Http.post() expects 1-3 arguments, got {}",
+            args.len()
+        ));
     }
 
     let url = get_string_arg(&args[0], "url")?;
@@ -754,7 +864,8 @@ fn http_post(args: &[Value]) -> NativeResult {
         request = request.header(&name, &value);
     }
 
-    let response = request.send()
+    let response = request
+        .send()
         .map_err(|e| format!("HTTP POST request failed: {}", e))?;
 
     response_to_value(response)
@@ -762,7 +873,10 @@ fn http_post(args: &[Value]) -> NativeResult {
 
 fn http_put(args: &[Value]) -> NativeResult {
     if args.is_empty() || args.len() > 3 {
-        return Err(format!("Http.put() expects 1-3 arguments, got {}", args.len()));
+        return Err(format!(
+            "Http.put() expects 1-3 arguments, got {}",
+            args.len()
+        ));
     }
 
     let url = get_string_arg(&args[0], "url")?;
@@ -784,7 +898,8 @@ fn http_put(args: &[Value]) -> NativeResult {
         request = request.header(&name, &value);
     }
 
-    let response = request.send()
+    let response = request
+        .send()
         .map_err(|e| format!("HTTP PUT request failed: {}", e))?;
 
     response_to_value(response)
@@ -792,7 +907,10 @@ fn http_put(args: &[Value]) -> NativeResult {
 
 fn http_patch(args: &[Value]) -> NativeResult {
     if args.is_empty() || args.len() > 3 {
-        return Err(format!("Http.patch() expects 1-3 arguments, got {}", args.len()));
+        return Err(format!(
+            "Http.patch() expects 1-3 arguments, got {}",
+            args.len()
+        ));
     }
 
     let url = get_string_arg(&args[0], "url")?;
@@ -814,7 +932,8 @@ fn http_patch(args: &[Value]) -> NativeResult {
         request = request.header(&name, &value);
     }
 
-    let response = request.send()
+    let response = request
+        .send()
         .map_err(|e| format!("HTTP PATCH request failed: {}", e))?;
 
     response_to_value(response)
@@ -822,7 +941,10 @@ fn http_patch(args: &[Value]) -> NativeResult {
 
 fn http_delete(args: &[Value]) -> NativeResult {
     if args.is_empty() || args.len() > 2 {
-        return Err(format!("Http.delete() expects 1-2 arguments, got {}", args.len()));
+        return Err(format!(
+            "Http.delete() expects 1-2 arguments, got {}",
+            args.len()
+        ));
     }
 
     let url = get_string_arg(&args[0], "url")?;
@@ -839,7 +961,8 @@ fn http_delete(args: &[Value]) -> NativeResult {
         request = request.header(&name, &value);
     }
 
-    let response = request.send()
+    let response = request
+        .send()
         .map_err(|e| format!("HTTP DELETE request failed: {}", e))?;
 
     response_to_value(response)
@@ -847,7 +970,10 @@ fn http_delete(args: &[Value]) -> NativeResult {
 
 fn http_head(args: &[Value]) -> NativeResult {
     if args.is_empty() || args.len() > 2 {
-        return Err(format!("Http.head() expects 1-2 arguments, got {}", args.len()));
+        return Err(format!(
+            "Http.head() expects 1-2 arguments, got {}",
+            args.len()
+        ));
     }
 
     let url = get_string_arg(&args[0], "url")?;
@@ -864,7 +990,8 @@ fn http_head(args: &[Value]) -> NativeResult {
         request = request.header(&name, &value);
     }
 
-    let response = request.send()
+    let response = request
+        .send()
         .map_err(|e| format!("HTTP HEAD request failed: {}", e))?;
 
     // For HEAD requests, there's no body
@@ -916,21 +1043,27 @@ pub fn json_method(method: &str, args: &[Value]) -> NativeResult {
 
 fn json_encode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Json.encode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Json.encode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let json_value = value_to_json(&args[0])?;
-    let json_str = serde_json::to_string(&json_value)
-        .map_err(|e| format!("failed to encode JSON: {}", e))?;
+    let json_str =
+        serde_json::to_string(&json_value).map_err(|e| format!("failed to encode JSON: {}", e))?;
     Ok(Value::string(json_str))
 }
 
 fn json_decode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Json.decode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Json.decode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let json_str = get_string_arg(&args[0], "json")?;
-    let json_value: serde_json::Value = serde_json::from_str(&json_str)
-        .map_err(|e| format!("failed to parse JSON: {}", e))?;
+    let json_value: serde_json::Value =
+        serde_json::from_str(&json_str).map_err(|e| format!("failed to parse JSON: {}", e))?;
     json_to_value(&json_value)
 }
 
@@ -939,18 +1072,13 @@ fn value_to_json(value: &Value) -> Result<serde_json::Value, String> {
     match value {
         Value::Null => Ok(serde_json::Value::Null),
         Value::Bool(b) => Ok(serde_json::Value::Bool(*b)),
-        Value::Int(i) => Ok(serde_json::Value::Number(
-            serde_json::Number::from(*i)
-        )),
+        Value::Int(i) => Ok(serde_json::Value::Number(serde_json::Number::from(*i))),
         Value::Float(f) => serde_json::Number::from_f64(*f)
             .map(serde_json::Value::Number)
             .ok_or_else(|| "cannot represent float in JSON (NaN or Infinity)".to_string()),
         Value::String(s) => Ok(serde_json::Value::String(s.to_string())),
         Value::List(list) => {
-            let items: Result<Vec<_>, _> = list.borrow()
-                .iter()
-                .map(value_to_json)
-                .collect();
+            let items: Result<Vec<_>, _> = list.borrow().iter().map(value_to_json).collect();
             Ok(serde_json::Value::Array(items?))
         }
         Value::Map(map) => {
@@ -993,9 +1121,7 @@ fn json_to_value(json: &serde_json::Value) -> NativeResult {
         }
         serde_json::Value::String(s) => Ok(Value::string(s.clone())),
         serde_json::Value::Array(arr) => {
-            let items: Result<Vec<_>, _> = arr.iter()
-                .map(json_to_value)
-                .collect();
+            let items: Result<Vec<_>, _> = arr.iter().map(json_to_value).collect();
             Ok(Value::list(items?))
         }
         serde_json::Value::Object(obj) => {
@@ -1023,21 +1149,27 @@ pub fn toml_method(method: &str, args: &[Value]) -> NativeResult {
 
 fn toml_encode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Toml.encode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Toml.encode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let toml_value = value_to_toml(&args[0])?;
-    let toml_str = toml::to_string(&toml_value)
-        .map_err(|e| format!("failed to encode TOML: {}", e))?;
+    let toml_str =
+        toml::to_string(&toml_value).map_err(|e| format!("failed to encode TOML: {}", e))?;
     Ok(Value::string(toml_str))
 }
 
 fn toml_decode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Toml.decode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Toml.decode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let toml_str = get_string_arg(&args[0], "toml")?;
-    let toml_value: toml::Value = toml::from_str(&toml_str)
-        .map_err(|e| format!("failed to parse TOML: {}", e))?;
+    let toml_value: toml::Value =
+        toml::from_str(&toml_str).map_err(|e| format!("failed to parse TOML: {}", e))?;
     toml_to_value(&toml_value)
 }
 
@@ -1049,10 +1181,7 @@ fn value_to_toml(value: &Value) -> Result<toml::Value, String> {
         Value::Float(f) => Ok(toml::Value::Float(*f)),
         Value::String(s) => Ok(toml::Value::String(s.to_string())),
         Value::List(list) => {
-            let items: Result<Vec<_>, _> = list.borrow()
-                .iter()
-                .map(value_to_toml)
-                .collect();
+            let items: Result<Vec<_>, _> = list.borrow().iter().map(value_to_toml).collect();
             Ok(toml::Value::Array(items?))
         }
         Value::Map(map) => {
@@ -1086,9 +1215,7 @@ fn toml_to_value(toml: &toml::Value) -> NativeResult {
         toml::Value::Float(f) => Ok(Value::Float(*f)),
         toml::Value::String(s) => Ok(Value::string(s.clone())),
         toml::Value::Array(arr) => {
-            let items: Result<Vec<_>, _> = arr.iter()
-                .map(toml_to_value)
-                .collect();
+            let items: Result<Vec<_>, _> = arr.iter().map(toml_to_value).collect();
             Ok(Value::list(items?))
         }
         toml::Value::Table(table) => {
@@ -1117,21 +1244,27 @@ pub fn yaml_method(method: &str, args: &[Value]) -> NativeResult {
 
 fn yaml_encode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Yaml.encode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Yaml.encode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let yaml_value = value_to_yaml(&args[0])?;
-    let yaml_str = serde_yaml::to_string(&yaml_value)
-        .map_err(|e| format!("failed to encode YAML: {}", e))?;
+    let yaml_str =
+        serde_yaml::to_string(&yaml_value).map_err(|e| format!("failed to encode YAML: {}", e))?;
     Ok(Value::string(yaml_str))
 }
 
 fn yaml_decode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Yaml.decode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Yaml.decode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let yaml_str = get_string_arg(&args[0], "yaml")?;
-    let yaml_value: serde_yaml::Value = serde_yaml::from_str(&yaml_str)
-        .map_err(|e| format!("failed to parse YAML: {}", e))?;
+    let yaml_value: serde_yaml::Value =
+        serde_yaml::from_str(&yaml_str).map_err(|e| format!("failed to parse YAML: {}", e))?;
     yaml_to_value(&yaml_value)
 }
 
@@ -1141,15 +1274,10 @@ fn value_to_yaml(value: &Value) -> Result<serde_yaml::Value, String> {
         Value::Null => Ok(serde_yaml::Value::Null),
         Value::Bool(b) => Ok(serde_yaml::Value::Bool(*b)),
         Value::Int(i) => Ok(serde_yaml::Value::Number(serde_yaml::Number::from(*i))),
-        Value::Float(f) => Ok(serde_yaml::Value::Number(
-            serde_yaml::Number::from(*f)
-        )),
+        Value::Float(f) => Ok(serde_yaml::Value::Number(serde_yaml::Number::from(*f))),
         Value::String(s) => Ok(serde_yaml::Value::String(s.to_string())),
         Value::List(list) => {
-            let items: Result<Vec<_>, _> = list.borrow()
-                .iter()
-                .map(value_to_yaml)
-                .collect();
+            let items: Result<Vec<_>, _> = list.borrow().iter().map(value_to_yaml).collect();
             Ok(serde_yaml::Value::Sequence(items?))
         }
         Value::Map(map) => {
@@ -1157,7 +1285,9 @@ fn value_to_yaml(value: &Value) -> Result<serde_yaml::Value, String> {
             for (k, v) in map.borrow().iter() {
                 let key = match k {
                     HashableValue::String(s) => serde_yaml::Value::String(s.to_string()),
-                    HashableValue::Int(i) => serde_yaml::Value::Number(serde_yaml::Number::from(*i)),
+                    HashableValue::Int(i) => {
+                        serde_yaml::Value::Number(serde_yaml::Number::from(*i))
+                    }
                     HashableValue::Bool(b) => serde_yaml::Value::Bool(*b),
                     HashableValue::Null => serde_yaml::Value::Null,
                 };
@@ -1168,10 +1298,7 @@ fn value_to_yaml(value: &Value) -> Result<serde_yaml::Value, String> {
         Value::Struct(s) => {
             let mut mapping = serde_yaml::Mapping::new();
             for (k, v) in s.borrow().fields.iter() {
-                mapping.insert(
-                    serde_yaml::Value::String(k.clone()),
-                    value_to_yaml(v)?
-                );
+                mapping.insert(serde_yaml::Value::String(k.clone()), value_to_yaml(v)?);
             }
             Ok(serde_yaml::Value::Mapping(mapping))
         }
@@ -1195,9 +1322,7 @@ fn yaml_to_value(yaml: &serde_yaml::Value) -> NativeResult {
         }
         serde_yaml::Value::String(s) => Ok(Value::string(s.clone())),
         serde_yaml::Value::Sequence(seq) => {
-            let items: Result<Vec<_>, _> = seq.iter()
-                .map(yaml_to_value)
-                .collect();
+            let items: Result<Vec<_>, _> = seq.iter().map(yaml_to_value).collect();
             Ok(Value::list(items?))
         }
         serde_yaml::Value::Mapping(mapping) => {
@@ -1238,13 +1363,21 @@ pub fn base64_method(method: &str, args: &[Value]) -> NativeResult {
 
 fn base64_encode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Base64.encode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Base64.encode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
 
     let bytes = match &args[0] {
         Value::String(s) => s.as_bytes().to_vec(),
         Value::List(_) => get_bytes_arg(&args[0])?,
-        _ => return Err(format!("Base64.encode() expects String or List<Int>, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "Base64.encode() expects String or List<Int>, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
@@ -1253,7 +1386,10 @@ fn base64_encode(args: &[Value]) -> NativeResult {
 
 fn base64_decode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Base64.decode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Base64.decode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
 
     let encoded = get_string_arg(&args[0], "base64 string")?;
@@ -1265,9 +1401,7 @@ fn base64_decode(args: &[Value]) -> NativeResult {
     match String::from_utf8(bytes.clone()) {
         Ok(s) => Ok(Value::string(s)),
         Err(_) => {
-            let values: Vec<Value> = bytes.into_iter()
-                .map(|b| Value::Int(b as i64))
-                .collect();
+            let values: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
             Ok(Value::list(values))
         }
     }
@@ -1287,7 +1421,10 @@ pub fn url_method(method: &str, args: &[Value]) -> NativeResult {
 
 fn url_encode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Url.encode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Url.encode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
 
     let input = get_string_arg(&args[0], "string")?;
@@ -1297,7 +1434,10 @@ fn url_encode(args: &[Value]) -> NativeResult {
 
 fn url_decode(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Url.decode() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Url.decode() expects 1 argument, got {}",
+            args.len()
+        ));
     }
 
     let input = get_string_arg(&args[0], "encoded string")?;
@@ -1433,8 +1573,12 @@ fn datetime_parse(args: &[Value]) -> NativeResult {
     // Try parsing with format if provided
     if args.len() == 2 {
         let format = get_string_arg(&args[1], "format")?;
-        let naive = NaiveDateTime::parse_from_str(&input, &format)
-            .map_err(|e| format!("failed to parse datetime '{}' with format '{}': {}", input, format, e))?;
+        let naive = NaiveDateTime::parse_from_str(&input, &format).map_err(|e| {
+            format!(
+                "failed to parse datetime '{}' with format '{}': {}",
+                input, format, e
+            )
+        })?;
         let dt = Utc.from_utc_datetime(&naive);
         return Ok(chrono_to_value(&dt, "UTC"));
     }
@@ -1921,7 +2065,10 @@ fn time_sleep_ms(args: &[Value]) -> NativeResult {
 
 fn time_start(args: &[Value]) -> NativeResult {
     if !args.is_empty() {
-        return Err(format!("Time.start() expects 0 arguments, got {}", args.len()));
+        return Err(format!(
+            "Time.start() expects 0 arguments, got {}",
+            args.len()
+        ));
     }
     // Return a timer value with the current instant millis
     let mut map = HashMap::new();
@@ -2139,7 +2286,10 @@ fn regex_find_all(args: &[Value]) -> NativeResult {
 
     let text = get_string_arg(&args[next_idx], "text")?;
 
-    let matches: Vec<Value> = re.find_iter(&text).map(|m| match_to_value(&m, &text)).collect();
+    let matches: Vec<Value> = re
+        .find_iter(&text)
+        .map(|m| match_to_value(&m, &text))
+        .collect();
 
     Ok(Value::list(matches))
 }
@@ -2265,22 +2415,25 @@ fn get_int_arg(value: &Value, name: &str) -> Result<i64, String> {
 fn get_string_arg(value: &Value, name: &str) -> Result<String, String> {
     match value {
         Value::String(s) => Ok(s.to_string()),
-        _ => Err(format!("{} must be String, got {}", name, value.type_name())),
+        _ => Err(format!(
+            "{} must be String, got {}",
+            name,
+            value.type_name()
+        )),
     }
 }
 
 fn get_bytes_arg(value: &Value) -> Result<Vec<u8>, String> {
     match value {
-        Value::List(list) => {
-            list.borrow()
-                .iter()
-                .map(|v| match v {
-                    Value::Int(i) if *i >= 0 && *i <= 255 => Ok(*i as u8),
-                    Value::Int(i) => Err(format!("byte value {} out of range 0-255", i)),
-                    _ => Err(format!("bytes must be Int, got {}", v.type_name())),
-                })
-                .collect()
-        }
+        Value::List(list) => list
+            .borrow()
+            .iter()
+            .map(|v| match v {
+                Value::Int(i) if *i >= 0 && *i <= 255 => Ok(*i as u8),
+                Value::Int(i) => Err(format!("byte value {} out of range 0-255", i)),
+                _ => Err(format!("bytes must be Int, got {}", v.type_name())),
+            })
+            .collect(),
         _ => Err(format!("bytes must be List, got {}", value.type_name())),
     }
 }
@@ -2485,8 +2638,9 @@ fn zip_extract(args: &[Value]) -> NativeResult {
                 .map_err(|e| format!("failed to create directory {:?}: {}", entry_path, e))?;
         } else {
             if let Some(parent) = entry_path.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("failed to create parent directory {:?}: {}", parent, e))?;
+                fs::create_dir_all(parent).map_err(|e| {
+                    format!("failed to create parent directory {:?}: {}", parent, e)
+                })?;
             }
             let mut outfile = File::create(&entry_path)
                 .map_err(|e| format!("failed to create file {:?}: {}", entry_path, e))?;
@@ -2526,8 +2680,8 @@ fn zip_extract_file(args: &[Value]) -> NativeResult {
             .map_err(|e| format!("failed to create parent directory {:?}: {}", parent, e))?;
     }
 
-    let mut outfile =
-        File::create(out_path).map_err(|e| format!("failed to create file {:?}: {}", out_path, e))?;
+    let mut outfile = File::create(out_path)
+        .map_err(|e| format!("failed to create file {:?}: {}", out_path, e))?;
     std::io::copy(&mut entry, &mut outfile)
         .map_err(|e| format!("failed to extract file '{}': {}", entry_name, e))?;
 
@@ -2546,12 +2700,7 @@ fn zip_create(args: &[Value]) -> NativeResult {
     let output_path = get_string_arg(&args[0], "output_path")?;
     let files = match &args[1] {
         Value::List(list) => list.borrow().clone(),
-        _ => {
-            return Err(format!(
-                "files must be List, got {}",
-                args[1].type_name()
-            ))
-        }
+        _ => return Err(format!("files must be List, got {}", args[1].type_name())),
     };
 
     let zip_file = File::create(&output_path)
@@ -2579,8 +2728,8 @@ fn zip_create(args: &[Value]) -> NativeResult {
             .start_file(&entry_name, options)
             .map_err(|e| format!("failed to add '{}' to archive: {}", entry_name, e))?;
 
-        let content = fs::read(path)
-            .map_err(|e| format!("failed to read file '{}': {}", file_path, e))?;
+        let content =
+            fs::read(path).map_err(|e| format!("failed to read file '{}': {}", file_path, e))?;
         zip_writer
             .write_all(&content)
             .map_err(|e| format!("failed to write '{}' to archive: {}", entry_name, e))?;
@@ -2674,7 +2823,10 @@ pub fn hash_method(method: &str, args: &[Value]) -> NativeResult {
 /// Returns hex-encoded SHA-256 hash
 fn hash_sha256(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Hash.sha256() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Hash.sha256() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let data = get_string_arg(&args[0], "data")?;
     let mut hasher = Sha256::new();
@@ -2687,7 +2839,10 @@ fn hash_sha256(args: &[Value]) -> NativeResult {
 /// Hash raw bytes and return hex-encoded result
 fn hash_sha256_bytes(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Hash.sha256_bytes() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Hash.sha256_bytes() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let bytes = get_bytes_arg(&args[0])?;
     let mut hasher = Sha256::new();
@@ -2699,7 +2854,10 @@ fn hash_sha256_bytes(args: &[Value]) -> NativeResult {
 /// Hash.sha512(data: String) -> String
 fn hash_sha512(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Hash.sha512() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Hash.sha512() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let data = get_string_arg(&args[0], "data")?;
     let mut hasher = Sha512::new();
@@ -2711,7 +2869,10 @@ fn hash_sha512(args: &[Value]) -> NativeResult {
 /// Hash.sha512_bytes(data: List<Int>) -> String
 fn hash_sha512_bytes(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Hash.sha512_bytes() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Hash.sha512_bytes() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let bytes = get_bytes_arg(&args[0])?;
     let mut hasher = Sha512::new();
@@ -2736,7 +2897,10 @@ fn hash_md5(args: &[Value]) -> NativeResult {
 /// Hash.md5_bytes(data: List<Int>) -> String
 fn hash_md5_bytes(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Hash.md5_bytes() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Hash.md5_bytes() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let bytes = get_bytes_arg(&args[0])?;
     let mut hasher = Md5::new();
@@ -2748,7 +2912,10 @@ fn hash_md5_bytes(args: &[Value]) -> NativeResult {
 /// Hash.hmac_sha256(key: String, message: String) -> String
 fn hash_hmac_sha256(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("Hash.hmac_sha256() expects 2 arguments, got {}", args.len()));
+        return Err(format!(
+            "Hash.hmac_sha256() expects 2 arguments, got {}",
+            args.len()
+        ));
     }
     let key = get_string_arg(&args[0], "key")?;
     let message = get_string_arg(&args[1], "message")?;
@@ -2764,7 +2931,10 @@ fn hash_hmac_sha256(args: &[Value]) -> NativeResult {
 /// Hash.hmac_sha512(key: String, message: String) -> String
 fn hash_hmac_sha512(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("Hash.hmac_sha512() expects 2 arguments, got {}", args.len()));
+        return Err(format!(
+            "Hash.hmac_sha512() expects 2 arguments, got {}",
+            args.len()
+        ));
     }
     let key = get_string_arg(&args[0], "key")?;
     let message = get_string_arg(&args[1], "message")?;
@@ -2796,11 +2966,16 @@ pub fn crypto_method(method: &str, args: &[Value]) -> NativeResult {
 /// Generates cryptographically secure random bytes using the OS random number generator.
 fn crypto_random_bytes(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Crypto.random_bytes() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Crypto.random_bytes() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let n = get_int_arg(&args[0], "n")?;
     if n < 0 {
-        return Err(format!("Crypto.random_bytes(): n must be non-negative, got {n}"));
+        return Err(format!(
+            "Crypto.random_bytes(): n must be non-negative, got {n}"
+        ));
     }
     if n > 1_000_000 {
         return Err("Crypto.random_bytes(): n too large (max 1000000)".to_string());
@@ -2809,7 +2984,10 @@ fn crypto_random_bytes(args: &[Value]) -> NativeResult {
     use rand::RngCore;
     let mut bytes = vec![0u8; n as usize];
     OsRng.fill_bytes(&mut bytes);
-    let values: Vec<Value> = bytes.into_iter().map(|b| Value::Int(i64::from(b))).collect();
+    let values: Vec<Value> = bytes
+        .into_iter()
+        .map(|b| Value::Int(i64::from(b)))
+        .collect();
     Ok(Value::list(values))
 }
 
@@ -2819,7 +2997,10 @@ fn crypto_random_bytes(args: &[Value]) -> NativeResult {
 /// Returns base64-encoded ciphertext (nonce + ciphertext + auth tag).
 fn crypto_aes_encrypt(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("Crypto.aes_encrypt() expects 2 arguments (data, key), got {}", args.len()));
+        return Err(format!(
+            "Crypto.aes_encrypt() expects 2 arguments (data, key), got {}",
+            args.len()
+        ));
     }
     let data = get_string_arg(&args[0], "data")?;
     let key_str = get_string_arg(&args[1], "key")?;
@@ -2856,7 +3037,9 @@ fn crypto_aes_encrypt(args: &[Value]) -> NativeResult {
     result.extend(ciphertext);
 
     // Return base64-encoded result
-    Ok(Value::string(base64::engine::general_purpose::STANDARD.encode(&result)))
+    Ok(Value::string(
+        base64::engine::general_purpose::STANDARD.encode(&result),
+    ))
 }
 
 /// Crypto.aes_decrypt(encrypted: String, key: String) -> String
@@ -2864,7 +3047,10 @@ fn crypto_aes_encrypt(args: &[Value]) -> NativeResult {
 /// Key must be the same 32-byte key used for encryption.
 fn crypto_aes_decrypt(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("Crypto.aes_decrypt() expects 2 arguments (encrypted, key), got {}", args.len()));
+        return Err(format!(
+            "Crypto.aes_decrypt() expects 2 arguments (encrypted, key), got {}",
+            args.len()
+        ));
     }
     let encrypted_b64 = get_string_arg(&args[0], "encrypted")?;
     let key_str = get_string_arg(&args[1], "key")?;
@@ -2917,7 +3103,10 @@ fn crypto_aes_decrypt(args: &[Value]) -> NativeResult {
 /// Returns hex-encoded 32-byte key suitable for use with aes_encrypt/aes_decrypt.
 fn crypto_pbkdf2(args: &[Value]) -> NativeResult {
     if args.len() != 3 {
-        return Err(format!("Crypto.pbkdf2() expects 3 arguments (password, salt, iterations), got {}", args.len()));
+        return Err(format!(
+            "Crypto.pbkdf2() expects 3 arguments (password, salt, iterations), got {}",
+            args.len()
+        ));
     }
     let password = get_string_arg(&args[0], "password")?;
     let salt = get_string_arg(&args[1], "salt")?;
@@ -2931,11 +3120,8 @@ fn crypto_pbkdf2(args: &[Value]) -> NativeResult {
     }
 
     // Derive 32-byte (256-bit) key using PBKDF2-HMAC-SHA256
-    let key: [u8; 32] = pbkdf2_hmac_array::<Sha256, 32>(
-        password.as_bytes(),
-        salt.as_bytes(),
-        iterations as u32,
-    );
+    let key: [u8; 32] =
+        pbkdf2_hmac_array::<Sha256, 32>(password.as_bytes(), salt.as_bytes(), iterations as u32);
 
     Ok(Value::string(hex::encode(key)))
 }
@@ -2979,11 +3165,13 @@ fn uuid_v7(args: &[Value]) -> NativeResult {
 /// Parse and normalize a UUID string (returns canonical lowercase format)
 fn uuid_parse(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Uuid.parse() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Uuid.parse() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let s = get_string_arg(&args[0], "uuid")?;
-    let id = Uuid::parse_str(&s)
-        .map_err(|e| format!("invalid UUID: {e}"))?;
+    let id = Uuid::parse_str(&s).map_err(|e| format!("invalid UUID: {e}"))?;
     Ok(Value::string(id.to_string()))
 }
 
@@ -2991,7 +3179,10 @@ fn uuid_parse(args: &[Value]) -> NativeResult {
 /// Check if a string is a valid UUID
 fn uuid_is_valid(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Uuid.is_valid() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Uuid.is_valid() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let s = get_string_arg(&args[0], "uuid")?;
     Ok(Value::Bool(Uuid::parse_str(&s).is_ok()))
@@ -3018,7 +3209,10 @@ pub fn random_method(method: &str, args: &[Value]) -> NativeResult {
 /// Generate a random integer in range [min, max] (inclusive)
 fn random_int(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("Random.int() expects 2 arguments (min, max), got {}", args.len()));
+        return Err(format!(
+            "Random.int() expects 2 arguments (min, max), got {}",
+            args.len()
+        ));
     }
     let min = get_int_arg(&args[0], "min")?;
     let max = get_int_arg(&args[1], "max")?;
@@ -3036,7 +3230,10 @@ fn random_int(args: &[Value]) -> NativeResult {
 /// Generate a random float in range [0.0, 1.0)
 fn random_float(args: &[Value]) -> NativeResult {
     if !args.is_empty() {
-        return Err(format!("Random.float() expects 0 arguments, got {}", args.len()));
+        return Err(format!(
+            "Random.float() expects 0 arguments, got {}",
+            args.len()
+        ));
     }
     let mut rng = rand::thread_rng();
     Ok(Value::Float(rng.gen()))
@@ -3046,7 +3243,10 @@ fn random_float(args: &[Value]) -> NativeResult {
 /// Generate a random boolean
 fn random_bool(args: &[Value]) -> NativeResult {
     if !args.is_empty() {
-        return Err(format!("Random.bool() expects 0 arguments, got {}", args.len()));
+        return Err(format!(
+            "Random.bool() expects 0 arguments, got {}",
+            args.len()
+        ));
     }
     let mut rng = rand::thread_rng();
     Ok(Value::Bool(rng.gen()))
@@ -3056,12 +3256,20 @@ fn random_bool(args: &[Value]) -> NativeResult {
 /// Pick a random element from a list
 fn random_choice(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Random.choice() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Random.choice() expects 1 argument, got {}",
+            args.len()
+        ));
     }
 
     let list = match &args[0] {
         Value::List(l) => l.borrow(),
-        _ => return Err(format!("Random.choice() expects List, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "Random.choice() expects List, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     if list.is_empty() {
@@ -3077,12 +3285,20 @@ fn random_choice(args: &[Value]) -> NativeResult {
 /// Return a new list with elements in random order
 fn random_shuffle(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Random.shuffle() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Random.shuffle() expects 1 argument, got {}",
+            args.len()
+        ));
     }
 
     let list = match &args[0] {
         Value::List(l) => l.borrow().clone(),
-        _ => return Err(format!("Random.shuffle() expects List, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "Random.shuffle() expects List, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let mut shuffled = list;
@@ -3101,7 +3317,10 @@ fn random_shuffle(args: &[Value]) -> NativeResult {
 /// Generate n random bytes
 fn random_bytes(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Random.bytes() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Random.bytes() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let n = get_int_arg(&args[0], "n")?;
     if n < 0 {
@@ -3199,7 +3418,10 @@ fn get_float_arg_math(arg: &Value, name: &str) -> Result<f64, String> {
     match arg {
         Value::Int(n) => Ok(*n as f64),
         Value::Float(f) => Ok(*f),
-        _ => Err(format!("{name} must be a number (Int or Float), got {}", arg.type_name())),
+        _ => Err(format!(
+            "{name} must be a number (Int or Float), got {}",
+            arg.type_name()
+        )),
     }
 }
 
@@ -3211,14 +3433,20 @@ fn math_abs(args: &[Value]) -> NativeResult {
     match &args[0] {
         Value::Int(n) => Ok(Value::Int(n.abs())),
         Value::Float(f) => Ok(Value::Float(f.abs())),
-        _ => Err(format!("Math.abs() expects number, got {}", args[0].type_name())),
+        _ => Err(format!(
+            "Math.abs() expects number, got {}",
+            args[0].type_name()
+        )),
     }
 }
 
 /// Math.floor(x) -> Int
 fn math_floor(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.floor() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.floor() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Int(x.floor() as i64))
@@ -3227,7 +3455,10 @@ fn math_floor(args: &[Value]) -> NativeResult {
 /// Math.ceil(x) -> Int
 fn math_ceil(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.ceil() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.ceil() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Int(x.ceil() as i64))
@@ -3236,7 +3467,10 @@ fn math_ceil(args: &[Value]) -> NativeResult {
 /// Math.round(x) -> Int
 fn math_round(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.round() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.round() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Int(x.round() as i64))
@@ -3245,7 +3479,10 @@ fn math_round(args: &[Value]) -> NativeResult {
 /// Math.trunc(x) -> Int
 fn math_trunc(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.trunc() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.trunc() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Int(x.trunc() as i64))
@@ -3254,7 +3491,10 @@ fn math_trunc(args: &[Value]) -> NativeResult {
 /// Math.sign(x) -> Int (-1, 0, or 1)
 fn math_sign(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.sign() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.sign() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     match &args[0] {
         Value::Int(n) => Ok(Value::Int(n.signum())),
@@ -3269,14 +3509,20 @@ fn math_sign(args: &[Value]) -> NativeResult {
                 Ok(Value::Int(0))
             }
         }
-        _ => Err(format!("Math.sign() expects number, got {}", args[0].type_name())),
+        _ => Err(format!(
+            "Math.sign() expects number, got {}",
+            args[0].type_name()
+        )),
     }
 }
 
 /// Math.fract(x) -> Float (fractional part)
 fn math_fract(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.fract() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.fract() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.fract()))
@@ -3314,7 +3560,10 @@ fn math_tan(args: &[Value]) -> NativeResult {
 /// Math.asin(x) -> Float
 fn math_asin(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.asin() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.asin() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.asin()))
@@ -3323,7 +3572,10 @@ fn math_asin(args: &[Value]) -> NativeResult {
 /// Math.acos(x) -> Float
 fn math_acos(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.acos() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.acos() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.acos()))
@@ -3332,7 +3584,10 @@ fn math_acos(args: &[Value]) -> NativeResult {
 /// Math.atan(x) -> Float
 fn math_atan(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.atan() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.atan() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.atan()))
@@ -3341,7 +3596,10 @@ fn math_atan(args: &[Value]) -> NativeResult {
 /// Math.atan2(y, x) -> Float
 fn math_atan2(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("Math.atan2() expects 2 arguments (y, x), got {}", args.len()));
+        return Err(format!(
+            "Math.atan2() expects 2 arguments (y, x), got {}",
+            args.len()
+        ));
     }
     let y = get_float_arg_math(&args[0], "y")?;
     let x = get_float_arg_math(&args[1], "x")?;
@@ -3351,7 +3609,10 @@ fn math_atan2(args: &[Value]) -> NativeResult {
 /// Math.sinh(x) -> Float
 fn math_sinh(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.sinh() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.sinh() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.sinh()))
@@ -3360,7 +3621,10 @@ fn math_sinh(args: &[Value]) -> NativeResult {
 /// Math.cosh(x) -> Float
 fn math_cosh(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.cosh() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.cosh() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.cosh()))
@@ -3369,7 +3633,10 @@ fn math_cosh(args: &[Value]) -> NativeResult {
 /// Math.tanh(x) -> Float
 fn math_tanh(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.tanh() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.tanh() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.tanh()))
@@ -3389,7 +3656,10 @@ fn math_exp(args: &[Value]) -> NativeResult {
 /// Math.exp2(x) -> Float (2^x)
 fn math_exp2(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.exp2() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.exp2() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.exp2()))
@@ -3407,7 +3677,10 @@ fn math_ln(args: &[Value]) -> NativeResult {
 /// Math.log2(x) -> Float
 fn math_log2(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.log2() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.log2() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.log2()))
@@ -3416,7 +3689,10 @@ fn math_log2(args: &[Value]) -> NativeResult {
 /// Math.log10(x) -> Float
 fn math_log10(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.log10() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.log10() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.log10()))
@@ -3425,7 +3701,10 @@ fn math_log10(args: &[Value]) -> NativeResult {
 /// Math.pow(base, exp) -> Float
 fn math_pow(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("Math.pow() expects 2 arguments (base, exp), got {}", args.len()));
+        return Err(format!(
+            "Math.pow() expects 2 arguments (base, exp), got {}",
+            args.len()
+        ));
     }
     let base = get_float_arg_math(&args[0], "base")?;
     let exp = get_float_arg_math(&args[1], "exp")?;
@@ -3435,7 +3714,10 @@ fn math_pow(args: &[Value]) -> NativeResult {
 /// Math.sqrt(x) -> Float
 fn math_sqrt(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.sqrt() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.sqrt() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.sqrt()))
@@ -3444,7 +3726,10 @@ fn math_sqrt(args: &[Value]) -> NativeResult {
 /// Math.cbrt(x) -> Float (cube root)
 fn math_cbrt(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.cbrt() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.cbrt() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     Ok(Value::Float(x.cbrt()))
@@ -3503,21 +3788,28 @@ fn math_max(args: &[Value]) -> NativeResult {
 /// Math.clamp(value, min, max) -> number
 fn math_clamp(args: &[Value]) -> NativeResult {
     if args.len() != 3 {
-        return Err(format!("Math.clamp() expects 3 arguments (value, min, max), got {}", args.len()));
+        return Err(format!(
+            "Math.clamp() expects 3 arguments (value, min, max), got {}",
+            args.len()
+        ));
     }
     let value = get_float_arg_math(&args[0], "value")?;
     let min_val = get_float_arg_math(&args[1], "min")?;
     let max_val = get_float_arg_math(&args[2], "max")?;
 
     if min_val > max_val {
-        return Err(format!("Math.clamp(): min ({min_val}) must be <= max ({max_val})"));
+        return Err(format!(
+            "Math.clamp(): min ({min_val}) must be <= max ({max_val})"
+        ));
     }
 
     let result = value.clamp(min_val, max_val);
 
     // Preserve Int type if all inputs were Int and result is whole
-    if matches!((&args[0], &args[1], &args[2]), (Value::Int(_), Value::Int(_), Value::Int(_)))
-        && result.fract() == 0.0
+    if matches!(
+        (&args[0], &args[1], &args[2]),
+        (Value::Int(_), Value::Int(_), Value::Int(_))
+    ) && result.fract() == 0.0
         && result >= i64::MIN as f64
         && result <= i64::MAX as f64
     {
@@ -3530,7 +3822,10 @@ fn math_clamp(args: &[Value]) -> NativeResult {
 /// Math.hypot(x, y) -> Float (sqrt(x^2 + y^2))
 fn math_hypot(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("Math.hypot() expects 2 arguments (x, y), got {}", args.len()));
+        return Err(format!(
+            "Math.hypot() expects 2 arguments (x, y), got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     let y = get_float_arg_math(&args[1], "y")?;
@@ -3542,7 +3837,10 @@ fn math_hypot(args: &[Value]) -> NativeResult {
 /// Math.to_degrees(radians) -> Float
 fn math_to_degrees(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.to_degrees() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.to_degrees() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let radians = get_float_arg_math(&args[0], "radians")?;
     Ok(Value::Float(radians.to_degrees()))
@@ -3551,7 +3849,10 @@ fn math_to_degrees(args: &[Value]) -> NativeResult {
 /// Math.to_radians(degrees) -> Float
 fn math_to_radians(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.to_radians() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.to_radians() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let degrees = get_float_arg_math(&args[0], "degrees")?;
     Ok(Value::Float(degrees.to_radians()))
@@ -3562,36 +3863,54 @@ fn math_to_radians(args: &[Value]) -> NativeResult {
 /// Math.is_nan(x) -> Bool
 fn math_is_nan(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.is_nan() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.is_nan() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     match &args[0] {
         Value::Float(f) => Ok(Value::Bool(f.is_nan())),
         Value::Int(_) => Ok(Value::Bool(false)),
-        _ => Err(format!("Math.is_nan() expects number, got {}", args[0].type_name())),
+        _ => Err(format!(
+            "Math.is_nan() expects number, got {}",
+            args[0].type_name()
+        )),
     }
 }
 
 /// Math.is_infinite(x) -> Bool
 fn math_is_infinite(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.is_infinite() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.is_infinite() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     match &args[0] {
         Value::Float(f) => Ok(Value::Bool(f.is_infinite())),
         Value::Int(_) => Ok(Value::Bool(false)),
-        _ => Err(format!("Math.is_infinite() expects number, got {}", args[0].type_name())),
+        _ => Err(format!(
+            "Math.is_infinite() expects number, got {}",
+            args[0].type_name()
+        )),
     }
 }
 
 /// Math.is_finite(x) -> Bool
 fn math_is_finite(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.is_finite() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.is_finite() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     match &args[0] {
         Value::Float(f) => Ok(Value::Bool(f.is_finite())),
         Value::Int(_) => Ok(Value::Bool(true)), // Integers are always finite
-        _ => Err(format!("Math.is_finite() expects number, got {}", args[0].type_name())),
+        _ => Err(format!(
+            "Math.is_finite() expects number, got {}",
+            args[0].type_name()
+        )),
     }
 }
 
@@ -3600,16 +3919,18 @@ fn math_is_finite(args: &[Value]) -> NativeResult {
 /// Helper to extract a list of numbers from a Value::List
 fn get_number_list(arg: &Value) -> Result<Vec<f64>, String> {
     match arg {
-        Value::List(list) => {
-            list.borrow()
-                .iter()
-                .map(|v| match v {
-                    Value::Int(n) => Ok(*n as f64),
-                    Value::Float(f) => Ok(*f),
-                    _ => Err(format!("list element must be a number, got {}", v.type_name())),
-                })
-                .collect()
-        }
+        Value::List(list) => list
+            .borrow()
+            .iter()
+            .map(|v| match v {
+                Value::Int(n) => Ok(*n as f64),
+                Value::Float(f) => Ok(*f),
+                _ => Err(format!(
+                    "list element must be a number, got {}",
+                    v.type_name()
+                )),
+            })
+            .collect(),
         _ => Err(format!("expected List, got {}", arg.type_name())),
     }
 }
@@ -3628,7 +3949,10 @@ fn math_sum(args: &[Value]) -> NativeResult {
 /// Calculate the arithmetic mean (average) of numbers in a list
 fn math_mean(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.mean() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.mean() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let numbers = get_number_list(&args[0])?;
     if numbers.is_empty() {
@@ -3642,7 +3966,10 @@ fn math_mean(args: &[Value]) -> NativeResult {
 /// Calculate the median of numbers in a list
 fn math_median(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.median() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.median() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let mut numbers = get_number_list(&args[0])?;
     if numbers.is_empty() {
@@ -3662,7 +3989,10 @@ fn math_median(args: &[Value]) -> NativeResult {
 /// Calculate the population variance of numbers in a list
 fn math_variance(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Math.variance() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Math.variance() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let numbers = get_number_list(&args[0])?;
     if numbers.is_empty() {
@@ -3692,12 +4022,20 @@ fn math_std(args: &[Value]) -> NativeResult {
 /// Round a number to the specified number of decimal places
 fn math_round_to(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("Math.round_to() expects 2 arguments, got {}", args.len()));
+        return Err(format!(
+            "Math.round_to() expects 2 arguments, got {}",
+            args.len()
+        ));
     }
     let x = get_float_arg_math(&args[0], "x")?;
     let decimals = match &args[1] {
         Value::Int(n) => *n,
-        _ => return Err(format!("Math.round_to() decimals must be Int, got {}", args[1].type_name())),
+        _ => {
+            return Err(format!(
+                "Math.round_to() decimals must be Int, got {}",
+                args[1].type_name()
+            ))
+        }
     };
     if decimals < 0 {
         return Err("Math.round_to() decimals must be non-negative".to_string());
@@ -4360,10 +4698,12 @@ fn system_temp_file(args: &[Value]) -> NativeResult {
     }
     // Create a temporary file and return its path
     // The file persists (not auto-deleted) for user to work with
-    let temp_file = tempfile::NamedTempFile::new()
-        .map_err(|e| format!("failed to create temp file: {}", e))?;
+    let temp_file =
+        tempfile::NamedTempFile::new().map_err(|e| format!("failed to create temp file: {}", e))?;
     // Keep the file by converting to path (prevents auto-deletion)
-    let (_, path_buf) = temp_file.keep().map_err(|e| format!("failed to persist temp file: {}", e))?;
+    let (_, path_buf) = temp_file
+        .keep()
+        .map_err(|e| format!("failed to persist temp file: {}", e))?;
     Ok(Value::string(path_buf.to_string_lossy()))
 }
 
@@ -4689,8 +5029,12 @@ fn db_postgres(args: &[Value]) -> NativeResult {
             let port = get_map_int(&map, "port").unwrap_or(5432);
             let user = get_map_string(&map, "user").unwrap_or_else(|| "postgres".to_string());
             let password = get_map_string(&map, "password").unwrap_or_default();
-            let database = get_map_string(&map, "database").unwrap_or_else(|| "postgres".to_string());
-            format!("postgresql://{}:{}@{}:{}/{}", user, password, host, port, database)
+            let database =
+                get_map_string(&map, "database").unwrap_or_else(|| "postgres".to_string());
+            format!(
+                "postgresql://{}:{}@{}:{}/{}",
+                user, password, host, port, database
+            )
         }
         _ => return Err("Db.postgres() expects a URL string or config map".to_string()),
     };
@@ -4732,16 +5076,18 @@ fn db_mysql(args: &[Value]) -> NativeResult {
             if database.is_empty() {
                 format!("mysql://{}:{}@{}:{}", user, password, host, port)
             } else {
-                format!("mysql://{}:{}@{}:{}/{}", user, password, host, port, database)
+                format!(
+                    "mysql://{}:{}@{}:{}/{}",
+                    user, password, host, port, database
+                )
             }
         }
         _ => return Err("Db.mysql() expects a URL string or config map".to_string()),
     };
 
-    let opts = mysql::Opts::from_url(&url)
-        .map_err(|e| format!("invalid MySQL URL: {}", e))?;
-    let mut conn = mysql::Conn::new(opts)
-        .map_err(|e| format!("failed to connect to MySQL: {}", e))?;
+    let opts = mysql::Opts::from_url(&url).map_err(|e| format!("invalid MySQL URL: {}", e))?;
+    let mut conn =
+        mysql::Conn::new(opts).map_err(|e| format!("failed to connect to MySQL: {}", e))?;
 
     // Get version
     let version: String = conn
@@ -4959,7 +5305,9 @@ fn db_tables(conn: &Arc<DbConnection>) -> NativeResult {
             let rows = c
                 .query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", &[])
                 .map_err(|e| format!("failed to list tables: {}", e))?;
-            rows.iter().map(|row| Value::string(row.get::<_, String>(0))).collect()
+            rows.iter()
+                .map(|row| Value::string(row.get::<_, String>(0)))
+                .collect()
         }
         DbConnectionKind::MySql(c) => {
             let mut c = c.lock().map_err(|_| "failed to lock connection")?;
@@ -5000,8 +5348,8 @@ fn db_columns(conn: &Arc<DbConnection>, args: &[Value]) -> NativeResult {
             let rows = stmt
                 .query_map([], |row| {
                     Ok((
-                        row.get::<_, String>(1)?,  // name
-                        row.get::<_, String>(2)?,  // type
+                        row.get::<_, String>(1)?,   // name
+                        row.get::<_, String>(2)?,   // type
                         row.get::<_, i32>(3)? == 0, // nullable (notnull=0 means nullable)
                         row.get::<_, i32>(5)? == 1, // primary_key
                     ))
@@ -5077,7 +5425,9 @@ fn db_columns(conn: &Arc<DbConnection>, args: &[Value]) -> NativeResult {
                 })
                 .map_err(|e| format!("failed to get columns: {}", e))?;
             rows.filter_map(Result::ok)
-                .map(|(name, type_, nullable, pk)| column_to_map(name, type_, nullable == "YES", pk))
+                .map(|(name, type_, nullable, pk)| {
+                    column_to_map(name, type_, nullable == "YES", pk)
+                })
                 .collect()
         }
     };
@@ -5164,12 +5514,7 @@ fn db_table_exists(conn: &Arc<DbConnection>, args: &[Value]) -> NativeResult {
 
 fn extract_params(value: &Value) -> Result<Vec<DbParam>, String> {
     match value {
-        Value::List(list) => {
-            list.borrow()
-                .iter()
-                .map(value_to_param)
-                .collect()
-        }
+        Value::List(list) => list.borrow().iter().map(value_to_param).collect(),
         _ => Err("parameters must be a List".to_string()),
     }
 }
@@ -5205,16 +5550,10 @@ fn sqlite_query(
 ) -> NativeResult {
     let conn = conn.lock().map_err(|_| "failed to lock connection")?;
 
-    let mut stmt = conn
-        .prepare(sql)
-        .map_err(|e| format!("SQL error: {}", e))?;
+    let mut stmt = conn.prepare(sql).map_err(|e| format!("SQL error: {}", e))?;
 
     // Get column names
-    let column_names: Vec<String> = stmt
-        .column_names()
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let column_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
 
     // Convert params
     let sqlite_params: Vec<rusqlite::types::Value> = params
@@ -5238,18 +5577,13 @@ fn sqlite_query(
             let mut map = HashMap::new();
             for (i, name) in column_names.iter().enumerate() {
                 let value = sqlite_value_to_stratum(row.get_ref(i)?);
-                map.insert(
-                    HashableValue::String(Rc::new(name.clone())),
-                    value,
-                );
+                map.insert(HashableValue::String(Rc::new(name.clone())), value);
             }
             Ok(Value::Map(Rc::new(RefCell::new(map))))
         })
         .map_err(|e| format!("query error: {}", e))?;
 
-    let results: Vec<Value> = rows
-        .filter_map(Result::ok)
-        .collect();
+    let results: Vec<Value> = rows.filter_map(Result::ok).collect();
 
     Ok(Value::list(results))
 }
@@ -5386,24 +5720,35 @@ fn postgres_row_to_stratum(row: &postgres::Row) -> Value {
     Value::Map(Rc::new(RefCell::new(map)))
 }
 
-fn postgres_column_to_stratum(row: &postgres::Row, idx: usize, type_: &postgres::types::Type) -> Value {
+fn postgres_column_to_stratum(
+    row: &postgres::Row,
+    idx: usize,
+    type_: &postgres::types::Type,
+) -> Value {
     use postgres::types::Type;
 
     // Try to get as the appropriate type based on the column type
     match *type_ {
-        Type::BOOL => row.get::<_, Option<bool>>(idx)
+        Type::BOOL => row
+            .get::<_, Option<bool>>(idx)
             .map_or(Value::Null, Value::Bool),
-        Type::INT2 => row.get::<_, Option<i16>>(idx)
+        Type::INT2 => row
+            .get::<_, Option<i16>>(idx)
             .map_or(Value::Null, |v| Value::Int(v as i64)),
-        Type::INT4 => row.get::<_, Option<i32>>(idx)
+        Type::INT4 => row
+            .get::<_, Option<i32>>(idx)
             .map_or(Value::Null, |v| Value::Int(v as i64)),
-        Type::INT8 => row.get::<_, Option<i64>>(idx)
+        Type::INT8 => row
+            .get::<_, Option<i64>>(idx)
             .map_or(Value::Null, Value::Int),
-        Type::FLOAT4 => row.get::<_, Option<f32>>(idx)
+        Type::FLOAT4 => row
+            .get::<_, Option<f32>>(idx)
             .map_or(Value::Null, |v| Value::Float(v as f64)),
-        Type::FLOAT8 => row.get::<_, Option<f64>>(idx)
+        Type::FLOAT8 => row
+            .get::<_, Option<f64>>(idx)
             .map_or(Value::Null, Value::Float),
-        Type::TEXT | Type::VARCHAR | Type::CHAR | Type::NAME => row.get::<_, Option<String>>(idx)
+        Type::TEXT | Type::VARCHAR | Type::CHAR | Type::NAME => row
+            .get::<_, Option<String>>(idx)
             .map_or(Value::Null, Value::string),
         _ => {
             // Try as string for unknown types
@@ -5440,10 +5785,7 @@ fn mysql_query(
         .exec(sql, mysql::Params::Positional(mysql_params))
         .map_err(|e| format!("query error: {}", e))?;
 
-    let results: Vec<Value> = rows
-        .iter()
-        .map(mysql_row_to_stratum)
-        .collect();
+    let results: Vec<Value> = rows.iter().map(mysql_row_to_stratum).collect();
 
     Ok(Value::list(results))
 }
@@ -5478,7 +5820,8 @@ fn mysql_row_to_stratum(row: &mysql::Row) -> Value {
 
     for (i, column) in row.columns_ref().iter().enumerate() {
         let name = column.name_str().to_string();
-        let value = mysql_value_to_stratum(row.get::<mysql::Value, _>(i).unwrap_or(mysql::Value::NULL));
+        let value =
+            mysql_value_to_stratum(row.get::<mysql::Value, _>(i).unwrap_or(mysql::Value::NULL));
         map.insert(HashableValue::String(Rc::new(name)), value);
     }
 
@@ -5499,9 +5842,10 @@ fn mysql_value_to_stratum(value: mysql::Value) -> Value {
         mysql::Value::UInt(u) => Value::Int(u as i64),
         mysql::Value::Float(f) => Value::Float(f as f64),
         mysql::Value::Double(d) => Value::Float(d),
-        mysql::Value::Date(y, m, d, h, mi, s, _us) => {
-            Value::string(format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, m, d, h, mi, s))
-        }
+        mysql::Value::Date(y, m, d, h, mi, s, _us) => Value::string(format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            y, m, d, h, mi, s
+        )),
         mysql::Value::Time(neg, d, h, mi, s, _us) => {
             let sign = if neg { "-" } else { "" };
             let total_hours = d * 24 + u32::from(h);
@@ -5521,9 +5865,7 @@ fn duckdb_query(
 ) -> NativeResult {
     let conn = conn.lock().map_err(|_| "failed to lock connection")?;
 
-    let mut stmt = conn
-        .prepare(sql)
-        .map_err(|e| format!("SQL error: {}", e))?;
+    let mut stmt = conn.prepare(sql).map_err(|e| format!("SQL error: {}", e))?;
 
     // Convert params
     let duckdb_params: Vec<duckdb::types::Value> = params
@@ -5550,14 +5892,14 @@ fn duckdb_query(
             let col_count = stmt_ref.column_count();
             let mut map: HashMap<HashableValue, Value> = HashMap::new();
             for i in 0..col_count {
-                let name = stmt_ref.column_name(i)
+                let name = stmt_ref
+                    .column_name(i)
                     .map(|s| s.to_string())
                     .unwrap_or_else(|_| format!("col{}", i));
-                let value = duckdb_value_to_stratum(row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null));
-                map.insert(
-                    HashableValue::String(Rc::new(name)),
-                    value,
+                let value = duckdb_value_to_stratum(
+                    row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null),
                 );
+                map.insert(HashableValue::String(Rc::new(name)), value);
             }
             Ok(Value::Map(Rc::new(RefCell::new(map))))
         })
@@ -5615,9 +5957,7 @@ fn duckdb_value_to_stratum(value: duckdb::types::ValueRef<'_>) -> Value {
         ValueRef::Float(f) => Value::Float(f as f64),
         ValueRef::Double(f) => Value::Float(f),
         ValueRef::Text(s) => Value::string(String::from_utf8_lossy(s)),
-        ValueRef::Blob(b) => {
-            Value::list(b.iter().map(|&byte| Value::Int(byte as i64)).collect())
-        }
+        ValueRef::Blob(b) => Value::list(b.iter().map(|&byte| Value::Int(byte as i64)).collect()),
         _ => Value::Null, // For unsupported types like Date, Time, Timestamp, etc.
     }
 }
@@ -5710,10 +6050,12 @@ fn async_all(args: &[Value]) -> NativeResult {
             }
             Value::List(Rc::new(RefCell::new(items.clone())))
         }
-        _ => return Err(format!(
-            "Async.all() expects List<Future>, got {}",
-            args[0].type_name()
-        )),
+        _ => {
+            return Err(format!(
+                "Async.all() expects List<Future>, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let future = FutureState::pending_with_metadata(futures, "all".to_string());
@@ -5744,10 +6086,12 @@ fn async_race(args: &[Value]) -> NativeResult {
             }
             Value::List(Rc::new(RefCell::new(items.clone())))
         }
-        _ => return Err(format!(
-            "Async.race() expects List<Future>, got {}",
-            args[0].type_name()
-        )),
+        _ => {
+            return Err(format!(
+                "Async.race() expects List<Future>, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let future = FutureState::pending_with_metadata(futures, "race".to_string());
@@ -5763,19 +6107,23 @@ fn async_timeout(args: &[Value]) -> NativeResult {
 
     let inner_future = match &args[0] {
         Value::Future(_) => args[0].clone(),
-        _ => return Err(format!(
-            "Async.timeout() first argument must be Future, got {}",
-            args[0].type_name()
-        )),
+        _ => {
+            return Err(format!(
+                "Async.timeout() first argument must be Future, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let timeout_ms = match &args[1] {
         Value::Int(ms) if *ms >= 0 => *ms,
         Value::Int(ms) => return Err(format!("Async.timeout() ms must be non-negative, got {ms}")),
-        _ => return Err(format!(
-            "Async.timeout() second argument must be Int (ms), got {}",
-            args[1].type_name()
-        )),
+        _ => {
+            return Err(format!(
+                "Async.timeout() second argument must be Int (ms), got {}",
+                args[1].type_name()
+            ))
+        }
     };
 
     // Store both the future and timeout in a map
@@ -5803,10 +6151,12 @@ fn async_spawn(args: &[Value]) -> NativeResult {
 
     let closure = match &args[0] {
         Value::Closure(_) => args[0].clone(),
-        _ => return Err(format!(
-            "Async.spawn() expects a closure, got {}",
-            args[0].type_name()
-        )),
+        _ => {
+            return Err(format!(
+                "Async.spawn() expects a closure, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let future = FutureState::pending_with_metadata(closure, "spawn".to_string());
@@ -5829,18 +6179,31 @@ pub fn tcp_method(method: &str, args: &[Value]) -> NativeResult {
 /// Returns a Future<TcpStream>
 fn tcp_connect(args: &[Value]) -> NativeResult {
     if args.len() < 2 {
-        return Err(format!("Tcp.connect() expects 2 arguments (host, port), got {}", args.len()));
+        return Err(format!(
+            "Tcp.connect() expects 2 arguments (host, port), got {}",
+            args.len()
+        ));
     }
 
     let host = match &args[0] {
         Value::String(s) => (**s).clone(),
-        _ => return Err(format!("Tcp.connect() host must be String, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "Tcp.connect() host must be String, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let port = match &args[1] {
         Value::Int(p) if *p > 0 && *p <= 65535 => *p as u16,
         Value::Int(p) => return Err(format!("Tcp.connect() port must be 1-65535, got {p}")),
-        _ => return Err(format!("Tcp.connect() port must be Int, got {}", args[1].type_name())),
+        _ => {
+            return Err(format!(
+                "Tcp.connect() port must be Int, got {}",
+                args[1].type_name()
+            ))
+        }
     };
 
     // Store host:port as metadata for the executor to use
@@ -5853,18 +6216,31 @@ fn tcp_connect(args: &[Value]) -> NativeResult {
 /// Returns a Future<TcpListener>
 fn tcp_listen(args: &[Value]) -> NativeResult {
     if args.len() < 2 {
-        return Err(format!("Tcp.listen() expects 2 arguments (addr, port), got {}", args.len()));
+        return Err(format!(
+            "Tcp.listen() expects 2 arguments (addr, port), got {}",
+            args.len()
+        ));
     }
 
     let addr = match &args[0] {
         Value::String(s) => (**s).clone(),
-        _ => return Err(format!("Tcp.listen() addr must be String, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "Tcp.listen() addr must be String, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let port = match &args[1] {
         Value::Int(p) if *p >= 0 && *p <= 65535 => *p as u16,
         Value::Int(p) => return Err(format!("Tcp.listen() port must be 0-65535, got {p}")),
-        _ => return Err(format!("Tcp.listen() port must be Int, got {}", args[1].type_name())),
+        _ => {
+            return Err(format!(
+                "Tcp.listen() port must be Int, got {}",
+                args[1].type_name()
+            ))
+        }
     };
 
     // Store addr:port as metadata for the executor to use
@@ -5874,7 +6250,11 @@ fn tcp_listen(args: &[Value]) -> NativeResult {
 }
 
 /// Methods on TcpStream value type
-pub fn tcp_stream_method(stream: &Arc<TcpStreamWrapper>, method: &str, args: &[Value]) -> NativeResult {
+pub fn tcp_stream_method(
+    stream: &Arc<TcpStreamWrapper>,
+    method: &str,
+    args: &[Value],
+) -> NativeResult {
     match method {
         "read" => tcp_stream_read(stream, args),
         "read_exact" => tcp_stream_read_exact(stream, args),
@@ -5894,16 +6274,30 @@ fn tcp_stream_read(stream: &Arc<TcpStreamWrapper>, args: &[Value]) -> NativeResu
         match &args[0] {
             Value::Int(n) if *n > 0 => *n as usize,
             Value::Int(n) => return Err(format!("read max_bytes must be positive, got {n}")),
-            _ => return Err(format!("read max_bytes must be Int, got {}", args[0].type_name())),
+            _ => {
+                return Err(format!(
+                    "read max_bytes must be Int, got {}",
+                    args[0].type_name()
+                ))
+            }
         }
     };
 
     // Create metadata with stream reference and buffer size
     let metadata = Value::Map(Rc::new(RefCell::new({
         let mut m = HashMap::new();
-        m.insert(HashableValue::String(Rc::new("stream_addr".into())), Value::string(&stream.local_addr));
-        m.insert(HashableValue::String(Rc::new("peer_addr".into())), Value::string(&stream.peer_addr));
-        m.insert(HashableValue::String(Rc::new("max_bytes".into())), Value::Int(max_bytes as i64));
+        m.insert(
+            HashableValue::String(Rc::new("stream_addr".into())),
+            Value::string(&stream.local_addr),
+        );
+        m.insert(
+            HashableValue::String(Rc::new("peer_addr".into())),
+            Value::string(&stream.peer_addr),
+        );
+        m.insert(
+            HashableValue::String(Rc::new("max_bytes".into())),
+            Value::Int(max_bytes as i64),
+        );
         m
     })));
 
@@ -5933,13 +6327,21 @@ fn tcp_stream_read_exact(stream: &Arc<TcpStreamWrapper>, args: &[Value]) -> Nati
     let num_bytes = match &args[0] {
         Value::Int(n) if *n > 0 => *n as usize,
         Value::Int(n) => return Err(format!("read_exact num_bytes must be positive, got {n}")),
-        _ => return Err(format!("read_exact num_bytes must be Int, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "read_exact num_bytes must be Int, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let future = FutureState::pending_with_metadata(
         Value::Map(Rc::new(RefCell::new({
             let mut m = HashMap::new();
-            m.insert(HashableValue::String(Rc::new("num_bytes".into())), Value::Int(num_bytes as i64));
+            m.insert(
+                HashableValue::String(Rc::new("num_bytes".into())),
+                Value::Int(num_bytes as i64),
+            );
             m
         }))),
         "tcp_read_exact".to_string(),
@@ -5960,7 +6362,12 @@ fn tcp_stream_write(stream: &Arc<TcpStreamWrapper>, args: &[Value]) -> NativeRes
     let data = match &args[0] {
         Value::String(s) => Value::String(Rc::clone(s)),
         Value::List(l) => Value::List(Rc::clone(l)),
-        _ => return Err(format!("write data must be String or List, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "write data must be String or List, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     // Store stream in metadata, data in result for the executor to use
@@ -5980,7 +6387,11 @@ fn tcp_stream_close(_stream: &Arc<TcpStreamWrapper>) -> NativeResult {
 }
 
 /// Methods on TcpListener value type
-pub fn tcp_listener_method(listener: &Arc<TcpListenerWrapper>, method: &str, _args: &[Value]) -> NativeResult {
+pub fn tcp_listener_method(
+    listener: &Arc<TcpListenerWrapper>,
+    method: &str,
+    _args: &[Value],
+) -> NativeResult {
     match method {
         "accept" => tcp_listener_accept(listener),
         "local_addr" => Ok(Value::string(&listener.local_addr)),
@@ -6012,18 +6423,31 @@ pub fn udp_method(method: &str, args: &[Value]) -> NativeResult {
 /// Udp.bind(addr, port) - Create a UDP socket bound to the given address (async)
 fn udp_bind(args: &[Value]) -> NativeResult {
     if args.len() < 2 {
-        return Err(format!("Udp.bind() expects 2 arguments (addr, port), got {}", args.len()));
+        return Err(format!(
+            "Udp.bind() expects 2 arguments (addr, port), got {}",
+            args.len()
+        ));
     }
 
     let addr = match &args[0] {
         Value::String(s) => (**s).clone(),
-        _ => return Err(format!("Udp.bind() addr must be String, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "Udp.bind() addr must be String, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let port = match &args[1] {
         Value::Int(p) if *p >= 0 && *p <= 65535 => *p as u16,
         Value::Int(p) => return Err(format!("Udp.bind() port must be 0-65535, got {p}")),
-        _ => return Err(format!("Udp.bind() port must be Int, got {}", args[1].type_name())),
+        _ => {
+            return Err(format!(
+                "Udp.bind() port must be Int, got {}",
+                args[1].type_name()
+            ))
+        }
     };
 
     let metadata = Value::string(format!("{addr}:{port}"));
@@ -6032,7 +6456,11 @@ fn udp_bind(args: &[Value]) -> NativeResult {
 }
 
 /// Methods on UdpSocket value type
-pub fn udp_socket_method(socket: &Arc<UdpSocketWrapper>, method: &str, args: &[Value]) -> NativeResult {
+pub fn udp_socket_method(
+    socket: &Arc<UdpSocketWrapper>,
+    method: &str,
+    args: &[Value],
+) -> NativeResult {
     match method {
         "send_to" => udp_socket_send_to(socket, args),
         "recv_from" => udp_socket_recv_from(socket, args),
@@ -6045,31 +6473,52 @@ pub fn udp_socket_method(socket: &Arc<UdpSocketWrapper>, method: &str, args: &[V
 /// socket.send_to(data, host, port) - Send data to a specific address (async)
 fn udp_socket_send_to(socket: &Arc<UdpSocketWrapper>, args: &[Value]) -> NativeResult {
     if args.len() < 3 {
-        return Err(format!("send_to expects 3 arguments (data, host, port), got {}", args.len()));
+        return Err(format!(
+            "send_to expects 3 arguments (data, host, port), got {}",
+            args.len()
+        ));
     }
 
     let data = match &args[0] {
         Value::String(s) => Value::String(Rc::clone(s)),
         Value::List(l) => Value::List(Rc::clone(l)),
-        _ => return Err(format!("send_to data must be String or List, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "send_to data must be String or List, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let host = match &args[1] {
         Value::String(s) => (**s).clone(),
-        _ => return Err(format!("send_to host must be String, got {}", args[1].type_name())),
+        _ => {
+            return Err(format!(
+                "send_to host must be String, got {}",
+                args[1].type_name()
+            ))
+        }
     };
 
     let port = match &args[2] {
         Value::Int(p) if *p > 0 && *p <= 65535 => *p as u16,
         Value::Int(p) => return Err(format!("send_to port must be 1-65535, got {p}")),
-        _ => return Err(format!("send_to port must be Int, got {}", args[2].type_name())),
+        _ => {
+            return Err(format!(
+                "send_to port must be Int, got {}",
+                args[2].type_name()
+            ))
+        }
     };
 
     // Store socket in metadata, data/addr map in result for the executor
     let data_map = Value::Map(Rc::new(RefCell::new({
         let mut m = HashMap::new();
         m.insert(HashableValue::String(Rc::new("data".into())), data);
-        m.insert(HashableValue::String(Rc::new("addr".into())), Value::string(format!("{host}:{port}")));
+        m.insert(
+            HashableValue::String(Rc::new("addr".into())),
+            Value::string(format!("{host}:{port}")),
+        );
         m
     })));
 
@@ -6090,7 +6539,12 @@ fn udp_socket_recv_from(socket: &Arc<UdpSocketWrapper>, args: &[Value]) -> Nativ
         match &args[0] {
             Value::Int(n) if *n > 0 => *n as usize,
             Value::Int(n) => return Err(format!("recv_from max_bytes must be positive, got {n}")),
-            _ => return Err(format!("recv_from max_bytes must be Int, got {}", args[0].type_name())),
+            _ => {
+                return Err(format!(
+                    "recv_from max_bytes must be Int, got {}",
+                    args[0].type_name()
+                ))
+            }
         }
     };
 
@@ -6124,12 +6578,19 @@ fn ws_connect(args: &[Value]) -> NativeResult {
 
     let url = match &args[0] {
         Value::String(s) => (**s).clone(),
-        _ => return Err(format!("WebSocket.connect() url must be String, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "WebSocket.connect() url must be String, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     // Validate URL scheme
     if !url.starts_with("ws://") && !url.starts_with("wss://") {
-        return Err(format!("WebSocket.connect() url must start with ws:// or wss://, got '{url}'"));
+        return Err(format!(
+            "WebSocket.connect() url must start with ws:// or wss://, got '{url}'"
+        ));
     }
 
     // Store URL as metadata for the executor to use
@@ -6142,18 +6603,31 @@ fn ws_connect(args: &[Value]) -> NativeResult {
 /// Returns a Future<WebSocketServer>
 fn ws_listen(args: &[Value]) -> NativeResult {
     if args.len() < 2 {
-        return Err(format!("WebSocket.listen() expects 2 arguments (addr, port), got {}", args.len()));
+        return Err(format!(
+            "WebSocket.listen() expects 2 arguments (addr, port), got {}",
+            args.len()
+        ));
     }
 
     let addr = match &args[0] {
         Value::String(s) => (**s).clone(),
-        _ => return Err(format!("WebSocket.listen() addr must be String, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "WebSocket.listen() addr must be String, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let port = match &args[1] {
         Value::Int(p) if *p >= 0 && *p <= 65535 => *p as u16,
         Value::Int(p) => return Err(format!("WebSocket.listen() port must be 0-65535, got {p}")),
-        _ => return Err(format!("WebSocket.listen() port must be Int, got {}", args[1].type_name())),
+        _ => {
+            return Err(format!(
+                "WebSocket.listen() port must be Int, got {}",
+                args[1].type_name()
+            ))
+        }
     };
 
     // Store addr:port as metadata for the executor to use
@@ -6189,14 +6663,17 @@ fn ws_send(ws: &Arc<WebSocketWrapper>, args: &[Value]) -> NativeResult {
     let message = match &args[0] {
         Value::String(s) => Value::String(Rc::clone(s)),
         Value::List(l) => Value::List(Rc::clone(l)), // Binary data as list of bytes
-        _ => return Err(format!("send message must be String or List of bytes, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "send message must be String or List of bytes, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     // Store WebSocket in metadata, message in result
-    let mut future = FutureState::pending_with_metadata(
-        Value::WebSocket(Arc::clone(ws)),
-        "ws_send".to_string(),
-    );
+    let mut future =
+        FutureState::pending_with_metadata(Value::WebSocket(Arc::clone(ws)), "ws_send".to_string());
     future.result = Some(message);
     Ok(Value::Future(Rc::new(RefCell::new(future))))
 }
@@ -6213,7 +6690,12 @@ fn ws_send_text(ws: &Arc<WebSocketWrapper>, args: &[Value]) -> NativeResult {
 
     let text = match &args[0] {
         Value::String(s) => Value::String(Rc::clone(s)),
-        _ => return Err(format!("send_text message must be String, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "send_text message must be String, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let mut future = FutureState::pending_with_metadata(
@@ -6236,7 +6718,12 @@ fn ws_send_binary(ws: &Arc<WebSocketWrapper>, args: &[Value]) -> NativeResult {
 
     let data = match &args[0] {
         Value::List(l) => Value::List(Rc::clone(l)),
-        _ => return Err(format!("send_binary data must be List of bytes, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "send_binary data must be List of bytes, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let mut future = FutureState::pending_with_metadata(
@@ -6275,7 +6762,11 @@ fn ws_close(ws: &Arc<WebSocketWrapper>) -> NativeResult {
 }
 
 /// Methods on WebSocketServer value type
-pub fn websocket_server_method(server: &Arc<WebSocketServerWrapper>, method: &str, _args: &[Value]) -> NativeResult {
+pub fn websocket_server_method(
+    server: &Arc<WebSocketServerWrapper>,
+    method: &str,
+    _args: &[Value],
+) -> NativeResult {
     match method {
         "accept" => ws_server_accept(server),
         "local_addr" | "addr" => Ok(Value::string(&server.local_addr)),
@@ -6295,7 +6786,11 @@ fn ws_server_accept(server: &Arc<WebSocketServerWrapper>) -> NativeResult {
 }
 
 /// Methods on WebSocketServerConn value type (accepted connection from server)
-pub fn websocket_server_conn_method(conn: &Arc<WebSocketServerConnWrapper>, method: &str, args: &[Value]) -> NativeResult {
+pub fn websocket_server_conn_method(
+    conn: &Arc<WebSocketServerConnWrapper>,
+    method: &str,
+    args: &[Value],
+) -> NativeResult {
     match method {
         "send" => ws_conn_send(conn, args),
         "send_text" => ws_conn_send_text(conn, args),
@@ -6322,7 +6817,12 @@ fn ws_conn_send(conn: &Arc<WebSocketServerConnWrapper>, args: &[Value]) -> Nativ
     let message = match &args[0] {
         Value::String(s) => Value::String(Rc::clone(s)),
         Value::List(l) => Value::List(Rc::clone(l)),
-        _ => return Err(format!("send message must be String or List of bytes, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "send message must be String or List of bytes, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let mut future = FutureState::pending_with_metadata(
@@ -6345,7 +6845,12 @@ fn ws_conn_send_text(conn: &Arc<WebSocketServerConnWrapper>, args: &[Value]) -> 
 
     let text = match &args[0] {
         Value::String(s) => Value::String(Rc::clone(s)),
-        _ => return Err(format!("send_text message must be String, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "send_text message must be String, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let mut future = FutureState::pending_with_metadata(
@@ -6368,7 +6873,12 @@ fn ws_conn_send_binary(conn: &Arc<WebSocketServerConnWrapper>, args: &[Value]) -
 
     let data = match &args[0] {
         Value::List(l) => Value::List(Rc::clone(l)),
-        _ => return Err(format!("send_binary data must be List of bytes, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "send_binary data must be List of bytes, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let mut future = FutureState::pending_with_metadata(
@@ -6441,7 +6951,10 @@ fn data_set_parallel_threshold(args: &[Value]) -> NativeResult {
     use crate::data::set_parallel_threshold;
 
     if args.len() != 1 {
-        return Err(format!("Data.set_parallel_threshold expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Data.set_parallel_threshold expects 1 argument, got {}",
+            args.len()
+        ));
     }
     match &args[0] {
         Value::Int(n) => {
@@ -6593,7 +7106,8 @@ fn data_concat(args: &[Value]) -> NativeResult {
             Value::DataFrame(df) => Ok(df.as_ref()),
             _ => Err(format!(
                 "Data.concat argument {} must be a DataFrame, got {}",
-                i, v.type_name()
+                i,
+                v.type_name()
             )),
         })
         .collect();
@@ -6630,7 +7144,9 @@ fn data_read_csv(args: &[Value]) -> NativeResult {
     use std::sync::Arc;
 
     if args.is_empty() || args.len() > 3 {
-        return Err("Data.read_csv expects 1-3 arguments: path, [has_header], [delimiter]".to_string());
+        return Err(
+            "Data.read_csv expects 1-3 arguments: path, [has_header], [delimiter]".to_string(),
+        );
     }
 
     let path = match &args[0] {
@@ -6771,7 +7287,9 @@ fn data_sql(args: &[Value]) -> NativeResult {
 /// Data.sql_context() - Create a new SQL context for multi-table queries
 fn data_sql_context(_args: &[Value]) -> NativeResult {
     let ctx = SqlContext::new().map_err(|e| e.to_string())?;
-    Ok(Value::SqlContext(std::sync::Arc::new(std::sync::Mutex::new(ctx))))
+    Ok(Value::SqlContext(std::sync::Arc::new(
+        std::sync::Mutex::new(ctx),
+    )))
 }
 
 /// Data.from_query(db, sql, params?) - Execute SQL query against database and return DataFrame
@@ -6938,9 +7456,7 @@ fn sql_context_query(
 }
 
 /// ctx.tables() - Get list of registered table names
-fn sql_context_tables(
-    ctx: &std::sync::Arc<std::sync::Mutex<SqlContext>>,
-) -> NativeResult {
+fn sql_context_tables(ctx: &std::sync::Arc<std::sync::Mutex<SqlContext>>) -> NativeResult {
     let guard = ctx.lock().map_err(|e| format!("Lock error: {e}"))?;
     let tables = guard.tables();
     let list: Vec<Value> = tables
@@ -7048,7 +7564,11 @@ fn agg_var(args: &[Value]) -> NativeResult {
 /// Agg.median("column", "output_name") - creates a median aggregation spec
 fn agg_median(args: &[Value]) -> NativeResult {
     let (column, output) = parse_agg_args(args, "median")?;
-    let spec = AggSpec::new(AggOp::Median, Some(column.clone()), output.unwrap_or(column));
+    let spec = AggSpec::new(
+        AggOp::Median,
+        Some(column.clone()),
+        output.unwrap_or(column),
+    );
     Ok(Value::AggSpec(std::sync::Arc::new(spec)))
 }
 
@@ -7062,7 +7582,11 @@ fn agg_mode(args: &[Value]) -> NativeResult {
 /// Agg.count_distinct("column", "output_name") - creates a count distinct aggregation spec
 fn agg_count_distinct(args: &[Value]) -> NativeResult {
     let (column, output) = parse_agg_args(args, "count_distinct")?;
-    let spec = AggSpec::new(AggOp::CountDistinct, Some(column.clone()), output.unwrap_or(column));
+    let spec = AggSpec::new(
+        AggOp::CountDistinct,
+        Some(column.clone()),
+        output.unwrap_or(column),
+    );
     Ok(Value::AggSpec(std::sync::Arc::new(spec)))
 }
 
@@ -7074,13 +7598,21 @@ fn parse_agg_args(args: &[Value], method: &str) -> Result<(String, Option<String
 
     let column = match &args[0] {
         Value::String(s) => (**s).clone(),
-        _ => return Err(format!("Agg.{method} first argument must be a column name (String)")),
+        _ => {
+            return Err(format!(
+                "Agg.{method} first argument must be a column name (String)"
+            ))
+        }
     };
 
     let output = if args.len() == 2 {
         match &args[1] {
             Value::String(s) => Some((**s).clone()),
-            _ => return Err(format!("Agg.{method} second argument must be an output name (String)")),
+            _ => {
+                return Err(format!(
+                    "Agg.{method} second argument must be an output name (String)"
+                ))
+            }
         }
     } else {
         None
@@ -7213,15 +7745,25 @@ fn join_outer_cols(args: &[Value]) -> NativeResult {
 /// Parse (left_col, right_col) arguments for join methods
 fn parse_join_cols_args(args: &[Value], method: &str) -> Result<(String, String), String> {
     if args.len() != 2 {
-        return Err(format!("Join.{method} expects 2 arguments (left_column, right_column)"));
+        return Err(format!(
+            "Join.{method} expects 2 arguments (left_column, right_column)"
+        ));
     }
     let left = match &args[0] {
         Value::String(s) => (**s).clone(),
-        _ => return Err(format!("Join.{method} first argument must be a column name (String)")),
+        _ => {
+            return Err(format!(
+                "Join.{method} first argument must be a column name (String)"
+            ))
+        }
     };
     let right = match &args[1] {
         Value::String(s) => (**s).clone(),
-        _ => return Err(format!("Join.{method} second argument must be a column name (String)")),
+        _ => {
+            return Err(format!(
+                "Join.{method} second argument must be a column name (String)"
+            ))
+        }
     };
     Ok((left, right))
 }
@@ -7313,20 +7855,30 @@ fn set_new(args: &[Value]) -> NativeResult {
 /// Create a set from a list of values
 fn set_from_list(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Set.from() expects 1 argument (list), got {}", args.len()));
+        return Err(format!(
+            "Set.from() expects 1 argument (list), got {}",
+            args.len()
+        ));
     }
 
     match &args[0] {
         Value::List(list) => {
             let mut set = std::collections::HashSet::new();
             for value in list.borrow().iter() {
-                let hashable = HashableValue::try_from(value.clone())
-                    .map_err(|_| format!("Set can only contain hashable values (null, bool, int, string), got {}", value.type_name()))?;
+                let hashable = HashableValue::try_from(value.clone()).map_err(|_| {
+                    format!(
+                        "Set can only contain hashable values (null, bool, int, string), got {}",
+                        value.type_name()
+                    )
+                })?;
                 set.insert(hashable);
             }
             Ok(Value::set(set))
         }
-        _ => Err(format!("Set.from() expects a List, got {}", args[0].type_name())),
+        _ => Err(format!(
+            "Set.from() expects a List, got {}",
+            args[0].type_name()
+        )),
     }
 }
 
@@ -7351,7 +7903,10 @@ pub fn test_method(method: &str, args: &[Value]) -> NativeResult {
 /// Creates an expectation that can be used with matchers like to_be, to_equal, etc.
 fn test_expect(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Test.expect() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Test.expect() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     Ok(Value::expectation(args[0].clone()))
 }
@@ -7489,16 +8044,19 @@ pub fn xml_method(method: &str, args: &[Value]) -> NativeResult {
 /// Parse XML content into a document object
 fn xml_parse(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Xml.parse() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Xml.parse() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let content = get_string_arg(&args[0], "content")?;
 
     // Parse the document to validate it and get root name
-    let package = xml_parser::parse(&content)
-        .map_err(|e| format!("XML parse error: {}", e))?;
+    let package = xml_parser::parse(&content).map_err(|e| format!("XML parse error: {}", e))?;
     let doc = package.as_document();
 
-    let root_name = doc.root()
+    let root_name = doc
+        .root()
         .children()
         .iter()
         .find_map(|child| child.element().map(|e| e.name().local_part().to_string()))
@@ -7512,16 +8070,26 @@ fn xml_parse(args: &[Value]) -> NativeResult {
 /// Convert an XmlDocument back to a string
 fn xml_stringify(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Xml.stringify() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Xml.stringify() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     match &args[0] {
         Value::XmlDocument(doc) => Ok(Value::string(&doc.content)),
-        other => Err(format!("Xml.stringify() expects XmlDocument, got {}", other.type_name())),
+        other => Err(format!(
+            "Xml.stringify() expects XmlDocument, got {}",
+            other.type_name()
+        )),
     }
 }
 
 /// Methods on XmlDocument instances
-pub fn xml_document_method(doc: &Arc<XmlDocumentWrapper>, method: &str, args: &[Value]) -> NativeResult {
+pub fn xml_document_method(
+    doc: &Arc<XmlDocumentWrapper>,
+    method: &str,
+    args: &[Value],
+) -> NativeResult {
     match method {
         "query" | "xpath" => xml_doc_query(doc, args),
         "text" => xml_doc_text(doc, args),
@@ -7539,18 +8107,19 @@ fn xml_doc_query(doc: &Arc<XmlDocumentWrapper>, args: &[Value]) -> NativeResult 
     }
     let xpath_expr = get_string_arg(&args[0], "xpath")?;
 
-    let package = xml_parser::parse(&doc.content)
-        .map_err(|e| format!("XML parse error: {}", e))?;
+    let package = xml_parser::parse(&doc.content).map_err(|e| format!("XML parse error: {}", e))?;
     let document = package.as_document();
 
     // Create XPath factory and context
     let factory = Factory::new();
-    let xpath = factory.build(&xpath_expr)
+    let xpath = factory
+        .build(&xpath_expr)
         .map_err(|e| format!("XPath parse error: {}", e))?
         .ok_or("Empty XPath expression")?;
 
     let context = Context::new();
-    let result = xpath.evaluate(&context, document.root())
+    let result = xpath
+        .evaluate(&context, document.root())
         .map_err(|e| format!("XPath evaluation error: {}", e))?;
 
     xpath_value_to_stratum(result)
@@ -7569,11 +8138,14 @@ fn xpath_value_to_stratum(value: XPathValue) -> NativeResult {
         }
         XPathValue::String(s) => Ok(Value::string(s)),
         XPathValue::Nodeset(nodes) => {
-            let items: Vec<Value> = nodes.iter().map(|node| {
-                // Get text content from node
-                let text = node.string_value();
-                Value::string(text)
-            }).collect();
+            let items: Vec<Value> = nodes
+                .iter()
+                .map(|node| {
+                    // Get text content from node
+                    let text = node.string_value();
+                    Value::string(text)
+                })
+                .collect();
             Ok(Value::list(items))
         }
     }
@@ -7586,17 +8158,17 @@ fn xml_doc_text(doc: &Arc<XmlDocumentWrapper>, args: &[Value]) -> NativeResult {
         return Err(format!("text() expects 0 arguments, got {}", args.len()));
     }
 
-    let package = xml_parser::parse(&doc.content)
-        .map_err(|e| format!("XML parse error: {}", e))?;
+    let package = xml_parser::parse(&doc.content).map_err(|e| format!("XML parse error: {}", e))?;
     let document = package.as_document();
 
     // Use XPath to get all text
-    let result = evaluate_xpath(&document, "//text()")
-        .map_err(|e| format!("XPath error: {}", e))?;
+    let result =
+        evaluate_xpath(&document, "//text()").map_err(|e| format!("XPath error: {}", e))?;
 
     match result {
         XPathValue::Nodeset(nodes) => {
-            let text: String = nodes.iter()
+            let text: String = nodes
+                .iter()
                 .map(|n| n.string_value())
                 .collect::<Vec<_>>()
                 .join("");
@@ -7630,12 +8202,14 @@ pub fn image_namespace_method(method: &str, args: &[Value]) -> NativeResult {
 /// Load an image from a file
 fn image_open(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Image.open() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Image.open() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
 
-    let img = image::open(&path)
-        .map_err(|e| format!("failed to open image '{}': {}", path, e))?;
+    let img = image::open(&path).map_err(|e| format!("failed to open image '{}': {}", path, e))?;
 
     // Detect format from extension
     let format = std::path::Path::new(&path)
@@ -7651,7 +8225,10 @@ fn image_open(args: &[Value]) -> NativeResult {
 /// Create a new blank image
 fn image_new(args: &[Value]) -> NativeResult {
     if args.len() < 2 {
-        return Err(format!("Image.new() expects at least 2 arguments (width, height), got {}", args.len()));
+        return Err(format!(
+            "Image.new() expects at least 2 arguments (width, height), got {}",
+            args.len()
+        ));
     }
 
     let width = get_int_arg(&args[0], "width")? as u32;
@@ -7679,16 +8256,23 @@ fn parse_color(value: &Value) -> Result<image::Rgba<u8>, String> {
                 let hex = s.trim_start_matches('#');
                 match hex.len() {
                     6 => {
-                        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| "invalid hex color")?;
-                        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| "invalid hex color")?;
-                        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| "invalid hex color")?;
+                        let r =
+                            u8::from_str_radix(&hex[0..2], 16).map_err(|_| "invalid hex color")?;
+                        let g =
+                            u8::from_str_radix(&hex[2..4], 16).map_err(|_| "invalid hex color")?;
+                        let b =
+                            u8::from_str_radix(&hex[4..6], 16).map_err(|_| "invalid hex color")?;
                         Ok(image::Rgba([r, g, b, 255]))
                     }
                     8 => {
-                        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| "invalid hex color")?;
-                        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| "invalid hex color")?;
-                        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| "invalid hex color")?;
-                        let a = u8::from_str_radix(&hex[6..8], 16).map_err(|_| "invalid hex color")?;
+                        let r =
+                            u8::from_str_radix(&hex[0..2], 16).map_err(|_| "invalid hex color")?;
+                        let g =
+                            u8::from_str_radix(&hex[2..4], 16).map_err(|_| "invalid hex color")?;
+                        let b =
+                            u8::from_str_radix(&hex[4..6], 16).map_err(|_| "invalid hex color")?;
+                        let a =
+                            u8::from_str_radix(&hex[6..8], 16).map_err(|_| "invalid hex color")?;
                         Ok(image::Rgba([r, g, b, a]))
                     }
                     _ => Err("hex color must be #RRGGBB or #RRGGBBAA".to_string()),
@@ -7712,7 +8296,9 @@ fn parse_color(value: &Value) -> Result<image::Rgba<u8>, String> {
         Value::List(list) => {
             let list = list.borrow();
             if list.len() < 3 || list.len() > 4 {
-                return Err("color list must have 3 or 4 elements [r, g, b] or [r, g, b, a]".to_string());
+                return Err(
+                    "color list must have 3 or 4 elements [r, g, b] or [r, g, b, a]".to_string(),
+                );
             }
             let r = get_int_arg(&list[0], "r")? as u8;
             let g = get_int_arg(&list[1], "g")? as u8;
@@ -7724,7 +8310,10 @@ fn parse_color(value: &Value) -> Result<image::Rgba<u8>, String> {
             };
             Ok(image::Rgba([r, g, b, a]))
         }
-        _ => Err(format!("color must be string or list, got {}", value.type_name())),
+        _ => Err(format!(
+            "color must be string or list, got {}",
+            value.type_name()
+        )),
     }
 }
 
@@ -7736,7 +8325,10 @@ pub fn image_method(img: &Arc<ImageWrapper>, method: &str, args: &[Value]) -> Na
         "height" => Ok(Value::Int(img.height() as i64)),
         "dimensions" => {
             let (w, h) = img.dimensions();
-            Ok(Value::list(vec![Value::Int(w as i64), Value::Int(h as i64)]))
+            Ok(Value::list(vec![
+                Value::Int(w as i64),
+                Value::Int(h as i64),
+            ]))
         }
 
         // Transformations
@@ -7767,7 +8359,10 @@ pub fn image_method(img: &Arc<ImageWrapper>, method: &str, args: &[Value]) -> Na
 /// img.resize(width: Int, height: Int) -> Image
 fn image_resize(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err(format!("resize() expects 2 arguments (width, height), got {}", args.len()));
+        return Err(format!(
+            "resize() expects 2 arguments (width, height), got {}",
+            args.len()
+        ));
     }
     let width = get_int_arg(&args[0], "width")? as u32;
     let height = get_int_arg(&args[1], "height")? as u32;
@@ -7780,7 +8375,10 @@ fn image_resize(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
 /// img.crop(x: Int, y: Int, width: Int, height: Int) -> Image
 fn image_crop(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
     if args.len() != 4 {
-        return Err(format!("crop() expects 4 arguments (x, y, width, height), got {}", args.len()));
+        return Err(format!(
+            "crop() expects 4 arguments (x, y, width, height), got {}",
+            args.len()
+        ));
     }
     let x = get_int_arg(&args[0], "x")? as u32;
     let y = get_int_arg(&args[1], "y")? as u32;
@@ -7806,7 +8404,12 @@ fn image_rotate(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
         180 | -180 => img.image.rotate180(),
         270 | -90 => img.image.rotate270(),
         0 => (*img.image).clone(),
-        _ => return Err(format!("rotate() only supports 90, 180, 270 degrees, got {}", degrees)),
+        _ => {
+            return Err(format!(
+                "rotate() only supports 90, 180, 270 degrees, got {}",
+                degrees
+            ))
+        }
     };
 
     let wrapper = ImageWrapper::new(rotated, img.source_path.clone(), img.format.clone());
@@ -7846,7 +8449,10 @@ fn image_invert(img: &Arc<ImageWrapper>) -> NativeResult {
 /// Adjust brightness (-1.0 to 1.0, negative = darker, positive = lighter)
 fn image_brightness(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("brightness() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "brightness() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let value = get_float_arg(&args[0], "value")?;
     // Clamp to -1.0 to 1.0
@@ -7875,7 +8481,10 @@ fn image_contrast(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
 /// img.hue_rotate(degrees: Int) -> Image
 fn image_hue_rotate(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("hue_rotate() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "hue_rotate() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     let degrees = get_int_arg(&args[0], "degrees")? as i32;
 
@@ -7930,11 +8539,15 @@ fn image_sharpen(img: &Arc<ImageWrapper>) -> NativeResult {
 /// img.save(path: String) -> null
 fn image_save(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("save() expects 1 argument (path), got {}", args.len()));
+        return Err(format!(
+            "save() expects 1 argument (path), got {}",
+            args.len()
+        ));
     }
     let path = get_string_arg(&args[0], "path")?;
 
-    img.image.save(&path)
+    img.image
+        .save(&path)
         .map_err(|e| format!("failed to save image to '{}': {}", path, e))?;
 
     Ok(Value::Null)
@@ -7959,7 +8572,8 @@ fn image_to_bytes(img: &Arc<ImageWrapper>, args: &[Value]) -> NativeResult {
 
     let mut bytes = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut bytes);
-    img.image.write_to(&mut cursor, format)
+    img.image
+        .write_to(&mut cursor, format)
         .map_err(|e| format!("failed to encode image: {}", e))?;
 
     let values: Vec<Value> = bytes.iter().map(|&b| Value::Int(b as i64)).collect();
@@ -7971,7 +8585,11 @@ fn get_float_arg(value: &Value, name: &str) -> Result<f64, String> {
     match value {
         Value::Float(f) => Ok(*f),
         Value::Int(i) => Ok(*i as f64),
-        _ => Err(format!("{} must be a number, got {}", name, value.type_name())),
+        _ => Err(format!(
+            "{} must be a number, got {}",
+            name,
+            value.type_name()
+        )),
     }
 }
 
@@ -8003,7 +8621,10 @@ fn ref_weak(args: &[Value]) -> NativeResult {
 
 fn ref_upgrade(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Ref.upgrade() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Ref.upgrade() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     match &args[0] {
         Value::WeakRef(weak) => Ok(weak.upgrade().unwrap_or(Value::Null)),
@@ -8016,7 +8637,10 @@ fn ref_upgrade(args: &[Value]) -> NativeResult {
 
 fn ref_is_alive(args: &[Value]) -> NativeResult {
     if args.len() != 1 {
-        return Err(format!("Ref.is_alive() expects 1 argument, got {}", args.len()));
+        return Err(format!(
+            "Ref.is_alive() expects 1 argument, got {}",
+            args.len()
+        ));
     }
     match &args[0] {
         Value::WeakRef(weak) => Ok(Value::Bool(weak.is_alive())),
@@ -8038,13 +8662,19 @@ pub fn weak_ref_method(method: &str, args: &[Value], weak: &WeakRefValue) -> Nat
         }
         "is_alive" => {
             if !args.is_empty() {
-                return Err(format!("is_alive() expects 0 arguments, got {}", args.len()));
+                return Err(format!(
+                    "is_alive() expects 0 arguments, got {}",
+                    args.len()
+                ));
             }
             Ok(Value::Bool(weak.is_alive()))
         }
         "target_type" => {
             if !args.is_empty() {
-                return Err(format!("target_type() expects 0 arguments, got {}", args.len()));
+                return Err(format!(
+                    "target_type() expects 0 arguments, got {}",
+                    args.len()
+                ));
             }
             Ok(Value::string(weak.target_type_name()))
         }
@@ -8118,10 +8748,10 @@ mod tests {
         let path_str = path.to_string_lossy().to_string();
 
         // Write
-        let result = file_method("write_text", &[
-            Value::string(&path_str),
-            Value::string("Hello, World!"),
-        ]);
+        let result = file_method(
+            "write_text",
+            &[Value::string(&path_str), Value::string("Hello, World!")],
+        );
         assert!(result.is_ok());
 
         // Read
@@ -8163,8 +8793,16 @@ mod tests {
         let path = dir.path().join("append.txt");
         let path_str = path.to_string_lossy().to_string();
 
-        file_method("write_text", &[Value::string(&path_str), Value::string("Hello")]).unwrap();
-        file_method("append", &[Value::string(&path_str), Value::string(", World!")]).unwrap();
+        file_method(
+            "write_text",
+            &[Value::string(&path_str), Value::string("Hello")],
+        )
+        .unwrap();
+        file_method(
+            "append",
+            &[Value::string(&path_str), Value::string(", World!")],
+        )
+        .unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
         assert_eq!(content, "Hello, World!");
@@ -8231,11 +8869,15 @@ mod tests {
 
     #[test]
     fn test_path_join() {
-        let result = path_method("join", &[
-            Value::string("/home"),
-            Value::string("user"),
-            Value::string("file.txt"),
-        ]).unwrap();
+        let result = path_method(
+            "join",
+            &[
+                Value::string("/home"),
+                Value::string("user"),
+                Value::string("file.txt"),
+            ],
+        )
+        .unwrap();
 
         if let Value::String(s) = result {
             assert!(s.contains("home") && s.contains("user") && s.contains("file.txt"));
@@ -8297,11 +8939,16 @@ mod tests {
         assert_eq!(result, Value::Null);
 
         // Get with default
-        let result = env_method("get", &[Value::string(test_var), Value::string("default")]).unwrap();
+        let result =
+            env_method("get", &[Value::string(test_var), Value::string("default")]).unwrap();
         assert_eq!(result, Value::string("default"));
 
         // Set
-        env_method("set", &[Value::string(test_var), Value::string("test_value")]).unwrap();
+        env_method(
+            "set",
+            &[Value::string(test_var), Value::string("test_value")],
+        )
+        .unwrap();
 
         // Get again
         let result = env_method("get", &[Value::string(test_var)]).unwrap();
@@ -8371,10 +9018,14 @@ mod tests {
 
     #[test]
     fn test_shell_run() {
-        let result = shell_method("run", &[
-            Value::string("echo"),
-            Value::list(vec![Value::string("hello"), Value::string("world")]),
-        ]).unwrap();
+        let result = shell_method(
+            "run",
+            &[
+                Value::string("echo"),
+                Value::list(vec![Value::string("hello"), Value::string("world")]),
+            ],
+        )
+        .unwrap();
 
         if let Value::Map(map) = result {
             let map = map.borrow();
@@ -8460,7 +9111,10 @@ mod tests {
         );
         let options_map = Value::Map(Rc::new(RefCell::new(map)));
         let (headers, timeout) = extract_http_options(&options_map).unwrap();
-        assert_eq!(headers.get("Content-Type"), Some(&"application/json".to_string()));
+        assert_eq!(
+            headers.get("Content-Type"),
+            Some(&"application/json".to_string())
+        );
         assert!(timeout.is_none());
     }
 
@@ -8521,10 +9175,13 @@ mod tests {
     #[test]
     #[ignore] // Run with: cargo test -- --ignored
     fn test_http_post_real_request() {
-        let result = http_method("post", &[
-            Value::string("https://httpbin.org/post"),
-            Value::string("{\"test\": true}"),
-        ]);
+        let result = http_method(
+            "post",
+            &[
+                Value::string("https://httpbin.org/post"),
+                Value::string("{\"test\": true}"),
+            ],
+        );
         assert!(result.is_ok());
 
         if let Ok(Value::Map(map)) = result {
@@ -8597,8 +9254,14 @@ mod tests {
     #[test]
     fn test_json_encode_map() {
         let mut map = HashMap::new();
-        map.insert(HashableValue::String(Rc::new("name".to_string())), Value::string("test"));
-        map.insert(HashableValue::String(Rc::new("value".to_string())), Value::Int(42));
+        map.insert(
+            HashableValue::String(Rc::new("name".to_string())),
+            Value::string("test"),
+        );
+        map.insert(
+            HashableValue::String(Rc::new("value".to_string())),
+            Value::Int(42),
+        );
         let map_value = Value::Map(Rc::new(RefCell::new(map)));
 
         let result = json_method("encode", &[map_value]).unwrap();
@@ -8650,7 +9313,11 @@ mod tests {
 
     #[test]
     fn test_json_decode_object() {
-        let result = json_method("decode", &[Value::string("{\"name\": \"test\", \"value\": 42}")]).unwrap();
+        let result = json_method(
+            "decode",
+            &[Value::string("{\"name\": \"test\", \"value\": 42}")],
+        )
+        .unwrap();
         if let Value::Map(map) = result {
             let map = map.borrow();
             let name_key = HashableValue::String(Rc::new("name".to_string()));
@@ -8701,7 +9368,10 @@ mod tests {
     fn test_toml_encode_primitives() {
         // Note: TOML requires a table structure at the root for encoding
         let mut map = HashMap::new();
-        map.insert(HashableValue::String(Rc::new("value".to_string())), Value::Int(42));
+        map.insert(
+            HashableValue::String(Rc::new("value".to_string())),
+            Value::Int(42),
+        );
         let map_value = Value::Map(Rc::new(RefCell::new(map)));
 
         let result = toml_method("encode", &[map_value]).unwrap();
@@ -8948,7 +9618,9 @@ mod tests {
 
     #[test]
     fn test_dispatch_toml_namespace() {
-        let result = dispatch_namespace_method("Toml", "decode", &[Value::string("key = \"value\"")]).unwrap();
+        let result =
+            dispatch_namespace_method("Toml", "decode", &[Value::string("key = \"value\"")])
+                .unwrap();
         if let Value::Map(map) = result {
             let map = map.borrow();
             let key = HashableValue::String(Rc::new("key".to_string()));
@@ -8960,7 +9632,8 @@ mod tests {
 
     #[test]
     fn test_dispatch_yaml_namespace() {
-        let result = dispatch_namespace_method("Yaml", "decode", &[Value::string("key: value")]).unwrap();
+        let result =
+            dispatch_namespace_method("Yaml", "decode", &[Value::string("key: value")]).unwrap();
         if let Value::Map(map) = result {
             let map = map.borrow();
             let key = HashableValue::String(Rc::new("key".to_string()));
@@ -8972,7 +9645,8 @@ mod tests {
 
     #[test]
     fn test_dispatch_base64_namespace() {
-        let result = dispatch_namespace_method("Base64", "encode", &[Value::string("test")]).unwrap();
+        let result =
+            dispatch_namespace_method("Base64", "encode", &[Value::string("test")]).unwrap();
         assert_eq!(result, Value::string("dGVzdA=="));
     }
 
@@ -9108,7 +9782,10 @@ mod tests {
 
         let result = zip_method(
             "extract",
-            &[Value::string(&zip_path_str), Value::string(&extract_dir_str)],
+            &[
+                Value::string(&zip_path_str),
+                Value::string(&extract_dir_str),
+            ],
         )
         .unwrap();
         assert_eq!(result, Value::Null);
@@ -9187,10 +9864,14 @@ mod tests {
 
     #[test]
     fn test_datetime_parse_with_format() {
-        let result = datetime_method("parse", &[
-            Value::string("2025-01-15 14:30:00"),
-            Value::string("%Y-%m-%d %H:%M:%S"),
-        ]).unwrap();
+        let result = datetime_method(
+            "parse",
+            &[
+                Value::string("2025-01-15 14:30:00"),
+                Value::string("%Y-%m-%d %H:%M:%S"),
+            ],
+        )
+        .unwrap();
         if let Value::Map(map) = result {
             let map = map.borrow();
             let year_key = HashableValue::String(Rc::new("year".to_string()));
@@ -9230,11 +9911,26 @@ mod tests {
         let ts = 1736944200000_i64; // 2025-01-15 12:30:00 UTC
         let dt = datetime_method("from_timestamp", &[Value::Int(ts)]).unwrap();
 
-        assert_eq!(datetime_method("year", &[dt.clone()]).unwrap(), Value::Int(2025));
-        assert_eq!(datetime_method("month", &[dt.clone()]).unwrap(), Value::Int(1));
-        assert_eq!(datetime_method("day", &[dt.clone()]).unwrap(), Value::Int(15));
-        assert_eq!(datetime_method("hour", &[dt.clone()]).unwrap(), Value::Int(12));
-        assert_eq!(datetime_method("minute", &[dt.clone()]).unwrap(), Value::Int(30));
+        assert_eq!(
+            datetime_method("year", &[dt.clone()]).unwrap(),
+            Value::Int(2025)
+        );
+        assert_eq!(
+            datetime_method("month", &[dt.clone()]).unwrap(),
+            Value::Int(1)
+        );
+        assert_eq!(
+            datetime_method("day", &[dt.clone()]).unwrap(),
+            Value::Int(15)
+        );
+        assert_eq!(
+            datetime_method("hour", &[dt.clone()]).unwrap(),
+            Value::Int(12)
+        );
+        assert_eq!(
+            datetime_method("minute", &[dt.clone()]).unwrap(),
+            Value::Int(30)
+        );
         assert_eq!(datetime_method("second", &[dt]).unwrap(), Value::Int(0));
     }
 
@@ -9294,9 +9990,18 @@ mod tests {
         let dt1 = datetime_method("from_timestamp", &[Value::Int(ts1)]).unwrap();
         let dt2 = datetime_method("from_timestamp", &[Value::Int(ts2)]).unwrap();
 
-        assert_eq!(datetime_method("compare", &[dt1.clone(), dt2.clone()]).unwrap(), Value::Int(-1));
-        assert_eq!(datetime_method("compare", &[dt2.clone(), dt1.clone()]).unwrap(), Value::Int(1));
-        assert_eq!(datetime_method("compare", &[dt1.clone(), dt1]).unwrap(), Value::Int(0));
+        assert_eq!(
+            datetime_method("compare", &[dt1.clone(), dt2.clone()]).unwrap(),
+            Value::Int(-1)
+        );
+        assert_eq!(
+            datetime_method("compare", &[dt2.clone(), dt1.clone()]).unwrap(),
+            Value::Int(1)
+        );
+        assert_eq!(
+            datetime_method("compare", &[dt1.clone(), dt1]).unwrap(),
+            Value::Int(0)
+        );
     }
 
     #[test]
@@ -9305,7 +10010,8 @@ mod tests {
         let dt = datetime_method("from_timestamp", &[Value::Int(ts)]).unwrap();
 
         // Convert to New York timezone (UTC-5 in January)
-        let result = datetime_method("to_timezone", &[dt, Value::string("America/New_York")]).unwrap();
+        let result =
+            datetime_method("to_timezone", &[dt, Value::string("America/New_York")]).unwrap();
         if let Value::Map(map) = result {
             let map = map.borrow();
             let hour_key = HashableValue::String(Rc::new("hour".to_string()));
@@ -9389,7 +10095,7 @@ mod tests {
         // as_days
         let days = duration_method("as_days", &[one_hour]).unwrap();
         if let Value::Float(d) = days {
-            assert!((d - (1.0/24.0)).abs() < 0.0001);
+            assert!((d - (1.0 / 24.0)).abs() < 0.0001);
         } else {
             panic!("Expected Float");
         }
@@ -9528,10 +10234,13 @@ mod tests {
             HashableValue::String(Rc::new("case_insensitive".to_string())),
             Value::Bool(true),
         );
-        let result = regex_method("new", &[
-            Value::string("hello"),
-            Value::Map(Rc::new(RefCell::new(options))),
-        ]);
+        let result = regex_method(
+            "new",
+            &[
+                Value::string("hello"),
+                Value::Map(Rc::new(RefCell::new(options))),
+            ],
+        );
         assert!(result.is_ok());
     }
 
@@ -9545,16 +10254,16 @@ mod tests {
     #[test]
     fn test_regex_is_match_with_pattern() {
         // Using pattern string
-        let result = regex_method("is_match", &[
-            Value::string(r"\d+"),
-            Value::string("hello 123 world"),
-        ]);
+        let result = regex_method(
+            "is_match",
+            &[Value::string(r"\d+"), Value::string("hello 123 world")],
+        );
         assert_eq!(result, Ok(Value::Bool(true)));
 
-        let result = regex_method("is_match", &[
-            Value::string(r"\d+"),
-            Value::string("hello world"),
-        ]);
+        let result = regex_method(
+            "is_match",
+            &[Value::string(r"\d+"), Value::string("hello world")],
+        );
         assert_eq!(result, Ok(Value::Bool(false)));
     }
 
@@ -9568,10 +10277,11 @@ mod tests {
 
     #[test]
     fn test_regex_find() {
-        let result = regex_method("find", &[
-            Value::string(r"\d+"),
-            Value::string("hello 123 world"),
-        ]).unwrap();
+        let result = regex_method(
+            "find",
+            &[Value::string(r"\d+"), Value::string("hello 123 world")],
+        )
+        .unwrap();
 
         if let Value::Map(map) = result {
             let map = map.borrow();
@@ -9589,19 +10299,21 @@ mod tests {
 
     #[test]
     fn test_regex_find_no_match() {
-        let result = regex_method("find", &[
-            Value::string(r"\d+"),
-            Value::string("hello world"),
-        ]).unwrap();
+        let result = regex_method(
+            "find",
+            &[Value::string(r"\d+"), Value::string("hello world")],
+        )
+        .unwrap();
         assert_eq!(result, Value::Null);
     }
 
     #[test]
     fn test_regex_find_all() {
-        let result = regex_method("find_all", &[
-            Value::string(r"\d+"),
-            Value::string("a1b2c3"),
-        ]).unwrap();
+        let result = regex_method(
+            "find_all",
+            &[Value::string(r"\d+"), Value::string("a1b2c3")],
+        )
+        .unwrap();
 
         if let Value::List(list) = result {
             let list = list.borrow();
@@ -9613,41 +10325,54 @@ mod tests {
 
     #[test]
     fn test_regex_replace() {
-        let result = regex_method("replace", &[
-            Value::string(r"\d+"),
-            Value::string("hello 123 world 456"),
-            Value::string("X"),
-        ]).unwrap();
+        let result = regex_method(
+            "replace",
+            &[
+                Value::string(r"\d+"),
+                Value::string("hello 123 world 456"),
+                Value::string("X"),
+            ],
+        )
+        .unwrap();
         assert_eq!(result, Value::string("hello X world 456"));
     }
 
     #[test]
     fn test_regex_replace_all() {
-        let result = regex_method("replace_all", &[
-            Value::string(r"\d+"),
-            Value::string("hello 123 world 456"),
-            Value::string("X"),
-        ]).unwrap();
+        let result = regex_method(
+            "replace_all",
+            &[
+                Value::string(r"\d+"),
+                Value::string("hello 123 world 456"),
+                Value::string("X"),
+            ],
+        )
+        .unwrap();
         assert_eq!(result, Value::string("hello X world X"));
     }
 
     #[test]
     fn test_regex_replace_with_capture_groups() {
         // Swap first and last name
-        let result = regex_method("replace", &[
-            Value::string(r"(\w+), (\w+)"),
-            Value::string("Doe, John"),
-            Value::string("$2 $1"),
-        ]).unwrap();
+        let result = regex_method(
+            "replace",
+            &[
+                Value::string(r"(\w+), (\w+)"),
+                Value::string("Doe, John"),
+                Value::string("$2 $1"),
+            ],
+        )
+        .unwrap();
         assert_eq!(result, Value::string("John Doe"));
     }
 
     #[test]
     fn test_regex_split() {
-        let result = regex_method("split", &[
-            Value::string(r"\s+"),
-            Value::string("hello   world   foo"),
-        ]).unwrap();
+        let result = regex_method(
+            "split",
+            &[Value::string(r"\s+"), Value::string("hello   world   foo")],
+        )
+        .unwrap();
 
         if let Value::List(list) = result {
             let list = list.borrow();
@@ -9662,10 +10387,14 @@ mod tests {
 
     #[test]
     fn test_regex_captures() {
-        let result = regex_method("captures", &[
-            Value::string(r"(\w+)@(\w+)\.(\w+)"),
-            Value::string("user@example.com"),
-        ]).unwrap();
+        let result = regex_method(
+            "captures",
+            &[
+                Value::string(r"(\w+)@(\w+)\.(\w+)"),
+                Value::string("user@example.com"),
+            ],
+        )
+        .unwrap();
 
         if let Value::List(list) = result {
             let list = list.borrow();
@@ -9681,10 +10410,11 @@ mod tests {
 
     #[test]
     fn test_regex_captures_no_match() {
-        let result = regex_method("captures", &[
-            Value::string(r"(\d+)"),
-            Value::string("hello"),
-        ]).unwrap();
+        let result = regex_method(
+            "captures",
+            &[Value::string(r"(\d+)"), Value::string("hello")],
+        )
+        .unwrap();
         assert_eq!(result, Value::Null);
     }
 
@@ -9697,11 +10427,10 @@ mod tests {
         );
         let opts = Value::Map(Rc::new(RefCell::new(options)));
 
-        let result = regex_method("is_match", &[
-            Value::string("hello"),
-            opts,
-            Value::string("HELLO WORLD"),
-        ]);
+        let result = regex_method(
+            "is_match",
+            &[Value::string("hello"), opts, Value::string("HELLO WORLD")],
+        );
         assert_eq!(result, Ok(Value::Bool(true)));
     }
 
@@ -9715,11 +10444,11 @@ mod tests {
         let opts = Value::Map(Rc::new(RefCell::new(options)));
 
         // ^ should match start of each line in multiline mode
-        let result = regex_method("find_all", &[
-            Value::string("^hello"),
-            opts,
-            Value::string("hello\nhello"),
-        ]).unwrap();
+        let result = regex_method(
+            "find_all",
+            &[Value::string("^hello"), opts, Value::string("hello\nhello")],
+        )
+        .unwrap();
 
         if let Value::List(list) = result {
             assert_eq!(list.borrow().len(), 2);
@@ -9730,10 +10459,11 @@ mod tests {
 
     #[test]
     fn test_dispatch_regex_namespace() {
-        let result = dispatch_namespace_method("Regex", "is_match", &[
-            Value::string(r"\d+"),
-            Value::string("test 123"),
-        ]);
+        let result = dispatch_namespace_method(
+            "Regex",
+            "is_match",
+            &[Value::string(r"\d+"), Value::string("test 123")],
+        );
         assert_eq!(result, Ok(Value::Bool(true)));
     }
 
@@ -9771,10 +10501,11 @@ mod tests {
 
     #[test]
     fn test_hash_hmac_sha256() {
-        let result = hash_method("hmac_sha256", &[
-            Value::string("key"),
-            Value::string("message"),
-        ]).unwrap();
+        let result = hash_method(
+            "hmac_sha256",
+            &[Value::string("key"), Value::string("message")],
+        )
+        .unwrap();
         // HMAC-SHA256 produces 64 hex chars
         if let Value::String(s) = result {
             assert_eq!(s.len(), 64);
@@ -9817,25 +10548,38 @@ mod tests {
 
     #[test]
     fn test_uuid_parse() {
-        let result = uuid_method("parse", &[
+        let result = uuid_method(
+            "parse",
+            &[Value::string("550e8400-e29b-41d4-a716-446655440000")],
+        )
+        .unwrap();
+        assert_eq!(
+            result,
             Value::string("550e8400-e29b-41d4-a716-446655440000")
-        ]).unwrap();
-        assert_eq!(result, Value::string("550e8400-e29b-41d4-a716-446655440000"));
+        );
     }
 
     #[test]
     fn test_uuid_parse_uppercase() {
         // Should normalize to lowercase
-        let result = uuid_method("parse", &[
-            Value::string("550E8400-E29B-41D4-A716-446655440000")
-        ]).unwrap();
-        assert_eq!(result, Value::string("550e8400-e29b-41d4-a716-446655440000"));
+        let result = uuid_method(
+            "parse",
+            &[Value::string("550E8400-E29B-41D4-A716-446655440000")],
+        )
+        .unwrap();
+        assert_eq!(
+            result,
+            Value::string("550e8400-e29b-41d4-a716-446655440000")
+        );
     }
 
     #[test]
     fn test_uuid_is_valid() {
         assert_eq!(
-            uuid_method("is_valid", &[Value::string("550e8400-e29b-41d4-a716-446655440000")]),
+            uuid_method(
+                "is_valid",
+                &[Value::string("550e8400-e29b-41d4-a716-446655440000")]
+            ),
             Ok(Value::Bool(true))
         );
         assert_eq!(
@@ -9926,9 +10670,11 @@ mod tests {
             // Same length
             assert_eq!(shuffled.borrow().len(), 3);
             // All elements present (sum should be same)
-            let sum: i64 = shuffled.borrow().iter().map(|v| {
-                if let Value::Int(n) = v { *n } else { 0 }
-            }).sum();
+            let sum: i64 = shuffled
+                .borrow()
+                .iter()
+                .map(|v| if let Value::Int(n) = v { *n } else { 0 })
+                .sum();
             assert_eq!(sum, 6);
         } else {
             panic!("Expected List");
@@ -10269,11 +11015,13 @@ mod tests {
         assert_eq!(result, Value::Int(5));
 
         // value below min
-        let result = math_method("clamp", &[Value::Int(-5), Value::Int(0), Value::Int(10)]).unwrap();
+        let result =
+            math_method("clamp", &[Value::Int(-5), Value::Int(0), Value::Int(10)]).unwrap();
         assert_eq!(result, Value::Int(0));
 
         // value above max
-        let result = math_method("clamp", &[Value::Int(15), Value::Int(0), Value::Int(10)]).unwrap();
+        let result =
+            math_method("clamp", &[Value::Int(15), Value::Int(0), Value::Int(10)]).unwrap();
         assert_eq!(result, Value::Int(10));
 
         // invalid range (min > max)
@@ -10314,20 +11062,50 @@ mod tests {
     #[test]
     fn test_math_is_nan_infinite_finite() {
         // is_nan
-        assert_eq!(math_method("is_nan", &[Value::Float(f64::NAN)]), Ok(Value::Bool(true)));
-        assert_eq!(math_method("is_nan", &[Value::Float(1.0)]), Ok(Value::Bool(false)));
-        assert_eq!(math_method("is_nan", &[Value::Int(1)]), Ok(Value::Bool(false)));
+        assert_eq!(
+            math_method("is_nan", &[Value::Float(f64::NAN)]),
+            Ok(Value::Bool(true))
+        );
+        assert_eq!(
+            math_method("is_nan", &[Value::Float(1.0)]),
+            Ok(Value::Bool(false))
+        );
+        assert_eq!(
+            math_method("is_nan", &[Value::Int(1)]),
+            Ok(Value::Bool(false))
+        );
 
         // is_infinite
-        assert_eq!(math_method("is_infinite", &[Value::Float(f64::INFINITY)]), Ok(Value::Bool(true)));
-        assert_eq!(math_method("is_infinite", &[Value::Float(f64::NEG_INFINITY)]), Ok(Value::Bool(true)));
-        assert_eq!(math_method("is_infinite", &[Value::Float(1.0)]), Ok(Value::Bool(false)));
-        assert_eq!(math_method("is_infinite", &[Value::Int(1)]), Ok(Value::Bool(false)));
+        assert_eq!(
+            math_method("is_infinite", &[Value::Float(f64::INFINITY)]),
+            Ok(Value::Bool(true))
+        );
+        assert_eq!(
+            math_method("is_infinite", &[Value::Float(f64::NEG_INFINITY)]),
+            Ok(Value::Bool(true))
+        );
+        assert_eq!(
+            math_method("is_infinite", &[Value::Float(1.0)]),
+            Ok(Value::Bool(false))
+        );
+        assert_eq!(
+            math_method("is_infinite", &[Value::Int(1)]),
+            Ok(Value::Bool(false))
+        );
 
         // is_finite
-        assert_eq!(math_method("is_finite", &[Value::Float(1.0)]), Ok(Value::Bool(true)));
-        assert_eq!(math_method("is_finite", &[Value::Float(f64::INFINITY)]), Ok(Value::Bool(false)));
-        assert_eq!(math_method("is_finite", &[Value::Int(1)]), Ok(Value::Bool(true)));
+        assert_eq!(
+            math_method("is_finite", &[Value::Float(1.0)]),
+            Ok(Value::Bool(true))
+        );
+        assert_eq!(
+            math_method("is_finite", &[Value::Float(f64::INFINITY)]),
+            Ok(Value::Bool(false))
+        );
+        assert_eq!(
+            math_method("is_finite", &[Value::Int(1)]),
+            Ok(Value::Bool(true))
+        );
     }
 
     #[test]
@@ -10493,8 +11271,11 @@ mod tests {
         let result = log_method("level", &[]).unwrap();
         if let Value::String(s) = result {
             let valid_levels = ["debug", "info", "warn", "error"];
-            assert!(valid_levels.contains(&s.as_str()),
-                "level() returned unexpected value: {}", s);
+            assert!(
+                valid_levels.contains(&s.as_str()),
+                "level() returned unexpected value: {}",
+                s
+            );
         } else {
             panic!("level() should return a String");
         }
@@ -10558,7 +11339,10 @@ mod tests {
         assert!(result.is_ok());
 
         // Reset to default format
-        let _ = log_method("set_format", &[Value::string("[{level}] {timestamp} - {message}")]);
+        let _ = log_method(
+            "set_format",
+            &[Value::string("[{level}] {timestamp} - {message}")],
+        );
     }
 
     #[test]
@@ -10581,7 +11365,10 @@ mod tests {
         assert!(result.unwrap_err().contains("expects 1-2 arguments"));
 
         // Too many arguments
-        let result = log_method("info", &[Value::string("a"), Value::string("b"), Value::string("c")]);
+        let result = log_method(
+            "info",
+            &[Value::string("a"), Value::string("b"), Value::string("c")],
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("expects 1-2 arguments"));
 
@@ -10654,10 +11441,13 @@ mod tests {
             Value::string("login"),
         );
 
-        let result = log_method("info", &[
-            Value::string("User logged in"),
-            Value::Map(Rc::new(RefCell::new(context))),
-        ]);
+        let result = log_method(
+            "info",
+            &[
+                Value::string("User logged in"),
+                Value::Map(Rc::new(RefCell::new(context))),
+            ],
+        );
         assert!(result.is_ok());
     }
 
@@ -10669,7 +11459,10 @@ mod tests {
         let path_str = log_path.to_string_lossy().to_string();
 
         // Write directly to file using the internal function
-        let result = write_log_output(&LogOutput::File(path_str.clone()), "TEST: Direct log message");
+        let result = write_log_output(
+            &LogOutput::File(path_str.clone()),
+            "TEST: Direct log message",
+        );
         assert!(result.is_ok());
 
         // Read the file and verify content
@@ -10703,7 +11496,10 @@ mod tests {
             Value::String(s) => {
                 // OS should be one of the known values
                 let os = s.to_string();
-                assert!(["macos", "linux", "windows", "freebsd", "netbsd", "openbsd"].contains(&os.as_str()));
+                assert!(
+                    ["macos", "linux", "windows", "freebsd", "netbsd", "openbsd"]
+                        .contains(&os.as_str())
+                );
             }
             _ => panic!("Expected String"),
         }
@@ -10770,7 +11566,10 @@ mod tests {
 
         // Verify it changed
         let new_cwd = std::env::current_dir().unwrap();
-        assert_eq!(new_cwd.canonicalize().unwrap(), temp.path().canonicalize().unwrap());
+        assert_eq!(
+            new_cwd.canonicalize().unwrap(),
+            temp.path().canonicalize().unwrap()
+        );
 
         // Restore original cwd
         std::env::set_current_dir(original_cwd).unwrap();
@@ -10780,7 +11579,9 @@ mod tests {
     fn test_system_set_cwd_invalid_path() {
         let result = system_method("set_cwd", &[Value::string("/nonexistent/path/12345")]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("failed to set current directory"));
+        assert!(result
+            .unwrap_err()
+            .contains("failed to set current directory"));
     }
 
     #[test]
@@ -10900,7 +11701,13 @@ mod tests {
         #[cfg(unix)]
         let result = process_method("spawn", &[Value::string("true")]);
         #[cfg(windows)]
-        let result = process_method("spawn", &[Value::string("cmd"), Value::list(vec![Value::string("/C"), Value::string("echo hello")])]);
+        let result = process_method(
+            "spawn",
+            &[
+                Value::string("cmd"),
+                Value::list(vec![Value::string("/C"), Value::string("echo hello")]),
+            ],
+        );
 
         assert!(result.is_ok());
         let map = result.unwrap();
@@ -10922,15 +11729,21 @@ mod tests {
     #[test]
     fn test_process_spawn_with_args() {
         #[cfg(unix)]
-        let result = process_method("spawn", &[
-            Value::string("echo"),
-            Value::list(vec![Value::string("hello")]),
-        ]);
+        let result = process_method(
+            "spawn",
+            &[
+                Value::string("echo"),
+                Value::list(vec![Value::string("hello")]),
+            ],
+        );
         #[cfg(windows)]
-        let result = process_method("spawn", &[
-            Value::string("cmd"),
-            Value::list(vec![Value::string("/C"), Value::string("echo hello")]),
-        ]);
+        let result = process_method(
+            "spawn",
+            &[
+                Value::string("cmd"),
+                Value::list(vec![Value::string("/C"), Value::string("echo hello")]),
+            ],
+        );
 
         assert!(result.is_ok());
     }
@@ -11046,24 +11859,36 @@ mod tests {
         };
 
         // Create table
-        let result = db_connection_method(&conn, "execute", &[
-            Value::string("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)")
-        ]);
+        let result = db_connection_method(
+            &conn,
+            "execute",
+            &[Value::string(
+                "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)",
+            )],
+        );
         assert!(result.is_ok());
 
         // Insert data
-        let result = db_connection_method(&conn, "execute", &[
-            Value::string("INSERT INTO users (name, age) VALUES (?, ?)"),
-            Value::list(vec![Value::string("Alice"), Value::Int(30)]),
-        ]);
+        let result = db_connection_method(
+            &conn,
+            "execute",
+            &[
+                Value::string("INSERT INTO users (name, age) VALUES (?, ?)"),
+                Value::list(vec![Value::string("Alice"), Value::Int(30)]),
+            ],
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Value::Int(1)); // 1 row affected
 
         // Query data
-        let result = db_connection_method(&conn, "query", &[
-            Value::string("SELECT * FROM users WHERE name = ?"),
-            Value::list(vec![Value::string("Alice")]),
-        ]);
+        let result = db_connection_method(
+            &conn,
+            "query",
+            &[
+                Value::string("SELECT * FROM users WHERE name = ?"),
+                Value::list(vec![Value::string("Alice")]),
+            ],
+        );
         assert!(result.is_ok());
         if let Value::List(rows) = result.unwrap() {
             let rows = rows.borrow();
@@ -11087,27 +11912,36 @@ mod tests {
         };
 
         // Create table
-        db_connection_method(&conn, "execute", &[
-            Value::string("CREATE TABLE test (id INTEGER)")
-        ]).unwrap();
+        db_connection_method(
+            &conn,
+            "execute",
+            &[Value::string("CREATE TABLE test (id INTEGER)")],
+        )
+        .unwrap();
 
         // Begin transaction
         let result = db_connection_method(&conn, "begin", &[]);
         assert!(result.is_ok());
 
         // Insert data
-        db_connection_method(&conn, "execute", &[
-            Value::string("INSERT INTO test VALUES (1)")
-        ]).unwrap();
+        db_connection_method(
+            &conn,
+            "execute",
+            &[Value::string("INSERT INTO test VALUES (1)")],
+        )
+        .unwrap();
 
         // Rollback
         let result = db_connection_method(&conn, "rollback", &[]);
         assert!(result.is_ok());
 
         // Verify data was rolled back
-        let result = db_connection_method(&conn, "query", &[
-            Value::string("SELECT COUNT(*) as count FROM test")
-        ]).unwrap();
+        let result = db_connection_method(
+            &conn,
+            "query",
+            &[Value::string("SELECT COUNT(*) as count FROM test")],
+        )
+        .unwrap();
         if let Value::List(rows) = result {
             let rows = rows.borrow();
             if let Value::Map(row) = &rows[0] {
@@ -11127,9 +11961,14 @@ mod tests {
         };
 
         // Create table
-        db_connection_method(&conn, "execute", &[
-            Value::string("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
-        ]).unwrap();
+        db_connection_method(
+            &conn,
+            "execute",
+            &[Value::string(
+                "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+            )],
+        )
+        .unwrap();
 
         // List tables
         let tables = db_connection_method(&conn, "tables", &[]).unwrap();
@@ -11140,10 +11979,12 @@ mod tests {
         }
 
         // Check table exists
-        let exists = db_connection_method(&conn, "table_exists", &[Value::string("users")]).unwrap();
+        let exists =
+            db_connection_method(&conn, "table_exists", &[Value::string("users")]).unwrap();
         assert_eq!(exists, Value::Bool(true));
 
-        let exists = db_connection_method(&conn, "table_exists", &[Value::string("nonexistent")]).unwrap();
+        let exists =
+            db_connection_method(&conn, "table_exists", &[Value::string("nonexistent")]).unwrap();
         assert_eq!(exists, Value::Bool(false));
 
         // Get columns
@@ -11188,18 +12029,31 @@ mod tests {
         };
 
         // Create table and insert data using execute
-        db_connection_method(&conn, "execute", &[
-            Value::string("CREATE TABLE products (id INTEGER, name VARCHAR, price DOUBLE)")
-        ]).unwrap();
+        db_connection_method(
+            &conn,
+            "execute",
+            &[Value::string(
+                "CREATE TABLE products (id INTEGER, name VARCHAR, price DOUBLE)",
+            )],
+        )
+        .unwrap();
 
-        db_connection_method(&conn, "execute", &[
-            Value::string("INSERT INTO products VALUES (1, 'Widget', 9.99)")
-        ]).unwrap();
+        db_connection_method(
+            &conn,
+            "execute",
+            &[Value::string(
+                "INSERT INTO products VALUES (1, 'Widget', 9.99)",
+            )],
+        )
+        .unwrap();
 
         // Count query (simpler than SELECT *)
-        let result = db_connection_method(&conn, "query", &[
-            Value::string("SELECT COUNT(*) as cnt FROM products")
-        ]).unwrap();
+        let result = db_connection_method(
+            &conn,
+            "query",
+            &[Value::string("SELECT COUNT(*) as cnt FROM products")],
+        )
+        .unwrap();
         if let Value::List(rows) = result {
             let rows = rows.borrow();
             assert_eq!(rows.len(), 1);
@@ -11227,12 +12081,18 @@ mod tests {
         };
 
         // Create table and insert data
-        db_connection_method(&conn, "execute", &[
-            Value::string("CREATE TABLE test (value TEXT)")
-        ]).unwrap();
-        db_connection_method(&conn, "execute", &[
-            Value::string("INSERT INTO test VALUES ('hello')")
-        ]).unwrap();
+        db_connection_method(
+            &conn,
+            "execute",
+            &[Value::string("CREATE TABLE test (value TEXT)")],
+        )
+        .unwrap();
+        db_connection_method(
+            &conn,
+            "execute",
+            &[Value::string("INSERT INTO test VALUES ('hello')")],
+        )
+        .unwrap();
 
         // Close and reopen
         drop(conn);
@@ -11244,9 +12104,8 @@ mod tests {
         };
 
         // Verify data persisted
-        let result = db_connection_method(&conn, "query", &[
-            Value::string("SELECT * FROM test")
-        ]).unwrap();
+        let result =
+            db_connection_method(&conn, "query", &[Value::string("SELECT * FROM test")]).unwrap();
         if let Value::List(rows) = result {
             let rows = rows.borrow();
             assert_eq!(rows.len(), 1);
@@ -11601,7 +12460,10 @@ mod tests {
         assert!(result.unwrap_err().contains("host must be String"));
 
         // Wrong type for port
-        let result = tcp_method("connect", &[Value::string("localhost"), Value::string("8080")]);
+        let result = tcp_method(
+            "connect",
+            &[Value::string("localhost"), Value::string("8080")],
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("port must be Int"));
     }
@@ -11629,7 +12491,11 @@ mod tests {
 
     #[test]
     fn test_dispatch_tcp_namespace() {
-        let result = dispatch_namespace_method("Tcp", "connect", &[Value::string("localhost"), Value::Int(80)]);
+        let result = dispatch_namespace_method(
+            "Tcp",
+            "connect",
+            &[Value::string("localhost"), Value::Int(80)],
+        );
         assert!(result.is_ok());
     }
 
@@ -11682,7 +12548,8 @@ mod tests {
 
     #[test]
     fn test_dispatch_udp_namespace() {
-        let result = dispatch_namespace_method("Udp", "bind", &[Value::string("0.0.0.0"), Value::Int(0)]);
+        let result =
+            dispatch_namespace_method("Udp", "bind", &[Value::string("0.0.0.0"), Value::Int(0)]);
         assert!(result.is_ok());
     }
 
@@ -11770,7 +12637,10 @@ mod tests {
         assert!(result.unwrap_err().contains("addr must be String"));
 
         // Wrong type for port
-        let result = ws_method("listen", &[Value::string("localhost"), Value::string("8080")]);
+        let result = ws_method(
+            "listen",
+            &[Value::string("localhost"), Value::string("8080")],
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("port must be Int"));
     }
@@ -11784,7 +12654,11 @@ mod tests {
 
     #[test]
     fn test_dispatch_websocket_namespace() {
-        let result = dispatch_namespace_method("WebSocket", "connect", &[Value::string("ws://localhost:8080")]);
+        let result = dispatch_namespace_method(
+            "WebSocket",
+            "connect",
+            &[Value::string("ws://localhost:8080")],
+        );
         assert!(result.is_ok());
     }
 
@@ -11831,17 +12705,24 @@ mod tests {
     #[test]
     fn test_crypto_pbkdf2() {
         // Known test vector for PBKDF2-HMAC-SHA256
-        let result = crypto_method("pbkdf2", &[
-            Value::string("password"),
-            Value::string("salt"),
-            Value::Int(1),
-        ]).unwrap();
+        let result = crypto_method(
+            "pbkdf2",
+            &[
+                Value::string("password"),
+                Value::string("salt"),
+                Value::Int(1),
+            ],
+        )
+        .unwrap();
 
         if let Value::String(key) = result {
             // Key should be 64 hex chars (32 bytes)
             assert_eq!(key.len(), 64);
             // Known value for 1 iteration
-            assert_eq!(key.as_str(), "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b");
+            assert_eq!(
+                key.as_str(),
+                "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
+            );
         } else {
             panic!("Expected String from pbkdf2");
         }
@@ -11850,28 +12731,39 @@ mod tests {
     #[test]
     fn test_crypto_pbkdf2_iterations() {
         // With more iterations, result should be different
-        let result1 = crypto_method("pbkdf2", &[
-            Value::string("password"),
-            Value::string("salt"),
-            Value::Int(1000),
-        ]).unwrap();
+        let result1 = crypto_method(
+            "pbkdf2",
+            &[
+                Value::string("password"),
+                Value::string("salt"),
+                Value::Int(1000),
+            ],
+        )
+        .unwrap();
 
-        let result2 = crypto_method("pbkdf2", &[
-            Value::string("password"),
-            Value::string("salt"),
-            Value::Int(1),
-        ]).unwrap();
+        let result2 = crypto_method(
+            "pbkdf2",
+            &[
+                Value::string("password"),
+                Value::string("salt"),
+                Value::Int(1),
+            ],
+        )
+        .unwrap();
 
         assert_ne!(result1, result2);
     }
 
     #[test]
     fn test_crypto_pbkdf2_error_zero_iterations() {
-        let result = crypto_method("pbkdf2", &[
-            Value::string("password"),
-            Value::string("salt"),
-            Value::Int(0),
-        ]);
+        let result = crypto_method(
+            "pbkdf2",
+            &[
+                Value::string("password"),
+                Value::string("salt"),
+                Value::Int(0),
+            ],
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("at least 1"));
     }
@@ -11879,34 +12771,35 @@ mod tests {
     #[test]
     fn test_crypto_aes_roundtrip() {
         // Generate a key using pbkdf2
-        let key = crypto_method("pbkdf2", &[
-            Value::string("test_password"),
-            Value::string("test_salt"),
-            Value::Int(1000),
-        ]).unwrap();
+        let key = crypto_method(
+            "pbkdf2",
+            &[
+                Value::string("test_password"),
+                Value::string("test_salt"),
+                Value::Int(1000),
+            ],
+        )
+        .unwrap();
 
         let plaintext = "Hello, World! This is a test message.";
 
         // Encrypt
-        let encrypted = crypto_method("aes_encrypt", &[
-            Value::string(plaintext),
-            key.clone(),
-        ]).unwrap();
+        let encrypted =
+            crypto_method("aes_encrypt", &[Value::string(plaintext), key.clone()]).unwrap();
 
         // Encrypted should be base64 string
         if let Value::String(enc_str) = &encrypted {
             assert!(!enc_str.is_empty());
             // Should be valid base64
-            assert!(base64::engine::general_purpose::STANDARD.decode(enc_str.as_str()).is_ok());
+            assert!(base64::engine::general_purpose::STANDARD
+                .decode(enc_str.as_str())
+                .is_ok());
         } else {
             panic!("Expected String from aes_encrypt");
         }
 
         // Decrypt
-        let decrypted = crypto_method("aes_decrypt", &[
-            encrypted,
-            key,
-        ]).unwrap();
+        let decrypted = crypto_method("aes_decrypt", &[encrypted, key]).unwrap();
 
         assert_eq!(decrypted, Value::string(plaintext));
     }
@@ -11914,23 +12807,28 @@ mod tests {
     #[test]
     fn test_crypto_aes_different_key_fails() {
         // Encrypt with one key
-        let key1 = crypto_method("pbkdf2", &[
-            Value::string("password1"),
-            Value::string("salt"),
-            Value::Int(1000),
-        ]).unwrap();
+        let key1 = crypto_method(
+            "pbkdf2",
+            &[
+                Value::string("password1"),
+                Value::string("salt"),
+                Value::Int(1000),
+            ],
+        )
+        .unwrap();
 
-        let encrypted = crypto_method("aes_encrypt", &[
-            Value::string("secret"),
-            key1,
-        ]).unwrap();
+        let encrypted = crypto_method("aes_encrypt", &[Value::string("secret"), key1]).unwrap();
 
         // Try to decrypt with different key
-        let key2 = crypto_method("pbkdf2", &[
-            Value::string("password2"),
-            Value::string("salt"),
-            Value::Int(1000),
-        ]).unwrap();
+        let key2 = crypto_method(
+            "pbkdf2",
+            &[
+                Value::string("password2"),
+                Value::string("salt"),
+                Value::Int(1000),
+            ],
+        )
+        .unwrap();
 
         let result = crypto_method("aes_decrypt", &[encrypted, key2]);
         assert!(result.is_err());
@@ -11939,10 +12837,10 @@ mod tests {
 
     #[test]
     fn test_crypto_aes_invalid_key_length() {
-        let result = crypto_method("aes_encrypt", &[
-            Value::string("test"),
-            Value::string("short_key"),
-        ]);
+        let result = crypto_method(
+            "aes_encrypt",
+            &[Value::string("test"), Value::string("short_key")],
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("32 bytes"));
     }
@@ -12224,14 +13122,20 @@ mod tests {
 
     #[test]
     fn test_image_new_with_color() {
-        let result = image_namespace_method("new", &[Value::Int(10), Value::Int(10), Value::string("red")]);
+        let result = image_namespace_method(
+            "new",
+            &[Value::Int(10), Value::Int(10), Value::string("red")],
+        );
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), Value::Image(_)));
     }
 
     #[test]
     fn test_image_new_hex_color() {
-        let result = image_namespace_method("new", &[Value::Int(10), Value::Int(10), Value::string("#FF0000")]);
+        let result = image_namespace_method(
+            "new",
+            &[Value::Int(10), Value::Int(10), Value::string("#FF0000")],
+        );
         assert!(result.is_ok());
     }
 
@@ -12278,7 +13182,11 @@ mod tests {
 
     #[test]
     fn test_image_grayscale() {
-        let img = image_namespace_method("new", &[Value::Int(10), Value::Int(10), Value::string("red")]).unwrap();
+        let img = image_namespace_method(
+            "new",
+            &[Value::Int(10), Value::Int(10), Value::string("red")],
+        )
+        .unwrap();
         if let Value::Image(img_ref) = img {
             let result = image_method(&img_ref, "grayscale", &[]);
             assert!(result.is_ok());

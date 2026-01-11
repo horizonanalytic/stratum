@@ -521,21 +521,17 @@ impl ScrollView {
         // The default is vertical-only; horizontal requires explicit configuration
         match self.direction {
             ScrollDirection::Vertical => scroll.into(),
-            ScrollDirection::Horizontal => {
-                scroll
-                    .direction(scrollable::Direction::Horizontal(
-                        scrollable::Scrollbar::default(),
-                    ))
-                    .into()
-            }
-            ScrollDirection::Both => {
-                scroll
-                    .direction(scrollable::Direction::Both {
-                        vertical: scrollable::Scrollbar::default(),
-                        horizontal: scrollable::Scrollbar::default(),
-                    })
-                    .into()
-            }
+            ScrollDirection::Horizontal => scroll
+                .direction(scrollable::Direction::Horizontal(
+                    scrollable::Scrollbar::default(),
+                ))
+                .into(),
+            ScrollDirection::Both => scroll
+                .direction(scrollable::Direction::Both {
+                    vertical: scrollable::Scrollbar::default(),
+                    horizontal: scrollable::Scrollbar::default(),
+                })
+                .into(),
         }
     }
 }

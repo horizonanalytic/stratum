@@ -233,7 +233,10 @@ fn find_in_param(param: &Param, offset: u32) -> Option<NodeInfo> {
             .unwrap_or_else(|| "inferred".to_string());
 
         return Some(NodeInfo {
-            hover_text: format!("```stratum\n{}: {}\n```\n\n(parameter)", param.name.name, ty_str),
+            hover_text: format!(
+                "```stratum\n{}: {}\n```\n\n(parameter)",
+                param.name.name, ty_str
+            ),
             span: param.name.span,
         });
     }
@@ -283,7 +286,11 @@ fn find_in_struct(struct_def: &StructDef, offset: u32) -> Option<NodeInfo> {
     None
 }
 
-fn find_in_top_level_let(let_decl: &TopLevelLet, offset: u32, checker: &TypeChecker) -> Option<NodeInfo> {
+fn find_in_top_level_let(
+    let_decl: &TopLevelLet,
+    offset: u32,
+    checker: &TypeChecker,
+) -> Option<NodeInfo> {
     if !span_contains(let_decl.span, offset) {
         return None;
     }

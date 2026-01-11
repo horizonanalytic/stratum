@@ -109,7 +109,11 @@ impl DataFrame {
     /// Get column names
     #[must_use]
     pub fn columns(&self) -> Vec<String> {
-        self.schema.fields().iter().map(|f| f.name().clone()).collect()
+        self.schema
+            .fields()
+            .iter()
+            .map(|f| f.name().clone())
+            .collect()
     }
 
     /// Get the number of columns
@@ -198,7 +202,11 @@ impl DataFrame {
         }
 
         // Multiple batches - need to concatenate
-        let arrays: Vec<_> = self.batches.iter().map(|b| b.column(index).as_ref()).collect();
+        let arrays: Vec<_> = self
+            .batches
+            .iter()
+            .map(|b| b.column(index).as_ref())
+            .collect();
         let concatenated = arrow::compute::concat(&arrays)?;
         Ok(Series::new(name, concatenated))
     }
@@ -300,9 +308,7 @@ impl DataFrame {
         let num_cols = col_names.len();
 
         // Pre-fetch all column series
-        let columns: Vec<_> = (0..num_cols)
-            .map(|i| self.column_by_index(i))
-            .collect();
+        let columns: Vec<_> = (0..num_cols).map(|i| self.column_by_index(i)).collect();
 
         (0..self.num_rows()).map(move |row_idx| {
             use std::cell::RefCell;
@@ -647,9 +653,10 @@ impl DataFrame {
 
         if numeric_cols.is_empty() {
             // Return empty DataFrame with statistic column
-            let stat_series = Series::from_strings("statistic", vec![
-                "count", "mean", "std", "min", "25%", "50%", "75%", "max"
-            ]);
+            let stat_series = Series::from_strings(
+                "statistic",
+                vec!["count", "mean", "std", "min", "25%", "50%", "75%", "max"],
+            );
             return DataFrame::from_series(vec![stat_series]);
         }
 
@@ -941,10 +948,7 @@ impl DataFrame {
         use arrow::util::pretty::pretty_format_batches;
 
         if self.batches.is_empty() {
-            return format!(
-                "Empty DataFrame with columns: {:?}",
-                self.columns()
-            );
+            return format!("Empty DataFrame with columns: {:?}", self.columns());
         }
 
         // Get limited batches
@@ -1010,9 +1014,7 @@ impl DataFrame {
         // Find indices of rows that have no nulls in the specified columns
         let num_rows = self.num_rows();
         let non_null_indices: Vec<usize> = (0..num_rows)
-            .filter(|&row_idx| {
-                check_series.iter().all(|series| !series.is_null(row_idx))
-            })
+            .filter(|&row_idx| check_series.iter().all(|series| !series.is_null(row_idx)))
             .collect();
 
         if non_null_indices.is_empty() {
@@ -1055,7 +1057,10 @@ impl DataFrame {
     ///
     /// # Errors
     /// Returns error if the operation fails
-    pub fn fillna_map(&self, column_values: &std::collections::HashMap<String, Value>) -> DataResult<Self> {
+    pub fn fillna_map(
+        &self,
+        column_values: &std::collections::HashMap<String, Value>,
+    ) -> DataResult<Self> {
         let mut new_columns = Vec::with_capacity(self.num_columns());
 
         for col_name in self.columns() {
@@ -1130,7 +1135,8 @@ impl DataFrame {
         let col_names = self.columns();
 
         // Create the "column" column with original column names
-        let column_name_series = Series::from_strings("column", col_names.iter().map(|s| s.as_str()).collect());
+        let column_name_series =
+            Series::from_strings("column", col_names.iter().map(|s| s.as_str()).collect());
 
         let mut result_columns = vec![column_name_series];
 
@@ -1146,7 +1152,8 @@ impl DataFrame {
                 row_values.push(Self::value_to_display_string(&val));
             }
 
-            let row_series = Series::from_strings(&col_name, row_values.iter().map(|s| s.as_str()).collect());
+            let row_series =
+                Series::from_strings(&col_name, row_values.iter().map(|s| s.as_str()).collect());
             result_columns.push(row_series);
         }
 
@@ -1395,7 +1402,8 @@ impl DataFrame {
                 values.push(Self::value_to_display_string(&val));
             }
         }
-        let value_series = Series::from_strings("value", values.iter().map(|s| s.as_str()).collect());
+        let value_series =
+            Series::from_strings("value", values.iter().map(|s| s.as_str()).collect());
 
         DataFrame::from_series(vec![row_index_series, col_name_series, value_series])
     }
@@ -1411,12 +1419,7 @@ impl DataFrame {
     ///
     /// # Errors
     /// Returns error if columns not found or operation fails
-    pub fn unstack(
-        &self,
-        index_col: &str,
-        column_col: &str,
-        value_col: &str,
-    ) -> DataResult<Self> {
+    pub fn unstack(&self, index_col: &str, column_col: &str, value_col: &str) -> DataResult<Self> {
         use std::collections::HashMap;
 
         // Validate columns exist
@@ -1467,7 +1470,9 @@ impl DataFrame {
             let idx_key = Self::value_to_key_string(&idx_val);
             let col_key = Self::value_to_key_string(&col_val);
 
-            if let (Some(&row_idx), Some(&col_idx)) = (index_map.get(&idx_key), col_map.get(&col_key)) {
+            if let (Some(&row_idx), Some(&col_idx)) =
+                (index_map.get(&idx_key), col_map.get(&col_key))
+            {
                 matrix[row_idx][col_idx] = val;
             }
         }
@@ -1502,12 +1507,7 @@ impl DataFrame {
     ///
     /// # Errors
     /// Returns error if columns not found or operation fails
-    pub fn pivot(
-        &self,
-        index: &str,
-        columns: &str,
-        values: &str,
-    ) -> DataResult<Self> {
+    pub fn pivot(&self, index: &str, columns: &str, values: &str) -> DataResult<Self> {
         // pivot is essentially unstack with specific column names
         self.unstack(index, columns, values)
     }
@@ -1580,7 +1580,9 @@ impl DataFrame {
             let idx_key = Self::value_to_key_string(&idx_val);
             let col_key = Self::value_to_key_string(&col_val);
 
-            if let (Some(&row_idx), Some(&col_idx)) = (index_map.get(&idx_key), col_map.get(&col_key)) {
+            if let (Some(&row_idx), Some(&col_idx)) =
+                (index_map.get(&idx_key), col_map.get(&col_key))
+            {
                 cell_values[row_idx][col_idx].push(val);
             }
         }
@@ -1611,29 +1613,41 @@ impl DataFrame {
                     let mut count = 0;
                     for v in values {
                         match v {
-                            Value::Int(i) => { sum += *i as f64; count += 1; }
-                            Value::Float(f) => { sum += f; count += 1; }
+                            Value::Int(i) => {
+                                sum += *i as f64;
+                                count += 1;
+                            }
+                            Value::Float(f) => {
+                                sum += f;
+                                count += 1;
+                            }
                             _ => {}
                         }
                     }
-                    if count == 0 { Value::Null } else { Value::Float(sum / count as f64) }
+                    if count == 0 {
+                        Value::Null
+                    } else {
+                        Value::Float(sum / count as f64)
+                    }
                 }
-                "min" => {
-                    values.iter().filter_map(|v| match v {
+                "min" => values
+                    .iter()
+                    .filter_map(|v| match v {
                         Value::Int(i) => Some(*i as f64),
                         Value::Float(f) => Some(*f),
                         _ => None,
-                    }).min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                    .map_or(Value::Null, Value::Float)
-                }
-                "max" => {
-                    values.iter().filter_map(|v| match v {
+                    })
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .map_or(Value::Null, Value::Float),
+                "max" => values
+                    .iter()
+                    .filter_map(|v| match v {
                         Value::Int(i) => Some(*i as f64),
                         Value::Float(f) => Some(*f),
                         _ => None,
-                    }).max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                    .map_or(Value::Null, Value::Float)
-                }
+                    })
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .map_or(Value::Null, Value::Float),
                 _ => values.first().cloned().unwrap_or(Value::Null),
             }
         };
@@ -1695,9 +1709,7 @@ impl DataFrame {
         }
 
         // Build new DataFrame with the additional column
-        let mut columns: Vec<Series> = self
-            .iter_columns()
-            .collect::<DataResult<Vec<_>>>()?;
+        let mut columns: Vec<Series> = self.iter_columns().collect::<DataResult<Vec<_>>>()?;
         columns.push(series);
 
         DataFrame::from_series(columns)
@@ -2021,19 +2033,18 @@ impl DataFrame {
         // Add left columns (with suffix if overlapping and not a join key)
         for col_name in self.columns() {
             let series = self.column(&col_name)?;
-            let final_name = if !join_cols.contains(col_name.as_str()) && right_cols.contains(&col_name) {
-                format!("{}{}", col_name, suffixes.0)
-            } else {
-                col_name.clone()
-            };
+            let final_name =
+                if !join_cols.contains(col_name.as_str()) && right_cols.contains(&col_name) {
+                    format!("{}{}", col_name, suffixes.0)
+                } else {
+                    col_name.clone()
+                };
 
             let values: Vec<Value> = result_pairs
                 .iter()
-                .map(|(left_opt, _)| {
-                    match left_opt {
-                        Some(i) => series.get(*i).unwrap_or(Value::Null),
-                        None => Value::Null,
-                    }
+                .map(|(left_opt, _)| match left_opt {
+                    Some(i) => series.get(*i).unwrap_or(Value::Null),
+                    None => Value::Null,
                 })
                 .collect();
 
@@ -2056,11 +2067,9 @@ impl DataFrame {
 
             let values: Vec<Value> = result_pairs
                 .iter()
-                .map(|(_, right_opt)| {
-                    match right_opt {
-                        Some(i) => series.get(*i).unwrap_or(Value::Null),
-                        None => Value::Null,
-                    }
+                .map(|(_, right_opt)| match right_opt {
+                    Some(i) => series.get(*i).unwrap_or(Value::Null),
+                    None => Value::Null,
                 })
                 .collect();
 
@@ -2087,7 +2096,8 @@ impl DataFrame {
 
         if total_rows == 0 {
             // Return empty DataFrame with combined columns
-            let mut all_columns: Vec<Series> = self.iter_columns().collect::<DataResult<Vec<_>>>()?;
+            let mut all_columns: Vec<Series> =
+                self.iter_columns().collect::<DataResult<Vec<_>>>()?;
             let right_cols: Vec<Series> = other.iter_columns().collect::<DataResult<Vec<_>>>()?;
             all_columns.extend(right_cols);
             return DataFrame::from_series(all_columns);
@@ -2285,9 +2295,11 @@ mod tests {
 
     #[test]
     fn test_empty_dataframe() {
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("a", arrow::datatypes::DataType::Int64, true),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "a",
+            arrow::datatypes::DataType::Int64,
+            true,
+        )]));
         let df = DataFrame::empty(schema);
         assert!(df.is_empty());
         assert_eq!(df.num_columns(), 1);
@@ -2431,19 +2443,27 @@ mod tests {
 
     fn sample_dataframe_with_nulls() -> DataFrame {
         // Create DataFrame with some null values
-        let names = Series::from_values("name", &[
-            Value::string("Alice"),
-            Value::Null,
-            Value::string("Charlie"),
-            Value::string("Dave"),
-        ]).unwrap();
+        let names = Series::from_values(
+            "name",
+            &[
+                Value::string("Alice"),
+                Value::Null,
+                Value::string("Charlie"),
+                Value::string("Dave"),
+            ],
+        )
+        .unwrap();
         let ages = Series::from_optional_ints("age", vec![Some(30), Some(25), None, Some(40)]);
-        let scores = Series::from_values("score", &[
-            Value::Float(85.5),
-            Value::Float(92.0),
-            Value::Float(78.3),
-            Value::Null,
-        ]).unwrap();
+        let scores = Series::from_values(
+            "score",
+            &[
+                Value::Float(85.5),
+                Value::Float(92.0),
+                Value::Float(78.3),
+                Value::Null,
+            ],
+        )
+        .unwrap();
 
         DataFrame::from_series(vec![names, ages, scores]).unwrap()
     }
@@ -2556,7 +2576,7 @@ mod tests {
         // Check that values are converted to strings
         let row_0 = transposed.column("row_0").unwrap();
         assert_eq!(row_0.get(0).unwrap(), Value::string("Alice")); // name
-        assert_eq!(row_0.get(1).unwrap(), Value::string("30"));    // age as string
+        assert_eq!(row_0.get(1).unwrap(), Value::string("30")); // age as string
     }
 
     #[test]
@@ -2647,7 +2667,9 @@ mod tests {
         let sales = Series::from_ints("sales", vec![100, 50, 150, 200, 250]);
         let df = DataFrame::from_series(vec![product, quarter, sales]).unwrap();
 
-        let pivoted = df.pivot_table("product", "quarter", "sales", "sum").unwrap();
+        let pivoted = df
+            .pivot_table("product", "quarter", "sales", "sum")
+            .unwrap();
 
         // Should have: product, Q1, Q2 columns
         assert_eq!(pivoted.num_columns(), 3);
@@ -2832,7 +2854,9 @@ mod tests {
         let value2 = Series::from_ints("value", vec![100, 200]);
         let right = DataFrame::from_series(vec![id2, value2]).unwrap();
 
-        let result = left.merge(&right, &["id"], "inner", ("_left", "_right")).unwrap();
+        let result = left
+            .merge(&right, &["id"], "inner", ("_left", "_right"))
+            .unwrap();
 
         // Both have "value" column, should get suffixes
         assert!(result.columns().contains(&"value_left".to_string()));

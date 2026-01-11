@@ -5,7 +5,7 @@
 
 use stratum_core::lexer::{LineIndex, Span};
 use stratum_core::parser::{ParseError, Parser};
-use stratum_core::types::{TypeError, TypeChecker};
+use stratum_core::types::{TypeChecker, TypeError};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 
 use crate::cache::CachedData;
@@ -151,7 +151,11 @@ mod tests {
             }
         "#;
         let diagnostics = compute_diagnostics(source);
-        assert!(diagnostics.is_empty(), "Expected no diagnostics, got: {:?}", diagnostics);
+        assert!(
+            diagnostics.is_empty(),
+            "Expected no diagnostics, got: {:?}",
+            diagnostics
+        );
     }
 
     #[test]

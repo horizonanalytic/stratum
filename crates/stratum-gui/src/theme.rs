@@ -701,8 +701,7 @@ mod tests {
         assert_eq!(preset_theme.name(), "dark");
         assert!(!preset_theme.is_light());
 
-        let custom_theme =
-            StratumTheme::custom("My Theme", StratumPalette::LIGHT);
+        let custom_theme = StratumTheme::custom("My Theme", StratumPalette::LIGHT);
         assert_eq!(custom_theme.name(), "My Theme");
         assert!(custom_theme.is_light());
     }

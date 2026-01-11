@@ -122,7 +122,10 @@ mod tests {
 
     #[test]
     fn test_stratum_to_arrow_basic_types() {
-        assert_eq!(stratum_to_arrow_type(&Type::Int), Some(ArrowDataType::Int64));
+        assert_eq!(
+            stratum_to_arrow_type(&Type::Int),
+            Some(ArrowDataType::Int64)
+        );
         assert_eq!(
             stratum_to_arrow_type(&Type::Float),
             Some(ArrowDataType::Float64)

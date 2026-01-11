@@ -145,27 +145,18 @@ impl TypeChecker {
 
         // len: returns the length of strings, lists, and maps
         let len_type = self.inference.fresh_var();
-        self.env.define_var(
-            "len",
-            Type::function(vec![len_type], Type::Int),
-            false,
-        );
+        self.env
+            .define_var("len", Type::function(vec![len_type], Type::Int), false);
 
         // str: converts any value to string
         let str_type = self.inference.fresh_var();
-        self.env.define_var(
-            "str",
-            Type::function(vec![str_type], Type::String),
-            false,
-        );
+        self.env
+            .define_var("str", Type::function(vec![str_type], Type::String), false);
 
         // int: converts a value to integer
         let int_type = self.inference.fresh_var();
-        self.env.define_var(
-            "int",
-            Type::function(vec![int_type], Type::Int),
-            false,
-        );
+        self.env
+            .define_var("int", Type::function(vec![int_type], Type::Int), false);
 
         // float: converts a value to float
         let float_type = self.inference.fresh_var();
@@ -178,22 +169,46 @@ impl TypeChecker {
         // Register native namespace modules
         // These are built-in modules accessed via dot notation (e.g., Random.int(1, 10))
         let namespaces = [
-            "File", "Dir", "Path", "Env", "Args", "Shell", "Http",
-            "Json", "Toml", "Yaml", "Base64", "Url",
-            "Gzip", "Zip",
-            "DateTime", "Duration", "Time",
+            "File",
+            "Dir",
+            "Path",
+            "Env",
+            "Args",
+            "Shell",
+            "Http",
+            "Json",
+            "Toml",
+            "Yaml",
+            "Base64",
+            "Url",
+            "Gzip",
+            "Zip",
+            "DateTime",
+            "Duration",
+            "Time",
             "Regex",
-            "Hash", "Uuid", "Random", "Crypto",
+            "Hash",
+            "Uuid",
+            "Random",
+            "Crypto",
             "Math",
-            "Input", "Log", "System",
+            "Input",
+            "Log",
+            "System",
             "Db",
-            "Tcp", "Udp", "WebSocket",
-            "Data", "Agg", "Join", "Cube",
+            "Tcp",
+            "Udp",
+            "WebSocket",
+            "Data",
+            "Agg",
+            "Join",
+            "Cube",
             "Async",
             "Gui",
         ];
         for ns in namespaces {
-            self.env.define_var(ns, Type::Namespace(ns.to_string()), false);
+            self.env
+                .define_var(ns, Type::Namespace(ns.to_string()), false);
         }
     }
 
@@ -237,12 +252,18 @@ impl TypeChecker {
     /// Type check a top-level let declaration
     fn check_top_level_let(&mut self, let_decl: &TopLevelLet) {
         // Get the type from the annotation or infer from value
-        let declared_type = let_decl.ty.as_ref().map(|t| self.resolve_type_annotation(t));
+        let declared_type = let_decl
+            .ty
+            .as_ref()
+            .map(|t| self.resolve_type_annotation(t));
         let value_type = self.check_expr(&let_decl.value);
 
         // If there's a type annotation, ensure the value matches
         if let Some(ref expected) = declared_type {
-            if !self.inference.unify(expected, &value_type, let_decl.value.span) {
+            if !self
+                .inference
+                .unify(expected, &value_type, let_decl.value.span)
+            {
                 self.errors.push(TypeError::new(
                     TypeErrorKind::TypeMismatch {
                         expected: self.inference.apply(expected),
@@ -495,7 +516,10 @@ impl TypeChecker {
 
         let body_type = self.check_block(&func.body);
 
-        if !self.inference.unify(&body_type, &expected_body_type, func.body.span) {
+        if !self
+            .inference
+            .unify(&body_type, &expected_body_type, func.body.span)
+        {
             self.errors.push(TypeError::new(
                 TypeErrorKind::ReturnTypeMismatch {
                     expected: actual_ret_type,
@@ -1199,7 +1223,10 @@ impl TypeChecker {
                         // the inner type to be Future<result>
                         let result_type = Type::fresh_var();
                         let expected_future = Type::future(result_type.clone());
-                        if self.inference.unify(&inner_type, &expected_future, expr.span) {
+                        if self
+                            .inference
+                            .unify(&inner_type, &expected_future, expr.span)
+                        {
                             result_type
                         } else {
                             self.errors.push(TypeError::new(
@@ -1388,12 +1415,10 @@ impl TypeChecker {
 
             BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 // Handle type variables by trying to unify with the other operand
-                let left_comparable = left.is_numeric()
-                    || matches!(left, Type::String)
-                    || left.is_type_var();
-                let right_comparable = right.is_numeric()
-                    || matches!(right, Type::String)
-                    || right.is_type_var();
+                let left_comparable =
+                    left.is_numeric() || matches!(left, Type::String) || left.is_type_var();
+                let right_comparable =
+                    right.is_numeric() || matches!(right, Type::String) || right.is_type_var();
 
                 if left_comparable && right_comparable {
                     // Try to unify type variables with the other side
@@ -1792,9 +1817,10 @@ impl TypeChecker {
             "contains_key" => Type::function(vec![key.clone()], Type::Bool),
             "keys" => Type::function(vec![], Type::list(key.clone())),
             "values" => Type::function(vec![], Type::list(value.clone())),
-            "entries" => {
-                Type::function(vec![], Type::list(Type::Tuple(vec![key.clone(), value.clone()])))
-            }
+            "entries" => Type::function(
+                vec![],
+                Type::list(Type::Tuple(vec![key.clone(), value.clone()])),
+            ),
             "clear" => Type::function(vec![], Type::Unit),
             _ => {
                 self.errors.push(TypeError::no_such_field(
@@ -2379,9 +2405,7 @@ impl TypeChecker {
                     ty.clone()
                 }
             }
-            Type::List(inner) => {
-                Type::list(Self::substitute_type_vars(inner, old_ids, new_types))
-            }
+            Type::List(inner) => Type::list(Self::substitute_type_vars(inner, old_ids, new_types)),
             Type::Map(key, value) => Type::map(
                 Self::substitute_type_vars(key, old_ids, new_types),
                 Self::substitute_type_vars(value, old_ids, new_types),

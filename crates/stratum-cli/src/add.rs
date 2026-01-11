@@ -51,13 +51,14 @@ fn parse_package_spec(spec: &str) -> (String, Option<String>) {
             let name = &spec[..at_pos];
             let version = &spec[at_pos + 1..];
             // Only treat as version if the part after @ looks like a version
-            if !version.is_empty() && (version.starts_with(|c: char| c.is_ascii_digit())
-                || version.starts_with('^')
-                || version.starts_with('~')
-                || version.starts_with('=')
-                || version.starts_with('>')
-                || version.starts_with('<')
-                || version.starts_with('*'))
+            if !version.is_empty()
+                && (version.starts_with(|c: char| c.is_ascii_digit())
+                    || version.starts_with('^')
+                    || version.starts_with('~')
+                    || version.starts_with('=')
+                    || version.starts_with('>')
+                    || version.starts_with('<')
+                    || version.starts_with('*'))
             {
                 return (name.to_string(), Some(version.to_string()));
             }
@@ -117,14 +118,13 @@ pub fn add_dependency(options: AddOptions) -> Result<()> {
     }
 
     // Load existing manifest
-    let mut manifest = Manifest::from_path(manifest_path)
-        .context("Failed to read manifest")?;
+    let mut manifest = Manifest::from_path(manifest_path).context("Failed to read manifest")?;
 
     // Check for github: prefix in package spec or --github flag
     let (name, version, git_url) = if options.package.starts_with("github:") {
         // Parse GitHub package spec like "github:user/repo@v1.0.0"
-        let github_pkg = GitHubPackage::parse(&options.package)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let github_pkg =
+            GitHubPackage::parse(&options.package).map_err(|e| anyhow::anyhow!("{}", e))?;
         let pkg_name = github_pkg.repo.clone();
         let git_url = github_pkg.git_url();
         // Use version as tag if specified
@@ -132,8 +132,7 @@ pub fn add_dependency(options: AddOptions) -> Result<()> {
     } else if let Some(ref github_shorthand) = options.github {
         // Handle --github user/repo flag
         let spec = format!("github:{github_shorthand}");
-        let github_pkg = GitHubPackage::parse(&spec)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let github_pkg = GitHubPackage::parse(&spec).map_err(|e| anyhow::anyhow!("{}", e))?;
         let (pkg_name, version) = parse_package_spec(&options.package);
         let git_url = github_pkg.git_url();
         (pkg_name, version, Some(git_url))
@@ -170,8 +169,7 @@ pub fn add_dependency(options: AddOptions) -> Result<()> {
     let content = manifest
         .to_toml_string()
         .context("Failed to serialize manifest")?;
-    std::fs::write(manifest_path, content)
-        .context("Failed to write manifest")?;
+    std::fs::write(manifest_path, content).context("Failed to write manifest")?;
 
     // Print success message
     let section_name = match options.section {
@@ -199,9 +197,7 @@ fn validate_dependency_name(name: &str) -> Result<()> {
 
     // Must start with a letter
     if !name.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
-        return Err(anyhow::anyhow!(
-            "Dependency name must start with a letter"
-        ));
+        return Err(anyhow::anyhow!("Dependency name must start with a letter"));
     }
 
     // Only alphanumeric, hyphens, and underscores

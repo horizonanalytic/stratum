@@ -52,9 +52,7 @@ impl StratumLanguageServer {
             }
         };
 
-        self.client
-            .publish_diagnostics(uri, diags, version)
-            .await;
+        self.client.publish_diagnostics(uri, diags, version).await;
     }
 }
 
@@ -166,7 +164,8 @@ impl LanguageServer for StratumLanguageServer {
         // Re-check on save to pick up any external changes
         // If content is provided, we could update the cache, but typically
         // the editor has already sent didChange events
-        self.publish_diagnostics_cached(params.text_document.uri, None).await;
+        self.publish_diagnostics_cached(params.text_document.uri, None)
+            .await;
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
@@ -213,12 +212,8 @@ impl LanguageServer for StratumLanguageServer {
         let mut docs = self.documents.write().await;
         if let Some(cache) = docs.get_mut(&uri) {
             let data = cache.get_all_cached();
-            let refs = references::compute_references_cached(
-                &uri,
-                &data,
-                position,
-                include_declaration,
-            );
+            let refs =
+                references::compute_references_cached(&uri, &data, position, include_declaration);
             if !refs.is_empty() {
                 return Ok(Some(refs));
             }
@@ -227,10 +222,7 @@ impl LanguageServer for StratumLanguageServer {
         Ok(None)
     }
 
-    async fn completion(
-        &self,
-        params: CompletionParams,
-    ) -> Result<Option<CompletionResponse>> {
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
@@ -247,10 +239,7 @@ impl LanguageServer for StratumLanguageServer {
         Ok(None)
     }
 
-    async fn signature_help(
-        &self,
-        params: SignatureHelpParams,
-    ) -> Result<Option<SignatureHelp>> {
+    async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
         let uri = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
@@ -342,10 +331,7 @@ impl LanguageServer for StratumLanguageServer {
         Ok(None)
     }
 
-    async fn formatting(
-        &self,
-        params: DocumentFormattingParams,
-    ) -> Result<Option<Vec<TextEdit>>> {
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let uri = params.text_document.uri;
 
         // Get the document content
@@ -377,10 +363,7 @@ impl LanguageServer for StratumLanguageServer {
         Ok(None)
     }
 
-    async fn code_action(
-        &self,
-        params: CodeActionParams,
-    ) -> Result<Option<CodeActionResponse>> {
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let uri = params.text_document.uri;
         let range = params.range;
         let diagnostics = &params.context.diagnostics;
@@ -389,7 +372,8 @@ impl LanguageServer for StratumLanguageServer {
         let mut docs = self.documents.write().await;
         if let Some(cache) = docs.get_mut(&uri) {
             let data = cache.get_all_cached();
-            let actions = code_actions::compute_code_actions_cached(&uri, &data, range, diagnostics);
+            let actions =
+                code_actions::compute_code_actions_cached(&uri, &data, range, diagnostics);
             if !actions.is_empty() {
                 return Ok(Some(actions));
             }

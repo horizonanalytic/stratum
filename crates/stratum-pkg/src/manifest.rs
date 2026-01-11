@@ -365,9 +365,8 @@ impl Manifest {
     fn validate_version(&self) -> Result<(), ManifestError> {
         let version = &self.package.version;
 
-        semver::Version::parse(version).map_err(|e| {
-            ManifestError::InvalidVersion(version.clone(), e.to_string())
-        })?;
+        semver::Version::parse(version)
+            .map_err(|e| ManifestError::InvalidVersion(version.clone(), e.to_string()))?;
 
         Ok(())
     }

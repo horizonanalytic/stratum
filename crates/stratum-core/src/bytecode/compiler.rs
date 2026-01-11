@@ -3,9 +3,10 @@
 use std::rc::Rc;
 
 use crate::ast::{
-    BinOp, Block, CallArg, CatchClause, CompoundOp, ElseBranch, ExecutionMode, ExecutionModeOverride,
-    Expr, ExprKind, FieldInit, Function, Ident, Item, ItemKind, Literal, MatchArm, Module, Param,
-    Pattern, PatternKind, Stmt, StmtKind, StringPart, TopLevelItem, TopLevelLet, UnaryOp,
+    BinOp, Block, CallArg, CatchClause, CompoundOp, ElseBranch, ExecutionMode,
+    ExecutionModeOverride, Expr, ExprKind, FieldInit, Function, Ident, Item, ItemKind, Literal,
+    MatchArm, Module, Param, Pattern, PatternKind, Stmt, StmtKind, StringPart, TopLevelItem,
+    TopLevelLet, UnaryOp,
 };
 use crate::lexer::Span;
 
@@ -207,7 +208,10 @@ impl Compiler {
     }
 
     /// Compile a module to bytecode
-    pub fn compile_module(mut self, module: &Module) -> Result<Rc<BytecodeFunction>, Vec<CompileError>> {
+    pub fn compile_module(
+        mut self,
+        module: &Module,
+    ) -> Result<Rc<BytecodeFunction>, Vec<CompileError>> {
         // Capture module-level execution mode from inner attributes (e.g., #![compile])
         self.module_mode = module.execution_mode();
 
@@ -281,7 +285,10 @@ impl Compiler {
     }
 
     /// Compile a single expression (for REPL)
-    pub fn compile_expression(mut self, expr: &Expr) -> Result<Rc<BytecodeFunction>, Vec<CompileError>> {
+    pub fn compile_expression(
+        mut self,
+        expr: &Expr,
+    ) -> Result<Rc<BytecodeFunction>, Vec<CompileError>> {
         self.expression(expr);
         // The expression result is already on the stack, just emit Return
         let line = self.line_from_span(expr.span);
@@ -496,7 +503,11 @@ impl Compiler {
 
     fn statement(&mut self, stmt: &Stmt) {
         match &stmt.kind {
-            StmtKind::Let { pattern, ty: _, value } => {
+            StmtKind::Let {
+                pattern,
+                ty: _,
+                value,
+            } => {
                 self.let_statement(pattern, value, stmt.span);
             }
             StmtKind::Expr(expr) => {
@@ -514,7 +525,11 @@ impl Compiler {
             StmtKind::Return(expr) => {
                 self.return_statement(expr.as_ref(), stmt.span);
             }
-            StmtKind::For { pattern, iter, body } => {
+            StmtKind::For {
+                pattern,
+                iter,
+                body,
+            } => {
                 self.for_loop(pattern, iter, body, stmt.span);
             }
             StmtKind::While { cond, body } => {
@@ -799,7 +814,12 @@ impl Compiler {
 
         // Jump to after loop (will be patched)
         let jump = self.emit_jump(OpCode::Jump, line);
-        self.current.loops.last_mut().unwrap().break_jumps.push(jump);
+        self.current
+            .loops
+            .last_mut()
+            .unwrap()
+            .break_jumps
+            .push(jump);
     }
 
     fn continue_statement(&mut self, span: Span) {
@@ -849,7 +869,9 @@ impl Compiler {
         // Patch catch offset to here (offset is from AFTER reading both offsets, i.e., finally_offset_pos + 2)
         let catch_target = self.current.chunk().current_offset();
         let catch_offset = (catch_target as isize - (finally_offset_pos as isize + 2)) as i16;
-        self.current.chunk_mut().patch_i16(catch_offset_pos, catch_offset);
+        self.current
+            .chunk_mut()
+            .patch_i16(catch_offset_pos, catch_offset);
 
         // Compile catch clauses
         for catch in catches {
@@ -1014,16 +1036,19 @@ impl Compiler {
                 variant,
                 data,
             } => {
-                self.enum_variant(enum_name.as_ref(), variant, data.as_deref(), line, expr.span);
+                self.enum_variant(
+                    enum_name.as_ref(),
+                    variant,
+                    data.as_deref(),
+                    line,
+                    expr.span,
+                );
             }
 
             ExprKind::Placeholder => {
                 // Placeholder (_) is only valid inside pipeline expressions.
                 // If we reach here, it means _ was used outside of a |> context.
-                self.error(
-                    CompileErrorKind::InvalidPlaceholder,
-                    expr.span,
-                );
+                self.error(CompileErrorKind::InvalidPlaceholder, expr.span);
             }
 
             ExprKind::ColumnShorthand(ident) => {
@@ -1090,7 +1115,11 @@ impl Compiler {
                 }
             }
             Literal::String(s) => {
-                if let Some(idx) = self.current.chunk_mut().add_constant(Value::string(s.clone())) {
+                if let Some(idx) = self
+                    .current
+                    .chunk_mut()
+                    .add_constant(Value::string(s.clone()))
+                {
                     self.emit_op_u16(OpCode::Const, idx, line);
                 } else {
                     self.error(CompileErrorKind::TooManyConstants, span);
@@ -1222,7 +1251,10 @@ impl Compiler {
                     BinOp::Gt => self.emit_op(OpCode::Gt, line),
                     BinOp::Ge => self.emit_op(OpCode::Ge, line),
                     _ => {
-                        self.error(CompileErrorKind::Internal(format!("unhandled binary op: {op:?}")), span);
+                        self.error(
+                            CompileErrorKind::Internal(format!("unhandled binary op: {op:?}")),
+                            span,
+                        );
                     }
                 }
             }
@@ -1544,7 +1576,11 @@ impl Compiler {
         for part in parts {
             match part {
                 StringPart::Literal(s) => {
-                    if let Some(idx) = self.current.chunk_mut().add_constant(Value::string(s.clone())) {
+                    if let Some(idx) = self
+                        .current
+                        .chunk_mut()
+                        .add_constant(Value::string(s.clone()))
+                    {
                         self.emit_op_u16(OpCode::Const, idx, line);
                         count += 1;
                     }
@@ -1869,10 +1905,18 @@ impl Compiler {
             }
             ExprKind::Unary { expr: e, .. } => Self::contains_column_shorthand(e),
             ExprKind::Paren(e) => Self::contains_column_shorthand(e),
-            ExprKind::Call { callee, args, trailing_closure } => {
+            ExprKind::Call {
+                callee,
+                args,
+                trailing_closure,
+            } => {
                 Self::contains_column_shorthand(callee)
-                    || args.iter().any(|arg| Self::contains_column_shorthand(arg.value()))
-                    || trailing_closure.as_ref().map_or(false, |tc| Self::contains_column_shorthand(tc))
+                    || args
+                        .iter()
+                        .any(|arg| Self::contains_column_shorthand(arg.value()))
+                    || trailing_closure
+                        .as_ref()
+                        .map_or(false, |tc| Self::contains_column_shorthand(tc))
             }
             ExprKind::Index { expr: e, index } => {
                 Self::contains_column_shorthand(e) || Self::contains_column_shorthand(index)
@@ -1904,18 +1948,17 @@ impl Compiler {
                         .as_ref()
                         .map_or(false, |e| Self::contains_column_shorthand(e))
                     || else_branch.as_ref().map_or(false, |eb| match eb {
-                        ElseBranch::Block(b) => {
-                            b.expr
-                                .as_ref()
-                                .map_or(false, |e| Self::contains_column_shorthand(e))
-                        }
+                        ElseBranch::Block(b) => b
+                            .expr
+                            .as_ref()
+                            .map_or(false, |e| Self::contains_column_shorthand(e)),
                         ElseBranch::ElseIf(e) => Self::contains_column_shorthand(e),
                     })
             }
             ExprKind::List(items) => items.iter().any(Self::contains_column_shorthand),
-            ExprKind::Map(pairs) => pairs
-                .iter()
-                .any(|(k, v)| Self::contains_column_shorthand(k) || Self::contains_column_shorthand(v)),
+            ExprKind::Map(pairs) => pairs.iter().any(|(k, v)| {
+                Self::contains_column_shorthand(k) || Self::contains_column_shorthand(v)
+            }),
             ExprKind::Lambda { body, .. } => Self::contains_column_shorthand(body),
             ExprKind::StringInterp { parts } => parts.iter().any(|p| match p {
                 StringPart::Expr(e) => Self::contains_column_shorthand(e),
@@ -2083,14 +2126,14 @@ impl Compiler {
                     self.emit_op_u16(OpCode::GetField, idx, line);
                 }
             }
-            ExprKind::Call { callee, args, trailing_closure } => {
+            ExprKind::Call {
+                callee,
+                args,
+                trailing_closure,
+            } => {
                 // For nested calls, recursively transform
                 let total_args = args.len() + if trailing_closure.is_some() { 1 } else { 0 };
-                if let ExprKind::Field {
-                    expr: obj,
-                    field,
-                } = &callee.kind
-                {
+                if let ExprKind::Field { expr: obj, field } = &callee.kind {
                     // Method call
                     self.compile_with_column_shorthand_transform(obj, row_var, line);
                     for arg in args {
@@ -2206,7 +2249,10 @@ mod tests {
         let result = compile_module("fx add(a, b) { a + b }");
         assert!(result.is_ok());
         let script = result.unwrap();
-        assert_eq!(get_function_mode(&script, "add"), Some(ExecutionMode::Interpret));
+        assert_eq!(
+            get_function_mode(&script, "add"),
+            Some(ExecutionMode::Interpret)
+        );
     }
 
     #[test]
@@ -2215,7 +2261,10 @@ mod tests {
         let result = compile_module("#[compile]\nfx fast() { 42 }");
         assert!(result.is_ok());
         let script = result.unwrap();
-        assert_eq!(get_function_mode(&script, "fast"), Some(ExecutionMode::Compile));
+        assert_eq!(
+            get_function_mode(&script, "fast"),
+            Some(ExecutionMode::Compile)
+        );
     }
 
     #[test]
@@ -2224,7 +2273,10 @@ mod tests {
         let result = compile_module("#[interpret]\nfx slow() { 42 }");
         assert!(result.is_ok());
         let script = result.unwrap();
-        assert_eq!(get_function_mode(&script, "slow"), Some(ExecutionMode::Interpret));
+        assert_eq!(
+            get_function_mode(&script, "slow"),
+            Some(ExecutionMode::Interpret)
+        );
     }
 
     #[test]
@@ -2233,7 +2285,10 @@ mod tests {
         let result = compile_module("#[compile(hot)]\nfx hot() { 42 }");
         assert!(result.is_ok());
         let script = result.unwrap();
-        assert_eq!(get_function_mode(&script, "hot"), Some(ExecutionMode::CompileHot));
+        assert_eq!(
+            get_function_mode(&script, "hot"),
+            Some(ExecutionMode::CompileHot)
+        );
     }
 
     #[test]
@@ -2242,8 +2297,14 @@ mod tests {
         let result = compile_module("#![compile]\nfx one() { 1 }\nfx two() { 2 }");
         assert!(result.is_ok());
         let script = result.unwrap();
-        assert_eq!(get_function_mode(&script, "one"), Some(ExecutionMode::Compile));
-        assert_eq!(get_function_mode(&script, "two"), Some(ExecutionMode::Compile));
+        assert_eq!(
+            get_function_mode(&script, "one"),
+            Some(ExecutionMode::Compile)
+        );
+        assert_eq!(
+            get_function_mode(&script, "two"),
+            Some(ExecutionMode::Compile)
+        );
     }
 
     #[test]
@@ -2253,19 +2314,26 @@ mod tests {
         assert!(result.is_ok());
         let script = result.unwrap();
         // Function overrides module
-        assert_eq!(get_function_mode(&script, "slow"), Some(ExecutionMode::Interpret));
+        assert_eq!(
+            get_function_mode(&script, "slow"),
+            Some(ExecutionMode::Interpret)
+        );
     }
 
     #[test]
     fn compile_with_interpret_all_override() {
         // CLI --interpret-all should override all directives
         let module = Parser::parse_module("#[compile]\nfx fast() { 42 }").expect("Parse error");
-        let compiler = Compiler::new().with_mode_override(Some(ExecutionModeOverride::InterpretAll));
+        let compiler =
+            Compiler::new().with_mode_override(Some(ExecutionModeOverride::InterpretAll));
         let result = compiler.compile_module(&module);
         assert!(result.is_ok());
         let script = result.unwrap();
         // Should be Interpret despite #[compile] directive
-        assert_eq!(get_function_mode(&script, "fast"), Some(ExecutionMode::Interpret));
+        assert_eq!(
+            get_function_mode(&script, "fast"),
+            Some(ExecutionMode::Interpret)
+        );
     }
 
     #[test]
@@ -2277,6 +2345,9 @@ mod tests {
         assert!(result.is_ok());
         let script = result.unwrap();
         // Should be Compile despite #[interpret] directive
-        assert_eq!(get_function_mode(&script, "slow"), Some(ExecutionMode::Compile));
+        assert_eq!(
+            get_function_mode(&script, "slow"),
+            Some(ExecutionMode::Compile)
+        );
     }
 }

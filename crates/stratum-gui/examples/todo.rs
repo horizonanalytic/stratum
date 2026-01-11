@@ -88,10 +88,7 @@ fn main() {
 /// Build the todo app UI using GuiElement builder pattern
 fn build_todo_ui() -> GuiElement {
     // Title
-    let title = GuiElement::text("Todo List")
-        .text_size(32.0)
-        .bold()
-        .build();
+    let title = GuiElement::text("Todo List").text_size(32.0).bold().build();
 
     let subtitle = GuiElement::text("Track your tasks with Stratum")
         .text_size(14.0)
@@ -112,8 +109,7 @@ fn build_todo_ui() -> GuiElement {
         .build();
 
     // Separator
-    let separator = GuiElement::text("─────────────────────────────────")
-        .build();
+    let separator = GuiElement::text("─────────────────────────────────").build();
 
     // Todo items section
     let items_header = GuiElement::text("Your Tasks:")
@@ -164,8 +160,5 @@ fn build_todo_item(_label_field: &str, completed_field: &str, label_text: &str) 
         .build();
 
     // Wrap in an HStack for consistent layout
-    GuiElement::hstack()
-        .spacing(10.0)
-        .child(checkbox)
-        .build()
+    GuiElement::hstack().spacing(10.0).child(checkbox).build()
 }

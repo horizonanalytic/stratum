@@ -4,8 +4,8 @@
 //! find all usages of a symbol throughout the code.
 
 use stratum_core::ast::{
-    Block, CallArg, EnumDef, Expr, ExprKind, Function, Item, ItemKind, Module, Pattern,
-    PatternKind, Stmt, StmtKind, StructDef, TopLevelItem, TopLevelLet, InterfaceDef, ImplDef,
+    Block, CallArg, EnumDef, Expr, ExprKind, Function, ImplDef, InterfaceDef, Item, ItemKind,
+    Module, Pattern, PatternKind, Stmt, StmtKind, StructDef, TopLevelItem, TopLevelLet,
 };
 use stratum_core::lexer::{LineIndex, Span};
 use stratum_core::parser::Parser;
@@ -41,7 +41,14 @@ pub fn compute_references_cached(
 
     // Look up the definition to get scope information
     let Some(def_info) = index.lookup(&ident_info.name, offset) else {
-        return collect_all_references(module, &ident_info.name, None, uri, data.line_index, include_declaration);
+        return collect_all_references(
+            module,
+            &ident_info.name,
+            None,
+            uri,
+            data.line_index,
+            include_declaration,
+        );
     };
 
     // Collect all references
@@ -87,7 +94,14 @@ pub fn compute_references(
     let Some(def_info) = index.lookup(&ident_info.name, offset) else {
         // No definition found - symbol might be undefined
         // Still collect references in case it's a built-in or external
-        return collect_all_references(&module, &ident_info.name, None, uri, &line_index, include_declaration);
+        return collect_all_references(
+            &module,
+            &ident_info.name,
+            None,
+            uri,
+            &line_index,
+            include_declaration,
+        );
     };
 
     // Collect all references
@@ -189,7 +203,12 @@ fn collect_refs_in_item(item: &Item, name: &str, scope: Option<Span>, refs: &mut
 }
 
 /// Collect references in a function
-fn collect_refs_in_function(func: &Function, name: &str, scope: Option<Span>, refs: &mut Vec<Span>) {
+fn collect_refs_in_function(
+    func: &Function,
+    name: &str,
+    scope: Option<Span>,
+    refs: &mut Vec<Span>,
+) {
     // Check if we're in scope (for scoped symbols)
     if let Some(s) = scope {
         if !spans_overlap(func.span, s) {
@@ -214,14 +233,24 @@ fn collect_refs_in_function(func: &Function, name: &str, scope: Option<Span>, re
 }
 
 /// Collect references in a struct definition
-fn collect_refs_in_struct(struct_def: &StructDef, name: &str, _scope: Option<Span>, refs: &mut Vec<Span>) {
+fn collect_refs_in_struct(
+    struct_def: &StructDef,
+    name: &str,
+    _scope: Option<Span>,
+    refs: &mut Vec<Span>,
+) {
     if struct_def.name.name == name {
         refs.push(struct_def.name.span);
     }
 }
 
 /// Collect references in an enum definition
-fn collect_refs_in_enum(enum_def: &EnumDef, name: &str, _scope: Option<Span>, refs: &mut Vec<Span>) {
+fn collect_refs_in_enum(
+    enum_def: &EnumDef,
+    name: &str,
+    _scope: Option<Span>,
+    refs: &mut Vec<Span>,
+) {
     if enum_def.name.name == name {
         refs.push(enum_def.name.span);
     }
@@ -234,7 +263,12 @@ fn collect_refs_in_enum(enum_def: &EnumDef, name: &str, _scope: Option<Span>, re
 }
 
 /// Collect references in an interface definition
-fn collect_refs_in_interface(interface_def: &InterfaceDef, name: &str, _scope: Option<Span>, refs: &mut Vec<Span>) {
+fn collect_refs_in_interface(
+    interface_def: &InterfaceDef,
+    name: &str,
+    _scope: Option<Span>,
+    refs: &mut Vec<Span>,
+) {
     if interface_def.name.name == name {
         refs.push(interface_def.name.span);
     }
@@ -305,7 +339,11 @@ fn collect_refs_in_stmt(stmt: &Stmt, name: &str, scope: Option<Span>, refs: &mut
             collect_refs_in_expr(expr, name, scope, refs);
         }
         StmtKind::Return(None) | StmtKind::Break | StmtKind::Continue => {}
-        StmtKind::For { pattern, iter, body } => {
+        StmtKind::For {
+            pattern,
+            iter,
+            body,
+        } => {
             collect_refs_in_pattern(pattern, name, refs);
             collect_refs_in_expr(iter, name, scope, refs);
             collect_refs_in_block(body, name, scope, refs);
@@ -349,7 +387,11 @@ fn collect_refs_in_pattern(pattern: &Pattern, name: &str, refs: &mut Vec<Span>) 
                 refs.push(ident.span);
             }
         }
-        PatternKind::Struct { name: struct_name, fields, .. } => {
+        PatternKind::Struct {
+            name: struct_name,
+            fields,
+            ..
+        } => {
             if struct_name.name == name {
                 refs.push(struct_name.span);
             }
@@ -362,7 +404,11 @@ fn collect_refs_in_pattern(pattern: &Pattern, name: &str, refs: &mut Vec<Span>) 
                 }
             }
         }
-        PatternKind::Variant { enum_name, variant, data } => {
+        PatternKind::Variant {
+            enum_name,
+            variant,
+            data,
+        } => {
             if let Some(enum_n) = enum_name {
                 if enum_n.name == name {
                     refs.push(enum_n.span);
@@ -417,14 +463,22 @@ fn collect_refs_in_expr(expr: &Expr, name: &str, scope: Option<Span>, refs: &mut
         ExprKind::Paren(inner) => {
             collect_refs_in_expr(inner, name, scope, refs);
         }
-        ExprKind::Call { callee, args, trailing_closure } => {
+        ExprKind::Call {
+            callee,
+            args,
+            trailing_closure,
+        } => {
             collect_refs_in_expr(callee, name, scope, refs);
             for arg in args {
                 match arg {
                     CallArg::Positional(e) => {
                         collect_refs_in_expr(e, name, scope, refs);
                     }
-                    CallArg::Named { name: arg_name, value, .. } => {
+                    CallArg::Named {
+                        name: arg_name,
+                        value,
+                        ..
+                    } => {
                         if arg_name.name == name {
                             refs.push(arg_name.span);
                         }
@@ -458,7 +512,11 @@ fn collect_refs_in_expr(expr: &Expr, name: &str, scope: Option<Span>, refs: &mut
             collect_refs_in_expr(e, name, scope, refs);
             collect_refs_in_expr(index, name, scope, refs);
         }
-        ExprKind::If { cond, then_branch, else_branch } => {
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             collect_refs_in_expr(cond, name, scope, refs);
             collect_refs_in_block(then_branch, name, scope, refs);
             if let Some(else_br) = else_branch {
@@ -511,7 +569,10 @@ fn collect_refs_in_expr(expr: &Expr, name: &str, scope: Option<Span>, refs: &mut
                 }
             }
         }
-        ExprKind::StructInit { name: struct_name, fields } => {
+        ExprKind::StructInit {
+            name: struct_name,
+            fields,
+        } => {
             if struct_name.name == name {
                 refs.push(struct_name.span);
             }
@@ -525,7 +586,11 @@ fn collect_refs_in_expr(expr: &Expr, name: &str, scope: Option<Span>, refs: &mut
                 }
             }
         }
-        ExprKind::EnumVariant { enum_name, variant, data } => {
+        ExprKind::EnumVariant {
+            enum_name,
+            variant,
+            data,
+        } => {
             if let Some(enum_n) = enum_name {
                 if enum_n.name == name {
                     refs.push(enum_n.span);
@@ -713,7 +778,11 @@ fn find_ident_in_pattern(pattern: &Pattern, offset: u32) -> Option<IdentAtPositi
                 }
             }
         }
-        PatternKind::Variant { enum_name, variant, data } => {
+        PatternKind::Variant {
+            enum_name,
+            variant,
+            data,
+        } => {
             if let Some(enum_n) = enum_name {
                 if span_contains(enum_n.span, offset) {
                     return Some(IdentAtPosition {
@@ -804,7 +873,11 @@ fn find_ident_in_stmt(stmt: &Stmt, offset: u32) -> Option<IdentAtPosition> {
         }
         StmtKind::Return(Some(expr)) => find_ident_in_expr(expr, offset),
         StmtKind::Return(None) | StmtKind::Break | StmtKind::Continue => None,
-        StmtKind::For { pattern, iter, body } => {
+        StmtKind::For {
+            pattern,
+            iter,
+            body,
+        } => {
             if let Some(info) = find_ident_in_pattern(pattern, offset) {
                 return Some(info);
             }
@@ -876,7 +949,11 @@ fn find_ident_in_expr(expr: &Expr, offset: u32) -> Option<IdentAtPosition> {
         ExprKind::Paren(inner) => {
             return find_ident_in_expr(inner, offset);
         }
-        ExprKind::Call { callee, args, trailing_closure } => {
+        ExprKind::Call {
+            callee,
+            args,
+            trailing_closure,
+        } => {
             if let Some(info) = find_ident_in_expr(callee, offset) {
                 return Some(info);
             }
@@ -934,7 +1011,11 @@ fn find_ident_in_expr(expr: &Expr, offset: u32) -> Option<IdentAtPosition> {
             }
             return find_ident_in_expr(index, offset);
         }
-        ExprKind::If { cond, then_branch, else_branch } => {
+        ExprKind::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
             if let Some(info) = find_ident_in_expr(cond, offset) {
                 return Some(info);
             }
@@ -1031,7 +1112,11 @@ fn find_ident_in_expr(expr: &Expr, offset: u32) -> Option<IdentAtPosition> {
                 }
             }
         }
-        ExprKind::EnumVariant { enum_name, variant, data } => {
+        ExprKind::EnumVariant {
+            enum_name,
+            variant,
+            data,
+        } => {
             if let Some(enum_n) = enum_name {
                 if span_contains(enum_n.span, offset) {
                     return Some(IdentAtPosition {
@@ -1113,7 +1198,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "greet" function definition (line 1)
-        let position = Position { line: 1, character: 3 };
+        let position = Position {
+            line: 1,
+            character: 3,
+        };
 
         let refs = compute_references(&uri, source, position, true);
         // Should find: definition + 2 calls
@@ -1132,7 +1220,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "x" definition (line 2)
-        let position = Position { line: 2, character: 8 };
+        let position = Position {
+            line: 2,
+            character: 8,
+        };
 
         let refs = compute_references(&uri, source, position, true);
         // Should find: definition + 2 usages
@@ -1150,7 +1241,10 @@ fx add(a: Int, b: Int) -> Int {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on parameter "a" (line 1)
-        let position = Position { line: 1, character: 7 };
+        let position = Position {
+            line: 1,
+            character: 7,
+        };
 
         let refs = compute_references(&uri, source, position, true);
         // Should find: parameter definition + 2 usages
@@ -1173,7 +1267,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "Point" struct definition (line 1)
-        let position = Position { line: 1, character: 7 };
+        let position = Position {
+            line: 1,
+            character: 7,
+        };
 
         let refs = compute_references(&uri, source, position, true);
         // Should find: definition + 2 struct init usages
@@ -1193,7 +1290,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "i" in print(i) - a usage inside the loop body (line 4)
-        let position = Position { line: 4, character: 14 };
+        let position = Position {
+            line: 4,
+            character: 14,
+        };
 
         let refs = compute_references(&uri, source, position, true);
         // Should find: loop variable declaration + 2 usages
@@ -1214,7 +1314,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "greet" function definition
-        let position = Position { line: 1, character: 3 };
+        let position = Position {
+            line: 1,
+            character: 3,
+        };
 
         let refs_with_decl = compute_references(&uri, source, position, true);
         let refs_without_decl = compute_references(&uri, source, position, false);
@@ -1233,7 +1336,10 @@ fx main() {
         let uri = Url::parse("file:///test.strat").unwrap();
 
         // Position on "unknown_var"
-        let position = Position { line: 2, character: 10 };
+        let position = Position {
+            line: 2,
+            character: 10,
+        };
 
         let refs = compute_references(&uri, source, position, true);
         // Should still find the usage itself (as best effort)

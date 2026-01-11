@@ -5,14 +5,10 @@
 //! - Symbol completions (functions, variables, structs, enums)
 //! - Struct field completions after `.`
 
-use stratum_core::ast::{
-    Expr, ExprKind, ItemKind, Module, StructDef, TopLevelItem,
-};
+use stratum_core::ast::{Expr, ExprKind, ItemKind, Module, StructDef, TopLevelItem};
 use stratum_core::lexer::{LineIndex, Span};
 use stratum_core::parser::Parser;
-use tower_lsp::lsp_types::{
-    CompletionItem, CompletionItemKind, InsertTextFormat, Position,
-};
+use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, InsertTextFormat, Position};
 
 use crate::cache::CachedData;
 use crate::definition::{SymbolIndex, SymbolKind};
@@ -23,11 +19,17 @@ pub enum CompletionContext {
     /// General completion (keywords, symbols in scope)
     General { prefix: String, offset: u32 },
     /// Field access completion (after `.`)
-    FieldAccess { receiver_span: Span, field_prefix: String },
+    FieldAccess {
+        receiver_span: Span,
+        field_prefix: String,
+    },
 }
 
 /// Compute completions using cached data
-pub fn compute_completions_cached(data: &CachedData<'_>, position: Position) -> Vec<CompletionItem> {
+pub fn compute_completions_cached(
+    data: &CachedData<'_>,
+    position: Position,
+) -> Vec<CompletionItem> {
     let Some(offset) = position_to_offset(data.line_index, position) else {
         return vec![];
     };
@@ -49,9 +51,10 @@ pub fn compute_completions_cached(data: &CachedData<'_>, position: Position) -> 
             items.extend(symbol_completions(module, &prefix, offset));
             items
         }
-        CompletionContext::FieldAccess { receiver_span, field_prefix } => {
-            field_completions(module, data.content, receiver_span, &field_prefix)
-        }
+        CompletionContext::FieldAccess {
+            receiver_span,
+            field_prefix,
+        } => field_completions(module, data.content, receiver_span, &field_prefix),
     }
 }
 
@@ -72,9 +75,7 @@ pub fn compute_completions(source: &str, position: Position) -> Vec<CompletionIt
         Err(_) => {
             // Even if parsing fails, we can still provide keyword completions
             return match context {
-                CompletionContext::General { prefix, .. } => {
-                    keyword_completions(&prefix)
-                }
+                CompletionContext::General { prefix, .. } => keyword_completions(&prefix),
                 CompletionContext::FieldAccess { .. } => vec![],
             };
         }
@@ -86,9 +87,10 @@ pub fn compute_completions(source: &str, position: Position) -> Vec<CompletionIt
             items.extend(symbol_completions(&module, &prefix, offset));
             items
         }
-        CompletionContext::FieldAccess { receiver_span, field_prefix } => {
-            field_completions(&module, source, receiver_span, &field_prefix)
-        }
+        CompletionContext::FieldAccess {
+            receiver_span,
+            field_prefix,
+        } => field_completions(&module, source, receiver_span, &field_prefix),
     }
 }
 
@@ -121,7 +123,10 @@ fn determine_context(source: &str, offset: u32) -> CompletionContext {
         };
     }
 
-    CompletionContext::General { prefix, offset: offset as u32 }
+    CompletionContext::General {
+        prefix,
+        offset: offset as u32,
+    }
 }
 
 /// Find the start of a receiver expression before a dot
@@ -188,26 +193,68 @@ fn position_to_offset(line_index: &LineIndex, position: Position) -> Option<u32>
 fn keyword_completions(prefix: &str) -> Vec<CompletionItem> {
     let keywords = [
         // Declarations with snippets
-        ("fx", "fx ${1:name}(${2:params}) {\n\t$0\n}", "Function definition", true),
+        (
+            "fx",
+            "fx ${1:name}(${2:params}) {\n\t$0\n}",
+            "Function definition",
+            true,
+        ),
         ("let", "let ${1:name} = ${0}", "Variable binding", true),
-        ("struct", "struct ${1:Name} {\n\t${0}\n}", "Struct definition", true),
-        ("enum", "enum ${1:Name} {\n\t${0}\n}", "Enum definition", true),
-        ("interface", "interface ${1:Name} {\n\t${0}\n}", "Interface definition", true),
-        ("impl", "impl ${1:Type} {\n\t${0}\n}", "Implementation block", true),
+        (
+            "struct",
+            "struct ${1:Name} {\n\t${0}\n}",
+            "Struct definition",
+            true,
+        ),
+        (
+            "enum",
+            "enum ${1:Name} {\n\t${0}\n}",
+            "Enum definition",
+            true,
+        ),
+        (
+            "interface",
+            "interface ${1:Name} {\n\t${0}\n}",
+            "Interface definition",
+            true,
+        ),
+        (
+            "impl",
+            "impl ${1:Type} {\n\t${0}\n}",
+            "Implementation block",
+            true,
+        ),
         ("import", "import ${0}", "Import statement", true),
-
         // Control flow with snippets
         ("if", "if ${1:condition} {\n\t${0}\n}", "If statement", true),
         ("else", "else {\n\t${0}\n}", "Else clause", true),
-        ("for", "for ${1:item} in ${2:iterable} {\n\t${0}\n}", "For loop", true),
-        ("while", "while ${1:condition} {\n\t${0}\n}", "While loop", true),
-        ("match", "match ${1:value} {\n\t${0}\n}", "Match expression", true),
-
+        (
+            "for",
+            "for ${1:item} in ${2:iterable} {\n\t${0}\n}",
+            "For loop",
+            true,
+        ),
+        (
+            "while",
+            "while ${1:condition} {\n\t${0}\n}",
+            "While loop",
+            true,
+        ),
+        (
+            "match",
+            "match ${1:value} {\n\t${0}\n}",
+            "Match expression",
+            true,
+        ),
         // Error handling with snippets
-        ("try", "try {\n\t${1}\n} catch ${2:e} {\n\t${0}\n}", "Try-catch block", true),
+        (
+            "try",
+            "try {\n\t${1}\n} catch ${2:e} {\n\t${0}\n}",
+            "Try-catch block",
+            true,
+        ),
         ("catch", "catch ${1:e} {\n\t${0}\n}", "Catch clause", true),
         ("throw", "throw ${0}", "Throw expression", true),
-
         // Keywords without snippets
         ("return", "return", "Return from function", false),
         ("break", "break", "Break from loop", false),
@@ -215,7 +262,6 @@ fn keyword_completions(prefix: &str) -> Vec<CompletionItem> {
         ("async", "async", "Async modifier", false),
         ("await", "await", "Await expression", false),
         ("in", "in", "In keyword", false),
-
         // Literals
         ("true", "true", "Boolean true", false),
         ("false", "false", "Boolean false", false),
@@ -502,7 +548,10 @@ fx main() {
 }
 "#;
         // Test keyword completion (line 8 has whitespace so position is valid)
-        let position = Position { line: 8, character: 4 };
+        let position = Position {
+            line: 8,
+            character: 4,
+        };
         let items = compute_completions(source, position);
         // Should have keywords and symbols
         assert!(items.iter().any(|i| i.label == "Point"));
@@ -517,7 +566,10 @@ fx main() {
     hel
 }
 "#;
-        let position = Position { line: 3, character: 7 };
+        let position = Position {
+            line: 3,
+            character: 7,
+        };
         let items = compute_completions(source, position);
         assert!(items.iter().any(|i| i.label == "helper"));
     }

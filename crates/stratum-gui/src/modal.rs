@@ -300,11 +300,7 @@ pub fn modal_overlay<'a, Message: Clone + 'a>(
     // Custom buttons
     for (i, btn_text) in config.custom_buttons.iter().enumerate() {
         let on_custom = on_result(ModalResult::Custom(i));
-        buttons = buttons.push(
-            button(text(btn_text))
-                .on_press(on_custom)
-                .padding([8, 16]),
-        );
+        buttons = buttons.push(button(text(btn_text)).on_press(on_custom).padding([8, 16]));
     }
 
     // Confirm button

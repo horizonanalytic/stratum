@@ -46,7 +46,8 @@ impl ComputedProperty {
     /// Check if the cached value is still valid for the given generation
     #[must_use]
     pub fn is_valid(&self, current_generation: u64) -> bool {
-        *self.cached_generation.borrow() == current_generation && self.cached_value.borrow().is_some()
+        *self.cached_generation.borrow() == current_generation
+            && self.cached_value.borrow().is_some()
     }
 
     /// Get the cached value if valid
@@ -69,7 +70,11 @@ impl ComputedProperty {
     /// Check if this computed property depends on a given field
     #[must_use]
     pub fn depends_on(&self, field: &str) -> bool {
-        self.dependencies.contains(field) || self.dependencies.iter().any(|d| field.starts_with(&format!("{d}.")))
+        self.dependencies.contains(field)
+            || self
+                .dependencies
+                .iter()
+                .any(|d| field.starts_with(&format!("{d}.")))
     }
 }
 
@@ -186,9 +191,8 @@ impl ReactiveState {
                 }
                 Value::Map(map_val) => {
                     let map = map_val.borrow();
-                    let key = stratum_core::bytecode::HashableValue::String(
-                        Rc::new((*part).to_string())
-                    );
+                    let key =
+                        stratum_core::bytecode::HashableValue::String(Rc::new((*part).to_string()));
                     map.get(&key).cloned()?
                 }
                 _ => return None,
@@ -278,9 +282,7 @@ impl ReactiveState {
     #[must_use]
     pub fn resolve_binding(&self, value: &Value) -> Value {
         match value {
-            Value::StateBinding(path) => {
-                self.get_path(path).unwrap_or(Value::Null)
-            }
+            Value::StateBinding(path) => self.get_path(path).unwrap_or(Value::Null),
             other => other.clone(),
         }
     }
@@ -306,7 +308,12 @@ impl ReactiveState {
     ///
     /// The computed property will automatically invalidate when any of its
     /// dependencies change. The computation function should be a Stratum closure.
-    pub fn register_computed(&self, name: impl Into<String>, dependencies: Vec<String>, compute_fn: Value) {
+    pub fn register_computed(
+        &self,
+        name: impl Into<String>,
+        dependencies: Vec<String>,
+        compute_fn: Value,
+    ) {
         let name = name.into();
         let prop = ComputedProperty::new(name.clone(), dependencies, compute_fn);
         self.computed.borrow_mut().insert(name, prop);
@@ -455,8 +462,8 @@ impl StateSubscription {
 
         // Check if any watched field is dirty
         let dirty = state.dirty_fields.borrow();
-        let has_updates = dirty.contains("*")
-            || self.watched_fields.iter().any(|f| dirty.contains(f));
+        let has_updates =
+            dirty.contains("*") || self.watched_fields.iter().any(|f| dirty.contains(f));
 
         if has_updates {
             self.last_generation = current_gen;
@@ -491,7 +498,10 @@ mod tests {
 
     fn create_nested_struct() -> Value {
         let mut inner_fields = HashMap::new();
-        inner_fields.insert("name".to_string(), Value::String(Rc::new("test".to_string())));
+        inner_fields.insert(
+            "name".to_string(),
+            Value::String(Rc::new("test".to_string())),
+        );
         inner_fields.insert("age".to_string(), Value::Int(25));
 
         let mut outer_fields = HashMap::new();
@@ -516,7 +526,10 @@ mod tests {
     fn test_reactive_state_struct_field() {
         let mut fields = HashMap::new();
         fields.insert("count".to_string(), Value::Int(0));
-        fields.insert("name".to_string(), Value::String(Rc::new("test".to_string())));
+        fields.insert(
+            "name".to_string(),
+            Value::String(Rc::new("test".to_string())),
+        );
 
         let state = ReactiveState::new(create_struct("AppState", fields));
 
@@ -726,7 +739,9 @@ mod tests {
         state.update_field("a", Value::Int(5));
 
         // Now get_computed should indicate it needs recomputation
-        if let Some(ComputedPropertyAccess::NeedsCompute { name, .. }) = state.get_computed("computed_a") {
+        if let Some(ComputedPropertyAccess::NeedsCompute { name, .. }) =
+            state.get_computed("computed_a")
+        {
             assert_eq!(name, "computed_a");
         } else {
             panic!("Expected NeedsCompute after dependency changed");

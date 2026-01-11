@@ -15,14 +15,14 @@ use tokio::runtime::Builder;
 use tokio::task::LocalSet;
 
 use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use super::{RuntimeError, RuntimeErrorKind, RuntimeResult, VM};
 use crate::bytecode::{
-    CoroutineState, CoroutineStatus, FutureState, FutureStatus, HashableValue,
-    TcpListenerWrapper, TcpStreamWrapper, UdpSocketWrapper,
-    WebSocketWrapper, WebSocketServerWrapper, WebSocketServerConnWrapper, Value,
+    CoroutineState, CoroutineStatus, FutureState, FutureStatus, HashableValue, TcpListenerWrapper,
+    TcpStreamWrapper, UdpSocketWrapper, Value, WebSocketServerConnWrapper, WebSocketServerWrapper,
+    WebSocketWrapper,
 };
 use std::sync::Arc;
 
@@ -96,9 +96,8 @@ impl AsyncExecutor {
         let local_set = LocalSet::new();
 
         // Run the executor loop
-        self.runtime.block_on(local_set.run_until(async {
-            self.executor_loop(vm).await
-        }))
+        self.runtime
+            .block_on(local_set.run_until(async { self.executor_loop(vm).await }))
     }
 
     /// The main executor loop
@@ -199,9 +198,7 @@ impl AsyncExecutor {
                         FutureStatus::Failed(err) => {
                             return Value::string(format!("Error: {err}"));
                         }
-                        FutureStatus::Pending => {
-                            (fut.kind.clone(), fut.metadata.clone())
-                        }
+                        FutureStatus::Pending => (fut.kind.clone(), fut.metadata.clone()),
                     }
                 };
 
@@ -222,12 +219,10 @@ impl AsyncExecutor {
                             // Connect to TCP server
                             if let Some(Value::String(addr)) = &metadata {
                                 match TcpStream::connect(addr.as_str()).await {
-                                    Ok(stream) => {
-                                        match TcpStreamWrapper::new(stream) {
-                                            Ok(wrapper) => Ok(Value::TcpStream(Arc::new(wrapper))),
-                                            Err(e) => Err(format!("tcp_connect: {e}")),
-                                        }
-                                    }
+                                    Ok(stream) => match TcpStreamWrapper::new(stream) {
+                                        Ok(wrapper) => Ok(Value::TcpStream(Arc::new(wrapper))),
+                                        Err(e) => Err(format!("tcp_connect: {e}")),
+                                    },
                                     Err(e) => Err(format!("tcp_connect to {}: {e}", addr)),
                                 }
                             } else {
@@ -238,12 +233,10 @@ impl AsyncExecutor {
                             // Bind TCP listener
                             if let Some(Value::String(addr)) = &metadata {
                                 match TcpListener::bind(addr.as_str()).await {
-                                    Ok(listener) => {
-                                        match TcpListenerWrapper::new(listener) {
-                                            Ok(wrapper) => Ok(Value::TcpListener(Arc::new(wrapper))),
-                                            Err(e) => Err(format!("tcp_listen: {e}")),
-                                        }
-                                    }
+                                    Ok(listener) => match TcpListenerWrapper::new(listener) {
+                                        Ok(wrapper) => Ok(Value::TcpListener(Arc::new(wrapper))),
+                                        Err(e) => Err(format!("tcp_listen: {e}")),
+                                    },
                                     Err(e) => Err(format!("tcp_listen on {}: {e}", addr)),
                                 }
                             } else {
@@ -275,7 +268,9 @@ impl AsyncExecutor {
                                     let fut = fut_ref.borrow();
                                     if let Some(Value::Map(m)) = &fut.metadata {
                                         let m = m.borrow();
-                                        if let Some(Value::Int(n)) = m.get(&HashableValue::String(Rc::new("max_bytes".into()))) {
+                                        if let Some(Value::Int(n)) = m.get(&HashableValue::String(
+                                            Rc::new("max_bytes".into()),
+                                        )) {
                                             *n as usize
                                         } else {
                                             8192
@@ -291,7 +286,11 @@ impl AsyncExecutor {
                                         buf.truncate(n);
                                         match String::from_utf8(buf.clone()) {
                                             Ok(s) => Ok(Value::string(s)),
-                                            Err(_) => Ok(Value::list(buf.into_iter().map(|b| Value::Int(b as i64)).collect())),
+                                            Err(_) => Ok(Value::list(
+                                                buf.into_iter()
+                                                    .map(|b| Value::Int(b as i64))
+                                                    .collect(),
+                                            )),
                                         }
                                     }
                                     Err(e) => Err(format!("tcp_read: {e}")),
@@ -306,19 +305,31 @@ impl AsyncExecutor {
                                 let fut = fut_ref.borrow();
                                 let stream = match &fut.metadata {
                                     Some(Value::TcpStream(s)) => Arc::clone(s),
-                                    _ => return self.mark_future_done(fut_ref, Err("tcp_write: invalid stream metadata".to_string())),
+                                    _ => {
+                                        return self.mark_future_done(
+                                            fut_ref,
+                                            Err("tcp_write: invalid stream metadata".to_string()),
+                                        )
+                                    }
                                 };
                                 // The data to write is stored in the original metadata before we replaced it
                                 // For tcp_write, we stored the data as the initial metadata
                                 let data = match &fut.result {
                                     Some(Value::String(s)) => s.as_bytes().to_vec(),
-                                    Some(Value::List(l)) => {
-                                        l.borrow().iter().filter_map(|v| match v {
+                                    Some(Value::List(l)) => l
+                                        .borrow()
+                                        .iter()
+                                        .filter_map(|v| match v {
                                             Value::Int(i) if *i >= 0 && *i <= 255 => Some(*i as u8),
                                             _ => None,
-                                        }).collect()
+                                        })
+                                        .collect(),
+                                    _ => {
+                                        return self.mark_future_done(
+                                            fut_ref,
+                                            Err("tcp_write: invalid data".to_string()),
+                                        )
                                     }
-                                    _ => return self.mark_future_done(fut_ref, Err("tcp_write: invalid data".to_string())),
                                 };
                                 (stream, data)
                             };
@@ -332,12 +343,10 @@ impl AsyncExecutor {
                             // Bind UDP socket
                             if let Some(Value::String(addr)) = &metadata {
                                 match UdpSocket::bind(addr.as_str()).await {
-                                    Ok(socket) => {
-                                        match UdpSocketWrapper::new(socket) {
-                                            Ok(wrapper) => Ok(Value::UdpSocket(Arc::new(wrapper))),
-                                            Err(e) => Err(format!("udp_bind: {e}")),
-                                        }
-                                    }
+                                    Ok(socket) => match UdpSocketWrapper::new(socket) {
+                                        Ok(wrapper) => Ok(Value::UdpSocket(Arc::new(wrapper))),
+                                        Err(e) => Err(format!("udp_bind: {e}")),
+                                    },
                                     Err(e) => Err(format!("udp_bind on {}: {e}", addr)),
                                 }
                             } else {
@@ -350,28 +359,46 @@ impl AsyncExecutor {
                                 let fut = fut_ref.borrow();
                                 let socket = match &fut.metadata {
                                     Some(Value::UdpSocket(s)) => Arc::clone(s),
-                                    _ => return self.mark_future_done(fut_ref, Err("udp_send_to: invalid socket metadata".to_string())),
+                                    _ => {
+                                        return self.mark_future_done(
+                                            fut_ref,
+                                            Err("udp_send_to: invalid socket metadata".to_string()),
+                                        )
+                                    }
                                 };
                                 let (data, addr) = match &fut.result {
                                     Some(Value::Map(m)) => {
                                         let m = m.borrow();
-                                        let data = match m.get(&HashableValue::String(Rc::new("data".into()))) {
+                                        let data = match m
+                                            .get(&HashableValue::String(Rc::new("data".into())))
+                                        {
                                             Some(Value::String(s)) => s.as_bytes().to_vec(),
-                                            Some(Value::List(l)) => {
-                                                l.borrow().iter().filter_map(|v| match v {
-                                                    Value::Int(i) if *i >= 0 && *i <= 255 => Some(*i as u8),
+                                            Some(Value::List(l)) => l
+                                                .borrow()
+                                                .iter()
+                                                .filter_map(|v| match v {
+                                                    Value::Int(i) if *i >= 0 && *i <= 255 => {
+                                                        Some(*i as u8)
+                                                    }
                                                     _ => None,
-                                                }).collect()
-                                            }
+                                                })
+                                                .collect(),
                                             _ => vec![],
                                         };
-                                        let addr = match m.get(&HashableValue::String(Rc::new("addr".into()))) {
+                                        let addr = match m
+                                            .get(&HashableValue::String(Rc::new("addr".into())))
+                                        {
                                             Some(Value::String(s)) => s.to_string(),
                                             _ => String::new(),
                                         };
                                         (data, addr)
                                     }
-                                    _ => return self.mark_future_done(fut_ref, Err("udp_send_to: invalid metadata".to_string())),
+                                    _ => {
+                                        return self.mark_future_done(
+                                            fut_ref,
+                                            Err("udp_send_to: invalid metadata".to_string()),
+                                        )
+                                    }
                                 };
                                 (socket, data, addr)
                             };
@@ -396,14 +423,27 @@ impl AsyncExecutor {
                                         buf.truncate(n);
                                         let data = match String::from_utf8(buf.clone()) {
                                             Ok(s) => Value::string(s),
-                                            Err(_) => Value::list(buf.into_iter().map(|b| Value::Int(b as i64)).collect()),
+                                            Err(_) => Value::list(
+                                                buf.into_iter()
+                                                    .map(|b| Value::Int(b as i64))
+                                                    .collect(),
+                                            ),
                                         };
                                         // Return a map with data, host, port
                                         let result = Value::Map(Rc::new(RefCell::new({
                                             let mut m = std::collections::HashMap::new();
-                                            m.insert(HashableValue::String(Rc::new("data".into())), data);
-                                            m.insert(HashableValue::String(Rc::new("host".into())), Value::string(addr.ip().to_string()));
-                                            m.insert(HashableValue::String(Rc::new("port".into())), Value::Int(addr.port() as i64));
+                                            m.insert(
+                                                HashableValue::String(Rc::new("data".into())),
+                                                data,
+                                            );
+                                            m.insert(
+                                                HashableValue::String(Rc::new("host".into())),
+                                                Value::string(addr.ip().to_string()),
+                                            );
+                                            m.insert(
+                                                HashableValue::String(Rc::new("port".into())),
+                                                Value::Int(addr.port() as i64),
+                                            );
                                             m
                                         })));
                                         Ok(result)
@@ -421,7 +461,8 @@ impl AsyncExecutor {
                                 match connect_async(url.as_str()).await {
                                     Ok((ws_stream, _response)) => {
                                         let (sink, stream) = ws_stream.split();
-                                        let wrapper = WebSocketWrapper::new(sink, stream, url.to_string());
+                                        let wrapper =
+                                            WebSocketWrapper::new(sink, stream, url.to_string());
                                         Ok(Value::WebSocket(Arc::new(wrapper)))
                                     }
                                     Err(e) => Err(format!("ws_connect to {}: {e}", url)),
@@ -434,12 +475,12 @@ impl AsyncExecutor {
                             // Create a WebSocket server (bind TCP listener)
                             if let Some(Value::String(addr)) = &metadata {
                                 match TcpListener::bind(addr.as_str()).await {
-                                    Ok(listener) => {
-                                        match WebSocketServerWrapper::new(listener) {
-                                            Ok(wrapper) => Ok(Value::WebSocketServer(Arc::new(wrapper))),
-                                            Err(e) => Err(format!("ws_listen: {e}")),
+                                    Ok(listener) => match WebSocketServerWrapper::new(listener) {
+                                        Ok(wrapper) => {
+                                            Ok(Value::WebSocketServer(Arc::new(wrapper)))
                                         }
-                                    }
+                                        Err(e) => Err(format!("ws_listen: {e}")),
+                                    },
                                     Err(e) => Err(format!("ws_listen on {}: {e}", addr)),
                                 }
                             } else {
@@ -481,18 +522,34 @@ impl AsyncExecutor {
                                 let fut = fut_ref.borrow();
                                 let ws = match &fut.metadata {
                                     Some(Value::WebSocket(w)) => Arc::clone(w),
-                                    _ => return self.mark_future_done(fut_ref, Err("ws_send: invalid websocket metadata".to_string())),
+                                    _ => {
+                                        return self.mark_future_done(
+                                            fut_ref,
+                                            Err("ws_send: invalid websocket metadata".to_string()),
+                                        )
+                                    }
                                 };
                                 let msg = match &fut.result {
                                     Some(Value::String(s)) => WsMessage::Text(s.to_string().into()),
                                     Some(Value::List(l)) => {
-                                        let bytes: Vec<u8> = l.borrow().iter().filter_map(|v| match v {
-                                            Value::Int(i) if *i >= 0 && *i <= 255 => Some(*i as u8),
-                                            _ => None,
-                                        }).collect();
+                                        let bytes: Vec<u8> = l
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
+                                                Value::Int(i) if *i >= 0 && *i <= 255 => {
+                                                    Some(*i as u8)
+                                                }
+                                                _ => None,
+                                            })
+                                            .collect();
                                         WsMessage::Binary(bytes.into())
                                     }
-                                    _ => return self.mark_future_done(fut_ref, Err("ws_send: invalid message data".to_string())),
+                                    _ => {
+                                        return self.mark_future_done(
+                                            fut_ref,
+                                            Err("ws_send: invalid message data".to_string()),
+                                        )
+                                    }
                                 };
                                 (ws, msg)
                             };
@@ -514,29 +571,58 @@ impl AsyncExecutor {
                                         let result = match msg {
                                             WsMessage::Text(text) => {
                                                 let mut m = std::collections::HashMap::new();
-                                                m.insert(HashableValue::String(Rc::new("type".into())), Value::string("text"));
-                                                m.insert(HashableValue::String(Rc::new("data".into())), Value::string(text.to_string()));
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("type".into())),
+                                                    Value::string("text"),
+                                                );
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("data".into())),
+                                                    Value::string(text.to_string()),
+                                                );
                                                 Value::Map(Rc::new(RefCell::new(m)))
                                             }
                                             WsMessage::Binary(data) => {
-                                                let bytes: Vec<Value> = data.iter().map(|b| Value::Int(*b as i64)).collect();
+                                                let bytes: Vec<Value> = data
+                                                    .iter()
+                                                    .map(|b| Value::Int(*b as i64))
+                                                    .collect();
                                                 let mut m = std::collections::HashMap::new();
-                                                m.insert(HashableValue::String(Rc::new("type".into())), Value::string("binary"));
-                                                m.insert(HashableValue::String(Rc::new("data".into())), Value::list(bytes));
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("type".into())),
+                                                    Value::string("binary"),
+                                                );
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("data".into())),
+                                                    Value::list(bytes),
+                                                );
                                                 Value::Map(Rc::new(RefCell::new(m)))
                                             }
-                                            WsMessage::Ping(_) | WsMessage::Pong(_) | WsMessage::Frame(_) => {
+                                            WsMessage::Ping(_)
+                                            | WsMessage::Pong(_)
+                                            | WsMessage::Frame(_) => {
                                                 // Control frames - return empty with type
                                                 let mut m = std::collections::HashMap::new();
-                                                m.insert(HashableValue::String(Rc::new("type".into())), Value::string("control"));
-                                                m.insert(HashableValue::String(Rc::new("data".into())), Value::Null);
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("type".into())),
+                                                    Value::string("control"),
+                                                );
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("data".into())),
+                                                    Value::Null,
+                                                );
                                                 Value::Map(Rc::new(RefCell::new(m)))
                                             }
                                             WsMessage::Close(_) => {
                                                 ws_wrapper.set_closed();
                                                 let mut m = std::collections::HashMap::new();
-                                                m.insert(HashableValue::String(Rc::new("type".into())), Value::string("close"));
-                                                m.insert(HashableValue::String(Rc::new("data".into())), Value::Null);
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("type".into())),
+                                                    Value::string("close"),
+                                                );
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("data".into())),
+                                                    Value::Null,
+                                                );
                                                 Value::Map(Rc::new(RefCell::new(m)))
                                             }
                                         };
@@ -549,8 +635,14 @@ impl AsyncExecutor {
                                     None => {
                                         ws_wrapper.set_closed();
                                         let mut m = std::collections::HashMap::new();
-                                        m.insert(HashableValue::String(Rc::new("type".into())), Value::string("close"));
-                                        m.insert(HashableValue::String(Rc::new("data".into())), Value::Null);
+                                        m.insert(
+                                            HashableValue::String(Rc::new("type".into())),
+                                            Value::string("close"),
+                                        );
+                                        m.insert(
+                                            HashableValue::String(Rc::new("data".into())),
+                                            Value::Null,
+                                        );
                                         Ok(Value::Map(Rc::new(RefCell::new(m))))
                                     }
                                 }
@@ -578,18 +670,35 @@ impl AsyncExecutor {
                                 let fut = fut_ref.borrow();
                                 let conn = match &fut.metadata {
                                     Some(Value::WebSocketServerConn(c)) => Arc::clone(c),
-                                    _ => return self.mark_future_done(fut_ref, Err("ws_conn_send: invalid connection metadata".to_string())),
+                                    _ => {
+                                        return self.mark_future_done(
+                                            fut_ref,
+                                            Err("ws_conn_send: invalid connection metadata"
+                                                .to_string()),
+                                        )
+                                    }
                                 };
                                 let msg = match &fut.result {
                                     Some(Value::String(s)) => WsMessage::Text(s.to_string().into()),
                                     Some(Value::List(l)) => {
-                                        let bytes: Vec<u8> = l.borrow().iter().filter_map(|v| match v {
-                                            Value::Int(i) if *i >= 0 && *i <= 255 => Some(*i as u8),
-                                            _ => None,
-                                        }).collect();
+                                        let bytes: Vec<u8> = l
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
+                                                Value::Int(i) if *i >= 0 && *i <= 255 => {
+                                                    Some(*i as u8)
+                                                }
+                                                _ => None,
+                                            })
+                                            .collect();
                                         WsMessage::Binary(bytes.into())
                                     }
-                                    _ => return self.mark_future_done(fut_ref, Err("ws_conn_send: invalid message data".to_string())),
+                                    _ => {
+                                        return self.mark_future_done(
+                                            fut_ref,
+                                            Err("ws_conn_send: invalid message data".to_string()),
+                                        )
+                                    }
                                 };
                                 (conn, msg)
                             };
@@ -610,28 +719,57 @@ impl AsyncExecutor {
                                         let result = match msg {
                                             WsMessage::Text(text) => {
                                                 let mut m = std::collections::HashMap::new();
-                                                m.insert(HashableValue::String(Rc::new("type".into())), Value::string("text"));
-                                                m.insert(HashableValue::String(Rc::new("data".into())), Value::string(text.to_string()));
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("type".into())),
+                                                    Value::string("text"),
+                                                );
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("data".into())),
+                                                    Value::string(text.to_string()),
+                                                );
                                                 Value::Map(Rc::new(RefCell::new(m)))
                                             }
                                             WsMessage::Binary(data) => {
-                                                let bytes: Vec<Value> = data.iter().map(|b| Value::Int(*b as i64)).collect();
+                                                let bytes: Vec<Value> = data
+                                                    .iter()
+                                                    .map(|b| Value::Int(*b as i64))
+                                                    .collect();
                                                 let mut m = std::collections::HashMap::new();
-                                                m.insert(HashableValue::String(Rc::new("type".into())), Value::string("binary"));
-                                                m.insert(HashableValue::String(Rc::new("data".into())), Value::list(bytes));
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("type".into())),
+                                                    Value::string("binary"),
+                                                );
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("data".into())),
+                                                    Value::list(bytes),
+                                                );
                                                 Value::Map(Rc::new(RefCell::new(m)))
                                             }
-                                            WsMessage::Ping(_) | WsMessage::Pong(_) | WsMessage::Frame(_) => {
+                                            WsMessage::Ping(_)
+                                            | WsMessage::Pong(_)
+                                            | WsMessage::Frame(_) => {
                                                 let mut m = std::collections::HashMap::new();
-                                                m.insert(HashableValue::String(Rc::new("type".into())), Value::string("control"));
-                                                m.insert(HashableValue::String(Rc::new("data".into())), Value::Null);
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("type".into())),
+                                                    Value::string("control"),
+                                                );
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("data".into())),
+                                                    Value::Null,
+                                                );
                                                 Value::Map(Rc::new(RefCell::new(m)))
                                             }
                                             WsMessage::Close(_) => {
                                                 conn_wrapper.set_closed();
                                                 let mut m = std::collections::HashMap::new();
-                                                m.insert(HashableValue::String(Rc::new("type".into())), Value::string("close"));
-                                                m.insert(HashableValue::String(Rc::new("data".into())), Value::Null);
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("type".into())),
+                                                    Value::string("close"),
+                                                );
+                                                m.insert(
+                                                    HashableValue::String(Rc::new("data".into())),
+                                                    Value::Null,
+                                                );
                                                 Value::Map(Rc::new(RefCell::new(m)))
                                             }
                                         };
@@ -644,8 +782,14 @@ impl AsyncExecutor {
                                     None => {
                                         conn_wrapper.set_closed();
                                         let mut m = std::collections::HashMap::new();
-                                        m.insert(HashableValue::String(Rc::new("type".into())), Value::string("close"));
-                                        m.insert(HashableValue::String(Rc::new("data".into())), Value::Null);
+                                        m.insert(
+                                            HashableValue::String(Rc::new("type".into())),
+                                            Value::string("close"),
+                                        );
+                                        m.insert(
+                                            HashableValue::String(Rc::new("data".into())),
+                                            Value::Null,
+                                        );
                                         Ok(Value::Map(Rc::new(RefCell::new(m))))
                                     }
                                 }
@@ -680,7 +824,9 @@ impl AsyncExecutor {
                                         if s.starts_with("Error:") {
                                             return self.mark_future_done(
                                                 fut_ref,
-                                                Err(format!("Async.all: future at index {i} failed: {s}"))
+                                                Err(format!(
+                                                    "Async.all: future at index {i} failed: {s}"
+                                                )),
                                             );
                                         }
                                     }
@@ -700,7 +846,7 @@ impl AsyncExecutor {
                                 if futures.is_empty() {
                                     return self.mark_future_done(
                                         fut_ref,
-                                        Err("Async.race: empty futures list".to_string())
+                                        Err("Async.race: empty futures list".to_string()),
                                     );
                                 }
 
@@ -713,13 +859,16 @@ impl AsyncExecutor {
                                                 FutureStatus::Ready => {
                                                     return self.mark_future_done(
                                                         fut_ref,
-                                                        Ok(inner.result.clone().unwrap_or(Value::Null))
+                                                        Ok(inner
+                                                            .result
+                                                            .clone()
+                                                            .unwrap_or(Value::Null)),
                                                     );
                                                 }
                                                 FutureStatus::Failed(err) => {
                                                     return self.mark_future_done(
                                                         fut_ref,
-                                                        Err(format!("Async.race: {err}"))
+                                                        Err(format!("Async.race: {err}")),
                                                     );
                                                 }
                                                 FutureStatus::Pending => {
@@ -728,8 +877,14 @@ impl AsyncExecutor {
                                                         if kind == "sleep" {
                                                             // Drop borrow, wait for it, continue
                                                             drop(inner);
-                                                            let result = Box::pin(self.wait_for_future(future_val)).await;
-                                                            return self.mark_future_done(fut_ref, Ok(result));
+                                                            let result = Box::pin(
+                                                                self.wait_for_future(future_val),
+                                                            )
+                                                            .await;
+                                                            return self.mark_future_done(
+                                                                fut_ref,
+                                                                Ok(result),
+                                                            );
                                                         }
                                                     }
                                                 }
@@ -748,8 +903,10 @@ impl AsyncExecutor {
                             if let Some(Value::Map(map_ref)) = &metadata {
                                 let (future_val, ms) = {
                                     let map = map_ref.borrow();
-                                    let inner_future = map.get(&HashableValue::String(Rc::new("future".into())));
-                                    let timeout_ms = map.get(&HashableValue::String(Rc::new("ms".into())));
+                                    let inner_future =
+                                        map.get(&HashableValue::String(Rc::new("future".into())));
+                                    let timeout_ms =
+                                        map.get(&HashableValue::String(Rc::new("ms".into())));
 
                                     match (inner_future, timeout_ms) {
                                         (Some(future_val), Some(Value::Int(ms))) => {
@@ -769,10 +926,14 @@ impl AsyncExecutor {
                                 // Use tokio timeout
                                 match tokio::time::timeout(
                                     duration,
-                                    Box::pin(self.wait_for_future(&future_val))
-                                ).await {
+                                    Box::pin(self.wait_for_future(&future_val)),
+                                )
+                                .await
+                                {
                                     Ok(result) => Ok(result),
-                                    Err(_) => Err(format!("Async.timeout: operation timed out after {ms}ms")),
+                                    Err(_) => Err(format!(
+                                        "Async.timeout: operation timed out after {ms}ms"
+                                    )),
                                 }
                             } else {
                                 Err("Async.timeout: invalid metadata".to_string())
@@ -846,7 +1007,11 @@ impl AsyncExecutor {
     }
 
     /// Mark a future as done with a result or error
-    fn mark_future_done(&self, fut_ref: &Rc<RefCell<FutureState>>, result: Result<Value, String>) -> Value {
+    fn mark_future_done(
+        &self,
+        fut_ref: &Rc<RefCell<FutureState>>,
+        result: Result<Value, String>,
+    ) -> Value {
         let mut fut = fut_ref.borrow_mut();
         match result {
             Ok(value) => {
@@ -954,7 +1119,10 @@ mod tests {
             pending_future: Value::Null,
         };
         match result {
-            CoroutineResult::Suspended { state: _, pending_future } => {
+            CoroutineResult::Suspended {
+                state: _,
+                pending_future,
+            } => {
                 assert_eq!(pending_future, Value::Null);
             }
             _ => panic!("Expected Suspended"),

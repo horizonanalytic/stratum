@@ -87,7 +87,10 @@ impl ValueTag {
     /// Returns true if this tag represents a primitive type (stored inline)
     #[must_use]
     pub const fn is_primitive(self) -> bool {
-        matches!(self, ValueTag::Null | ValueTag::Bool | ValueTag::Int | ValueTag::Float)
+        matches!(
+            self,
+            ValueTag::Null | ValueTag::Bool | ValueTag::Int | ValueTag::Float
+        )
     }
 }
 

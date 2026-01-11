@@ -15,10 +15,7 @@ pub enum DataError {
     /// Invalid column index
     InvalidColumnIndex(usize),
     /// Type mismatch during operation
-    TypeMismatch {
-        expected: String,
-        found: String,
-    },
+    TypeMismatch { expected: String, found: String },
     /// Invalid operation for the data type
     InvalidOperation(String),
     /// I/O error (file read/write)
@@ -34,10 +31,7 @@ pub enum DataError {
     /// JSON error
     Json(String),
     /// Index out of bounds
-    OutOfBounds {
-        index: usize,
-        length: usize,
-    },
+    OutOfBounds { index: usize, length: usize },
     /// SQL/DataFusion error
     Sql(String),
     /// OLAP Cube error

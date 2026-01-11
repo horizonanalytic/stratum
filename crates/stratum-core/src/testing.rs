@@ -139,8 +139,8 @@ pub fn run_test(test: &TestCase, source_name: &str, vm: &mut VM) -> TestResult {
     let start = Instant::now();
 
     // Compile the test function
-    let compile_result = Compiler::with_source(source_name.to_string())
-        .compile_test_function(&test.function);
+    let compile_result =
+        Compiler::with_source(source_name.to_string()).compile_test_function(&test.function);
 
     let function = match compile_result {
         Ok(f) => f,

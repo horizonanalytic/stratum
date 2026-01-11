@@ -277,9 +277,7 @@ impl DataFrame {
 
             let values: Vec<Value> = right_indices
                 .iter()
-                .map(|opt_idx| {
-                    opt_idx.map_or(Ok(Value::Null), |idx| col.get(idx))
-                })
+                .map(|opt_idx| opt_idx.map_or(Ok(Value::Null), |idx| col.get(idx)))
                 .collect::<DataResult<Vec<_>>>()?;
             let new_series = Series::from_values(&output_name, &values)?;
             result_columns.push(new_series);

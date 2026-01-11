@@ -8,10 +8,10 @@
 //! - Comment preservation
 
 use crate::ast::{
-    Attribute, AttributeArg, Block, CallArg, CatchClause, Comment, ElseBranch, EnumDef, EnumVariant,
-    EnumVariantData, Expr, ExprKind, FieldInit, FieldPattern, Function, ImplDef, Import,
-    ImportKind, InterfaceDef, InterfaceMethod, Item, ItemKind, Literal, MatchArm, Module, Param,
-    Pattern, PatternKind, Stmt, StmtKind, StringPart, StructDef, StructField, TopLevelItem,
+    Attribute, AttributeArg, Block, CallArg, CatchClause, Comment, ElseBranch, EnumDef,
+    EnumVariant, EnumVariantData, Expr, ExprKind, FieldInit, FieldPattern, Function, ImplDef,
+    Import, ImportKind, InterfaceDef, InterfaceMethod, Item, ItemKind, Literal, MatchArm, Module,
+    Param, Pattern, PatternKind, Stmt, StmtKind, StringPart, StructDef, StructField, TopLevelItem,
     TopLevelLet, Trivia, TypeAnnotation, TypeKind, TypeParam,
 };
 
@@ -167,7 +167,15 @@ impl Formatter {
             // Add blank line between top-level items (except after first)
             if i > 0 {
                 // Add extra blank line between functions
-                if prev_was_function || matches!(item, TopLevelItem::Item(Item { kind: ItemKind::Function(_), .. })) {
+                if prev_was_function
+                    || matches!(
+                        item,
+                        TopLevelItem::Item(Item {
+                            kind: ItemKind::Function(_),
+                            ..
+                        })
+                    )
+                {
                     self.writeln();
                 }
             }
@@ -175,7 +183,13 @@ impl Formatter {
             self.write_top_level_item(item);
             self.writeln();
 
-            prev_was_function = matches!(item, TopLevelItem::Item(Item { kind: ItemKind::Function(_), .. }));
+            prev_was_function = matches!(
+                item,
+                TopLevelItem::Item(Item {
+                    kind: ItemKind::Function(_),
+                    ..
+                })
+            );
         }
     }
 
@@ -606,7 +620,11 @@ impl Formatter {
                     self.write_expr(e);
                 }
             }
-            StmtKind::For { pattern, iter, body } => {
+            StmtKind::For {
+                pattern,
+                iter,
+                body,
+            } => {
                 self.write("for ");
                 self.write_pattern(pattern);
                 self.write(" in ");
@@ -684,7 +702,11 @@ impl Formatter {
                 self.write_expr(inner);
                 self.write(")");
             }
-            ExprKind::Call { callee, args, trailing_closure } => {
+            ExprKind::Call {
+                callee,
+                args,
+                trailing_closure,
+            } => {
                 self.write_expr(callee);
                 self.write("(");
                 self.write_call_args(args);
@@ -1065,10 +1087,22 @@ mod tests {
     fn test_format_struct() {
         let source = "struct Point{x:Int,y:Int}";
         let formatted = format_code(source);
-        assert!(formatted.contains("struct Point {"), "Should contain 'struct Point {{': {}", formatted);
+        assert!(
+            formatted.contains("struct Point {"),
+            "Should contain 'struct Point {{': {}",
+            formatted
+        );
         // Note: All struct fields are public by default in Stratum
-        assert!(formatted.contains("    pub x: Int"), "Should contain '    pub x: Int': {}", formatted);
-        assert!(formatted.contains("    pub y: Int"), "Should contain '    pub y: Int': {}", formatted);
+        assert!(
+            formatted.contains("    pub x: Int"),
+            "Should contain '    pub x: Int': {}",
+            formatted
+        );
+        assert!(
+            formatted.contains("    pub y: Int"),
+            "Should contain '    pub y: Int': {}",
+            formatted
+        );
     }
 
     #[test]
@@ -1084,7 +1118,8 @@ mod tests {
 fx add(a: Int, b: Int) -> Int {
     a + b
 }
-"#.trim();
+"#
+        .trim();
         let formatted1 = format_code(source);
         let formatted2 = format_code(&formatted1);
         assert_eq!(formatted1, formatted2, "Formatting should be idempotent");

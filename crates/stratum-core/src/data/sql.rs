@@ -95,9 +95,8 @@ impl SqlContext {
 
     /// Register a DataFrame as a table with the given name
     pub fn register(&self, table_name: &str, df: &DataFrame) -> DataResult<()> {
-        self.runtime.block_on(async {
-            register_dataframe(&self.session, table_name, df).await
-        })
+        self.runtime
+            .block_on(async { register_dataframe(&self.session, table_name, df).await })
     }
 
     /// Execute a SQL query and return the result as a DataFrame
@@ -220,13 +219,15 @@ mod tests {
         ctx.register("users", &users).unwrap();
         ctx.register("orders", &orders).unwrap();
 
-        let result = ctx.query(
-            "SELECT u.name, SUM(o.amount) as total
+        let result = ctx
+            .query(
+                "SELECT u.name, SUM(o.amount) as total
              FROM users u
              JOIN orders o ON u.id = o.user_id
              GROUP BY u.name
-             ORDER BY total DESC"
-        ).unwrap();
+             ORDER BY total DESC",
+            )
+            .unwrap();
 
         assert_eq!(result.num_rows(), 3);
         assert_eq!(result.columns(), vec!["name", "total"]);

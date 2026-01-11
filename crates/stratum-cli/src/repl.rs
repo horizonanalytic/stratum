@@ -253,7 +253,10 @@ impl Repl {
                     let params = if func.arity == 0 {
                         String::new()
                     } else {
-                        (0..func.arity).map(|i| format!("arg{i}")).collect::<Vec<_>>().join(", ")
+                        (0..func.arity)
+                            .map(|i| format!("arg{i}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     };
                     println!("  fx {name}({params})");
                 } else {
@@ -284,7 +287,9 @@ impl Repl {
                                     Ok(_) => {
                                         // Track any functions defined in the file
                                         for item in module.items() {
-                                            if let stratum_core::ast::ItemKind::Function(func) = &item.kind {
+                                            if let stratum_core::ast::ItemKind::Function(func) =
+                                                &item.kind
+                                            {
                                                 self.user_functions.insert(func.name.name.clone());
                                             }
                                         }
@@ -355,7 +360,9 @@ impl Repl {
             })?;
 
         // Run in the VM
-        self.vm.run(function).map_err(|e| format!("Runtime error: {e}"))
+        self.vm
+            .run(function)
+            .map_err(|e| format!("Runtime error: {e}"))
     }
 
     /// Track user-defined functions and variables from REPL input
@@ -521,7 +528,11 @@ fn pretty_print(value: &Value) -> String {
                 // Truncate long lists
                 let formatted: Vec<String> =
                     items.iter().take(10).map(|v| pretty_print(v)).collect();
-                format!("[{}, ... ({} more)]", formatted.join(", "), items.len() - 10)
+                format!(
+                    "[{}, ... ({} more)]",
+                    formatted.join(", "),
+                    items.len() - 10
+                )
             }
         }
         Value::Map(map) => {
@@ -545,7 +556,11 @@ fn pretty_print(value: &Value) -> String {
                     })
                     .collect();
                 if entries.len() > 10 {
-                    format!("{{{}, ... ({} more)}}", formatted.join(", "), entries.len() - 10)
+                    format!(
+                        "{{{}, ... ({} more)}}",
+                        formatted.join(", "),
+                        entries.len() - 10
+                    )
                 } else {
                     format!("{{{}}}", formatted.join(", "))
                 }

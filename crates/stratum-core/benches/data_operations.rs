@@ -10,7 +10,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::sync::Arc;
 
-use stratum_core::data::{DataFrame, GroupedDataFrame, Series, AggSpec};
+use stratum_core::data::{AggSpec, DataFrame, GroupedDataFrame, Series};
 
 /// Generate a DataFrame with the specified number of rows
 fn generate_test_dataframe(num_rows: usize) -> DataFrame {
@@ -90,10 +90,9 @@ fn bench_group_by_aggregate(c: &mut Criterion) {
         group.throughput(Throughput::Elements(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
-                let grouped = GroupedDataFrame::new(
-                    Arc::new(df.clone()),
-                    vec!["region".to_string()]
-                ).unwrap();
+                let grouped =
+                    GroupedDataFrame::new(Arc::new(df.clone()), vec!["region".to_string()])
+                        .unwrap();
                 let specs = vec![
                     AggSpec::sum("amount", "total"),
                     AggSpec::count("n"),

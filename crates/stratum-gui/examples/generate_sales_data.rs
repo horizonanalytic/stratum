@@ -12,8 +12,28 @@ fn main() {
     println!("Generating {} rows of fake sales data...", num_rows);
 
     // Define our dimension values
-    let regions = ["North", "South", "East", "West", "Central", "Northwest", "Southwest", "Northeast", "Southeast", "Midwest"];
-    let products = ["Widgets", "Gadgets", "Gizmos", "Doohickeys", "Thingamajigs", "Whatchamacallits", "Doodads", "Contraptions"];
+    let regions = [
+        "North",
+        "South",
+        "East",
+        "West",
+        "Central",
+        "Northwest",
+        "Southwest",
+        "Northeast",
+        "Southeast",
+        "Midwest",
+    ];
+    let products = [
+        "Widgets",
+        "Gadgets",
+        "Gizmos",
+        "Doohickeys",
+        "Thingamajigs",
+        "Whatchamacallits",
+        "Doodads",
+        "Contraptions",
+    ];
     let quarters = ["Q1", "Q2", "Q3", "Q4"];
     let years = ["2021", "2022", "2023", "2024"];
     let channels = ["Online", "Retail", "Wholesale", "Direct"];
@@ -92,7 +112,8 @@ fn main() {
         revenue_series,
         units_series,
         cost_series,
-    ]).expect("Failed to create DataFrame");
+    ])
+    .expect("Failed to create DataFrame");
 
     println!("DataFrame created with {} rows", df.num_rows());
 

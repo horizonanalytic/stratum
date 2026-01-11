@@ -20,147 +20,496 @@ pub type NativeResult = Result<Value, String>;
 pub fn gui_native_functions() -> Vec<(&'static str, NativeFunction)> {
     vec![
         // Layout functions
-        ("gui_vstack", NativeFunction::new("gui_vstack", -1, gui_vstack)),
-        ("gui_hstack", NativeFunction::new("gui_hstack", -1, gui_hstack)),
-        ("gui_zstack", NativeFunction::new("gui_zstack", -1, gui_zstack)),
+        (
+            "gui_vstack",
+            NativeFunction::new("gui_vstack", -1, gui_vstack),
+        ),
+        (
+            "gui_hstack",
+            NativeFunction::new("gui_hstack", -1, gui_hstack),
+        ),
+        (
+            "gui_zstack",
+            NativeFunction::new("gui_zstack", -1, gui_zstack),
+        ),
         ("gui_grid", NativeFunction::new("gui_grid", -1, gui_grid)),
-        ("gui_scroll_view", NativeFunction::new("gui_scroll_view", -1, gui_scroll_view)),
-        ("gui_spacer", NativeFunction::new("gui_spacer", -1, gui_spacer)),
-        ("gui_container", NativeFunction::new("gui_container", -1, gui_container)),
+        (
+            "gui_scroll_view",
+            NativeFunction::new("gui_scroll_view", -1, gui_scroll_view),
+        ),
+        (
+            "gui_spacer",
+            NativeFunction::new("gui_spacer", -1, gui_spacer),
+        ),
+        (
+            "gui_container",
+            NativeFunction::new("gui_container", -1, gui_container),
+        ),
         // Widget functions
         ("gui_text", NativeFunction::new("gui_text", -1, gui_text)),
-        ("gui_button", NativeFunction::new("gui_button", -1, gui_button)),
-        ("gui_text_field", NativeFunction::new("gui_text_field", -1, gui_text_field)),
-        ("gui_checkbox", NativeFunction::new("gui_checkbox", -1, gui_checkbox)),
-        ("gui_radio_button", NativeFunction::new("gui_radio_button", -1, gui_radio_button)),
-        ("gui_dropdown", NativeFunction::new("gui_dropdown", -1, gui_dropdown)),
+        (
+            "gui_button",
+            NativeFunction::new("gui_button", -1, gui_button),
+        ),
+        (
+            "gui_text_field",
+            NativeFunction::new("gui_text_field", -1, gui_text_field),
+        ),
+        (
+            "gui_checkbox",
+            NativeFunction::new("gui_checkbox", -1, gui_checkbox),
+        ),
+        (
+            "gui_radio_button",
+            NativeFunction::new("gui_radio_button", -1, gui_radio_button),
+        ),
+        (
+            "gui_dropdown",
+            NativeFunction::new("gui_dropdown", -1, gui_dropdown),
+        ),
         // Text styling functions
-        ("gui_set_text_bold", NativeFunction::new("gui_set_text_bold", 1, gui_set_text_bold)),
-        ("gui_set_text_color", NativeFunction::new("gui_set_text_color", -1, gui_set_text_color)),
-        ("gui_set_text_size", NativeFunction::new("gui_set_text_size", 2, gui_set_text_size)),
+        (
+            "gui_set_text_bold",
+            NativeFunction::new("gui_set_text_bold", 1, gui_set_text_bold),
+        ),
+        (
+            "gui_set_text_color",
+            NativeFunction::new("gui_set_text_color", -1, gui_set_text_color),
+        ),
+        (
+            "gui_set_text_size",
+            NativeFunction::new("gui_set_text_size", 2, gui_set_text_size),
+        ),
         // Button styling functions
-        ("gui_set_disabled", NativeFunction::new("gui_set_disabled", 2, gui_set_disabled)),
+        (
+            "gui_set_disabled",
+            NativeFunction::new("gui_set_disabled", 2, gui_set_disabled),
+        ),
         // TextField styling functions
-        ("gui_set_placeholder", NativeFunction::new("gui_set_placeholder", 2, gui_set_placeholder)),
-        ("gui_set_secure", NativeFunction::new("gui_set_secure", 2, gui_set_secure)),
-        ("gui_set_value", NativeFunction::new("gui_set_value", 2, gui_set_value)),
-        ("gui_bind_field", NativeFunction::new("gui_bind_field", 2, gui_bind_field)),
+        (
+            "gui_set_placeholder",
+            NativeFunction::new("gui_set_placeholder", 2, gui_set_placeholder),
+        ),
+        (
+            "gui_set_secure",
+            NativeFunction::new("gui_set_secure", 2, gui_set_secure),
+        ),
+        (
+            "gui_set_value",
+            NativeFunction::new("gui_set_value", 2, gui_set_value),
+        ),
+        (
+            "gui_bind_field",
+            NativeFunction::new("gui_bind_field", 2, gui_bind_field),
+        ),
         // Checkbox styling functions
-        ("gui_set_checked", NativeFunction::new("gui_set_checked", 2, gui_set_checked)),
-        ("gui_set_checkbox_label", NativeFunction::new("gui_set_checkbox_label", 2, gui_set_checkbox_label)),
+        (
+            "gui_set_checked",
+            NativeFunction::new("gui_set_checked", 2, gui_set_checked),
+        ),
+        (
+            "gui_set_checkbox_label",
+            NativeFunction::new("gui_set_checkbox_label", 2, gui_set_checkbox_label),
+        ),
         // RadioButton styling functions
-        ("gui_set_radio_value", NativeFunction::new("gui_set_radio_value", 2, gui_set_radio_value)),
-        ("gui_set_radio_selected", NativeFunction::new("gui_set_radio_selected", 2, gui_set_radio_selected)),
-        ("gui_set_radio_label", NativeFunction::new("gui_set_radio_label", 2, gui_set_radio_label)),
+        (
+            "gui_set_radio_value",
+            NativeFunction::new("gui_set_radio_value", 2, gui_set_radio_value),
+        ),
+        (
+            "gui_set_radio_selected",
+            NativeFunction::new("gui_set_radio_selected", 2, gui_set_radio_selected),
+        ),
+        (
+            "gui_set_radio_label",
+            NativeFunction::new("gui_set_radio_label", 2, gui_set_radio_label),
+        ),
         // Dropdown styling functions
-        ("gui_set_dropdown_options", NativeFunction::new("gui_set_dropdown_options", 2, gui_set_dropdown_options)),
-        ("gui_set_dropdown_selected", NativeFunction::new("gui_set_dropdown_selected", 2, gui_set_dropdown_selected)),
-        ("gui_set_dropdown_placeholder", NativeFunction::new("gui_set_dropdown_placeholder", 2, gui_set_dropdown_placeholder)),
+        (
+            "gui_set_dropdown_options",
+            NativeFunction::new("gui_set_dropdown_options", 2, gui_set_dropdown_options),
+        ),
+        (
+            "gui_set_dropdown_selected",
+            NativeFunction::new("gui_set_dropdown_selected", 2, gui_set_dropdown_selected),
+        ),
+        (
+            "gui_set_dropdown_placeholder",
+            NativeFunction::new(
+                "gui_set_dropdown_placeholder",
+                2,
+                gui_set_dropdown_placeholder,
+            ),
+        ),
         // Slider functions
-        ("gui_slider", NativeFunction::new("gui_slider", -1, gui_slider)),
-        ("gui_set_slider_value", NativeFunction::new("gui_set_slider_value", 2, gui_set_slider_value)),
-        ("gui_set_slider_range", NativeFunction::new("gui_set_slider_range", 3, gui_set_slider_range)),
-        ("gui_set_slider_step", NativeFunction::new("gui_set_slider_step", 2, gui_set_slider_step)),
+        (
+            "gui_slider",
+            NativeFunction::new("gui_slider", -1, gui_slider),
+        ),
+        (
+            "gui_set_slider_value",
+            NativeFunction::new("gui_set_slider_value", 2, gui_set_slider_value),
+        ),
+        (
+            "gui_set_slider_range",
+            NativeFunction::new("gui_set_slider_range", 3, gui_set_slider_range),
+        ),
+        (
+            "gui_set_slider_step",
+            NativeFunction::new("gui_set_slider_step", 2, gui_set_slider_step),
+        ),
         // Toggle functions
-        ("gui_toggle", NativeFunction::new("gui_toggle", -1, gui_toggle)),
-        ("gui_set_toggle_on", NativeFunction::new("gui_set_toggle_on", 2, gui_set_toggle_on)),
-        ("gui_set_toggle_label", NativeFunction::new("gui_set_toggle_label", 2, gui_set_toggle_label)),
+        (
+            "gui_toggle",
+            NativeFunction::new("gui_toggle", -1, gui_toggle),
+        ),
+        (
+            "gui_set_toggle_on",
+            NativeFunction::new("gui_set_toggle_on", 2, gui_set_toggle_on),
+        ),
+        (
+            "gui_set_toggle_label",
+            NativeFunction::new("gui_set_toggle_label", 2, gui_set_toggle_label),
+        ),
         // ProgressBar functions
-        ("gui_progress_bar", NativeFunction::new("gui_progress_bar", -1, gui_progress_bar)),
-        ("gui_set_progress", NativeFunction::new("gui_set_progress", 2, gui_set_progress)),
+        (
+            "gui_progress_bar",
+            NativeFunction::new("gui_progress_bar", -1, gui_progress_bar),
+        ),
+        (
+            "gui_set_progress",
+            NativeFunction::new("gui_set_progress", 2, gui_set_progress),
+        ),
         // Image functions
         ("gui_image", NativeFunction::new("gui_image", -1, gui_image)),
-        ("gui_set_image_path", NativeFunction::new("gui_set_image_path", 2, gui_set_image_path)),
-        ("gui_set_content_fit", NativeFunction::new("gui_set_content_fit", 2, gui_set_content_fit)),
-        ("gui_set_opacity", NativeFunction::new("gui_set_opacity", 2, gui_set_opacity)),
+        (
+            "gui_set_image_path",
+            NativeFunction::new("gui_set_image_path", 2, gui_set_image_path),
+        ),
+        (
+            "gui_set_content_fit",
+            NativeFunction::new("gui_set_content_fit", 2, gui_set_content_fit),
+        ),
+        (
+            "gui_set_opacity",
+            NativeFunction::new("gui_set_opacity", 2, gui_set_opacity),
+        ),
         // Utility functions
-        ("gui_add_child", NativeFunction::new("gui_add_child", 2, gui_add_child)),
-        ("gui_set_spacing", NativeFunction::new("gui_set_spacing", 2, gui_set_spacing)),
-        ("gui_set_padding", NativeFunction::new("gui_set_padding", 2, gui_set_padding)),
-        ("gui_set_width", NativeFunction::new("gui_set_width", 2, gui_set_width)),
-        ("gui_set_height", NativeFunction::new("gui_set_height", 2, gui_set_height)),
-        ("gui_set_alignment", NativeFunction::new("gui_set_alignment", 3, gui_set_alignment)),
+        (
+            "gui_add_child",
+            NativeFunction::new("gui_add_child", 2, gui_add_child),
+        ),
+        (
+            "gui_set_spacing",
+            NativeFunction::new("gui_set_spacing", 2, gui_set_spacing),
+        ),
+        (
+            "gui_set_padding",
+            NativeFunction::new("gui_set_padding", 2, gui_set_padding),
+        ),
+        (
+            "gui_set_width",
+            NativeFunction::new("gui_set_width", 2, gui_set_width),
+        ),
+        (
+            "gui_set_height",
+            NativeFunction::new("gui_set_height", 2, gui_set_height),
+        ),
+        (
+            "gui_set_alignment",
+            NativeFunction::new("gui_set_alignment", 3, gui_set_alignment),
+        ),
         // Conditional and list rendering
         ("gui_if", NativeFunction::new("gui_if", -1, gui_if)),
-        ("gui_for_each", NativeFunction::new("gui_for_each", -1, gui_for_each)),
+        (
+            "gui_for_each",
+            NativeFunction::new("gui_for_each", -1, gui_for_each),
+        ),
         // Computed property registration
-        ("gui_computed", NativeFunction::new("gui_computed", 3, gui_computed)),
+        (
+            "gui_computed",
+            NativeFunction::new("gui_computed", 3, gui_computed),
+        ),
         // DataTable functions
-        ("gui_data_table", NativeFunction::new("gui_data_table", -1, gui_data_table)),
-        ("gui_set_table_columns", NativeFunction::new("gui_set_table_columns", 2, gui_set_table_columns)),
-        ("gui_set_page_size", NativeFunction::new("gui_set_page_size", 2, gui_set_page_size)),
-        ("gui_set_current_page", NativeFunction::new("gui_set_current_page", 2, gui_set_current_page)),
-        ("gui_set_sortable", NativeFunction::new("gui_set_sortable", 2, gui_set_sortable)),
-        ("gui_set_sort_by", NativeFunction::new("gui_set_sort_by", 3, gui_set_sort_by)),
-        ("gui_set_selectable", NativeFunction::new("gui_set_selectable", 2, gui_set_selectable)),
-        ("gui_set_selected_rows", NativeFunction::new("gui_set_selected_rows", 2, gui_set_selected_rows)),
-        ("gui_set_column_width", NativeFunction::new("gui_set_column_width", 3, gui_set_column_width)),
-        ("gui_on_sort", NativeFunction::new("gui_on_sort", 2, gui_on_sort)),
-        ("gui_on_page_change", NativeFunction::new("gui_on_page_change", 2, gui_on_page_change)),
-        ("gui_on_selection_change", NativeFunction::new("gui_on_selection_change", 2, gui_on_selection_change)),
-        ("gui_on_row_click", NativeFunction::new("gui_on_row_click", 2, gui_on_row_click)),
-        ("gui_on_cell_click", NativeFunction::new("gui_on_cell_click", 2, gui_on_cell_click)),
+        (
+            "gui_data_table",
+            NativeFunction::new("gui_data_table", -1, gui_data_table),
+        ),
+        (
+            "gui_set_table_columns",
+            NativeFunction::new("gui_set_table_columns", 2, gui_set_table_columns),
+        ),
+        (
+            "gui_set_page_size",
+            NativeFunction::new("gui_set_page_size", 2, gui_set_page_size),
+        ),
+        (
+            "gui_set_current_page",
+            NativeFunction::new("gui_set_current_page", 2, gui_set_current_page),
+        ),
+        (
+            "gui_set_sortable",
+            NativeFunction::new("gui_set_sortable", 2, gui_set_sortable),
+        ),
+        (
+            "gui_set_sort_by",
+            NativeFunction::new("gui_set_sort_by", 3, gui_set_sort_by),
+        ),
+        (
+            "gui_set_selectable",
+            NativeFunction::new("gui_set_selectable", 2, gui_set_selectable),
+        ),
+        (
+            "gui_set_selected_rows",
+            NativeFunction::new("gui_set_selected_rows", 2, gui_set_selected_rows),
+        ),
+        (
+            "gui_set_column_width",
+            NativeFunction::new("gui_set_column_width", 3, gui_set_column_width),
+        ),
+        (
+            "gui_on_sort",
+            NativeFunction::new("gui_on_sort", 2, gui_on_sort),
+        ),
+        (
+            "gui_on_page_change",
+            NativeFunction::new("gui_on_page_change", 2, gui_on_page_change),
+        ),
+        (
+            "gui_on_selection_change",
+            NativeFunction::new("gui_on_selection_change", 2, gui_on_selection_change),
+        ),
+        (
+            "gui_on_row_click",
+            NativeFunction::new("gui_on_row_click", 2, gui_on_row_click),
+        ),
+        (
+            "gui_on_cell_click",
+            NativeFunction::new("gui_on_cell_click", 2, gui_on_cell_click),
+        ),
         // Chart functions
-        ("gui_bar_chart", NativeFunction::new("gui_bar_chart", -1, gui_bar_chart)),
-        ("gui_line_chart", NativeFunction::new("gui_line_chart", -1, gui_line_chart)),
-        ("gui_pie_chart", NativeFunction::new("gui_pie_chart", -1, gui_pie_chart)),
-        ("gui_set_chart_title", NativeFunction::new("gui_set_chart_title", 2, gui_set_chart_title)),
-        ("gui_set_chart_size", NativeFunction::new("gui_set_chart_size", 3, gui_set_chart_size)),
-        ("gui_set_chart_data", NativeFunction::new("gui_set_chart_data", 2, gui_set_chart_data)),
-        ("gui_set_chart_data_arrays", NativeFunction::new("gui_set_chart_data_arrays", 3, gui_set_chart_data_arrays)),
-        ("gui_add_chart_series", NativeFunction::new("gui_add_chart_series", 3, gui_add_chart_series)),
-        ("gui_set_chart_labels", NativeFunction::new("gui_set_chart_labels", 2, gui_set_chart_labels)),
-        ("gui_set_show_legend", NativeFunction::new("gui_set_show_legend", 2, gui_set_show_legend)),
-        ("gui_set_show_grid", NativeFunction::new("gui_set_show_grid", 2, gui_set_show_grid)),
-        ("gui_set_bar_color", NativeFunction::new("gui_set_bar_color", 4, gui_set_bar_color)),
-        ("gui_set_inner_radius", NativeFunction::new("gui_set_inner_radius", 2, gui_set_inner_radius)),
+        (
+            "gui_bar_chart",
+            NativeFunction::new("gui_bar_chart", -1, gui_bar_chart),
+        ),
+        (
+            "gui_line_chart",
+            NativeFunction::new("gui_line_chart", -1, gui_line_chart),
+        ),
+        (
+            "gui_pie_chart",
+            NativeFunction::new("gui_pie_chart", -1, gui_pie_chart),
+        ),
+        (
+            "gui_set_chart_title",
+            NativeFunction::new("gui_set_chart_title", 2, gui_set_chart_title),
+        ),
+        (
+            "gui_set_chart_size",
+            NativeFunction::new("gui_set_chart_size", 3, gui_set_chart_size),
+        ),
+        (
+            "gui_set_chart_data",
+            NativeFunction::new("gui_set_chart_data", 2, gui_set_chart_data),
+        ),
+        (
+            "gui_set_chart_data_arrays",
+            NativeFunction::new("gui_set_chart_data_arrays", 3, gui_set_chart_data_arrays),
+        ),
+        (
+            "gui_add_chart_series",
+            NativeFunction::new("gui_add_chart_series", 3, gui_add_chart_series),
+        ),
+        (
+            "gui_set_chart_labels",
+            NativeFunction::new("gui_set_chart_labels", 2, gui_set_chart_labels),
+        ),
+        (
+            "gui_set_show_legend",
+            NativeFunction::new("gui_set_show_legend", 2, gui_set_show_legend),
+        ),
+        (
+            "gui_set_show_grid",
+            NativeFunction::new("gui_set_show_grid", 2, gui_set_show_grid),
+        ),
+        (
+            "gui_set_bar_color",
+            NativeFunction::new("gui_set_bar_color", 4, gui_set_bar_color),
+        ),
+        (
+            "gui_set_inner_radius",
+            NativeFunction::new("gui_set_inner_radius", 2, gui_set_inner_radius),
+        ),
         // OLAP Cube widget functions
-        ("gui_cube_table", NativeFunction::new("gui_cube_table", -1, gui_cube_table)),
-        ("gui_cube_chart", NativeFunction::new("gui_cube_chart", -1, gui_cube_chart)),
-        ("gui_dimension_filter", NativeFunction::new("gui_dimension_filter", -1, gui_dimension_filter)),
-        ("gui_hierarchy_navigator", NativeFunction::new("gui_hierarchy_navigator", -1, gui_hierarchy_navigator)),
-        ("gui_measure_selector", NativeFunction::new("gui_measure_selector", -1, gui_measure_selector)),
+        (
+            "gui_cube_table",
+            NativeFunction::new("gui_cube_table", -1, gui_cube_table),
+        ),
+        (
+            "gui_cube_chart",
+            NativeFunction::new("gui_cube_chart", -1, gui_cube_chart),
+        ),
+        (
+            "gui_dimension_filter",
+            NativeFunction::new("gui_dimension_filter", -1, gui_dimension_filter),
+        ),
+        (
+            "gui_hierarchy_navigator",
+            NativeFunction::new("gui_hierarchy_navigator", -1, gui_hierarchy_navigator),
+        ),
+        (
+            "gui_measure_selector",
+            NativeFunction::new("gui_measure_selector", -1, gui_measure_selector),
+        ),
         // OLAP Cube widget configuration functions
-        ("gui_set_cube", NativeFunction::new("gui_set_cube", 2, gui_set_cube)),
-        ("gui_set_row_dimensions", NativeFunction::new("gui_set_row_dimensions", 2, gui_set_row_dimensions)),
-        ("gui_set_measures", NativeFunction::new("gui_set_measures", 2, gui_set_measures)),
-        ("gui_set_cube_chart_type", NativeFunction::new("gui_set_cube_chart_type", 2, gui_set_cube_chart_type)),
-        ("gui_set_x_dimension", NativeFunction::new("gui_set_x_dimension", 2, gui_set_x_dimension)),
-        ("gui_set_y_measure", NativeFunction::new("gui_set_y_measure", 2, gui_set_y_measure)),
-        ("gui_set_series_dimension", NativeFunction::new("gui_set_series_dimension", 2, gui_set_series_dimension)),
-        ("gui_set_filter_dimension", NativeFunction::new("gui_set_filter_dimension", 2, gui_set_filter_dimension)),
-        ("gui_set_hierarchy", NativeFunction::new("gui_set_hierarchy", 2, gui_set_hierarchy)),
-        ("gui_set_current_level", NativeFunction::new("gui_set_current_level", 2, gui_set_current_level)),
-        ("gui_on_drill", NativeFunction::new("gui_on_drill", 2, gui_on_drill)),
-        ("gui_on_roll_up", NativeFunction::new("gui_on_roll_up", 2, gui_on_roll_up)),
-        ("gui_on_level_change", NativeFunction::new("gui_on_level_change", 2, gui_on_level_change)),
+        (
+            "gui_set_cube",
+            NativeFunction::new("gui_set_cube", 2, gui_set_cube),
+        ),
+        (
+            "gui_set_row_dimensions",
+            NativeFunction::new("gui_set_row_dimensions", 2, gui_set_row_dimensions),
+        ),
+        (
+            "gui_set_measures",
+            NativeFunction::new("gui_set_measures", 2, gui_set_measures),
+        ),
+        (
+            "gui_set_cube_chart_type",
+            NativeFunction::new("gui_set_cube_chart_type", 2, gui_set_cube_chart_type),
+        ),
+        (
+            "gui_set_x_dimension",
+            NativeFunction::new("gui_set_x_dimension", 2, gui_set_x_dimension),
+        ),
+        (
+            "gui_set_y_measure",
+            NativeFunction::new("gui_set_y_measure", 2, gui_set_y_measure),
+        ),
+        (
+            "gui_set_series_dimension",
+            NativeFunction::new("gui_set_series_dimension", 2, gui_set_series_dimension),
+        ),
+        (
+            "gui_set_filter_dimension",
+            NativeFunction::new("gui_set_filter_dimension", 2, gui_set_filter_dimension),
+        ),
+        (
+            "gui_set_hierarchy",
+            NativeFunction::new("gui_set_hierarchy", 2, gui_set_hierarchy),
+        ),
+        (
+            "gui_set_current_level",
+            NativeFunction::new("gui_set_current_level", 2, gui_set_current_level),
+        ),
+        (
+            "gui_on_drill",
+            NativeFunction::new("gui_on_drill", 2, gui_on_drill),
+        ),
+        (
+            "gui_on_roll_up",
+            NativeFunction::new("gui_on_roll_up", 2, gui_on_roll_up),
+        ),
+        (
+            "gui_on_level_change",
+            NativeFunction::new("gui_on_level_change", 2, gui_on_level_change),
+        ),
         // Widget styling functions
-        ("gui_set_background", NativeFunction::new("gui_set_background", -1, gui_set_background)),
-        ("gui_set_foreground", NativeFunction::new("gui_set_foreground", -1, gui_set_foreground)),
-        ("gui_set_border_color", NativeFunction::new("gui_set_border_color", -1, gui_set_border_color)),
-        ("gui_set_border_width", NativeFunction::new("gui_set_border_width", 2, gui_set_border_width)),
-        ("gui_set_corner_radius", NativeFunction::new("gui_set_corner_radius", 2, gui_set_corner_radius)),
+        (
+            "gui_set_background",
+            NativeFunction::new("gui_set_background", -1, gui_set_background),
+        ),
+        (
+            "gui_set_foreground",
+            NativeFunction::new("gui_set_foreground", -1, gui_set_foreground),
+        ),
+        (
+            "gui_set_border_color",
+            NativeFunction::new("gui_set_border_color", -1, gui_set_border_color),
+        ),
+        (
+            "gui_set_border_width",
+            NativeFunction::new("gui_set_border_width", 2, gui_set_border_width),
+        ),
+        (
+            "gui_set_corner_radius",
+            NativeFunction::new("gui_set_corner_radius", 2, gui_set_corner_radius),
+        ),
         // Theme functions
-        ("gui_theme_presets", NativeFunction::new("gui_theme_presets", 0, gui_theme_presets)),
-        ("gui_set_theme", NativeFunction::new("gui_set_theme", 1, gui_set_theme)),
-        ("gui_custom_theme", NativeFunction::new("gui_custom_theme", 2, gui_custom_theme)),
+        (
+            "gui_theme_presets",
+            NativeFunction::new("gui_theme_presets", 0, gui_theme_presets),
+        ),
+        (
+            "gui_set_theme",
+            NativeFunction::new("gui_set_theme", 1, gui_set_theme),
+        ),
+        (
+            "gui_custom_theme",
+            NativeFunction::new("gui_custom_theme", 2, gui_custom_theme),
+        ),
         // Interactive element functions
-        ("gui_interactive", NativeFunction::new("gui_interactive", -1, gui_interactive)),
-        ("gui_on_press", NativeFunction::new("gui_on_press", 2, gui_on_press)),
-        ("gui_on_mouse_release", NativeFunction::new("gui_on_mouse_release", 2, gui_on_mouse_release)),
-        ("gui_on_double_click", NativeFunction::new("gui_on_double_click", 2, gui_on_double_click)),
-        ("gui_on_right_press", NativeFunction::new("gui_on_right_press", 2, gui_on_right_press)),
-        ("gui_on_right_release", NativeFunction::new("gui_on_right_release", 2, gui_on_right_release)),
-        ("gui_on_hover_enter", NativeFunction::new("gui_on_hover_enter", 2, gui_on_hover_enter)),
-        ("gui_on_hover_exit", NativeFunction::new("gui_on_hover_exit", 2, gui_on_hover_exit)),
-        ("gui_on_mouse_move", NativeFunction::new("gui_on_mouse_move", 2, gui_on_mouse_move)),
-        ("gui_on_mouse_scroll", NativeFunction::new("gui_on_mouse_scroll", 2, gui_on_mouse_scroll)),
-        ("gui_set_cursor", NativeFunction::new("gui_set_cursor", 2, gui_set_cursor)),
+        (
+            "gui_interactive",
+            NativeFunction::new("gui_interactive", -1, gui_interactive),
+        ),
+        (
+            "gui_on_press",
+            NativeFunction::new("gui_on_press", 2, gui_on_press),
+        ),
+        (
+            "gui_on_mouse_release",
+            NativeFunction::new("gui_on_mouse_release", 2, gui_on_mouse_release),
+        ),
+        (
+            "gui_on_double_click",
+            NativeFunction::new("gui_on_double_click", 2, gui_on_double_click),
+        ),
+        (
+            "gui_on_right_press",
+            NativeFunction::new("gui_on_right_press", 2, gui_on_right_press),
+        ),
+        (
+            "gui_on_right_release",
+            NativeFunction::new("gui_on_right_release", 2, gui_on_right_release),
+        ),
+        (
+            "gui_on_hover_enter",
+            NativeFunction::new("gui_on_hover_enter", 2, gui_on_hover_enter),
+        ),
+        (
+            "gui_on_hover_exit",
+            NativeFunction::new("gui_on_hover_exit", 2, gui_on_hover_exit),
+        ),
+        (
+            "gui_on_mouse_move",
+            NativeFunction::new("gui_on_mouse_move", 2, gui_on_mouse_move),
+        ),
+        (
+            "gui_on_mouse_scroll",
+            NativeFunction::new("gui_on_mouse_scroll", 2, gui_on_mouse_scroll),
+        ),
+        (
+            "gui_set_cursor",
+            NativeFunction::new("gui_set_cursor", 2, gui_set_cursor),
+        ),
         // Form element event handlers
-        ("gui_on_change", NativeFunction::new("gui_on_change", 2, gui_on_change)),
-        ("gui_on_submit", NativeFunction::new("gui_on_submit", 2, gui_on_submit)),
-        ("gui_on_toggle", NativeFunction::new("gui_on_toggle", 2, gui_on_toggle)),
-        ("gui_on_select", NativeFunction::new("gui_on_select", 2, gui_on_select)),
+        (
+            "gui_on_change",
+            NativeFunction::new("gui_on_change", 2, gui_on_change),
+        ),
+        (
+            "gui_on_submit",
+            NativeFunction::new("gui_on_submit", 2, gui_on_submit),
+        ),
+        (
+            "gui_on_toggle",
+            NativeFunction::new("gui_on_toggle", 2, gui_on_toggle),
+        ),
+        (
+            "gui_on_select",
+            NativeFunction::new("gui_on_select", 2, gui_on_select),
+        ),
     ]
 }
 
@@ -202,7 +551,11 @@ fn get_float(args: &[Value], index: usize, name: &str) -> Result<f64, String> {
 fn get_int(args: &[Value], index: usize, name: &str) -> Result<i64, String> {
     match args.get(index) {
         Some(Value::Int(i)) => Ok(*i),
-        Some(v) => Err(format!("{} must be an integer, got {}", name, v.type_name())),
+        Some(v) => Err(format!(
+            "{} must be an integer, got {}",
+            name,
+            v.type_name()
+        )),
         None => Err(format!("missing required argument: {}", name)),
     }
 }
@@ -217,7 +570,10 @@ fn get_callback_id(value: &Value) -> Result<CallbackId, String> {
                 Ok(CallbackId::new(*i as u64))
             }
         }
-        _ => Err(format!("callback_id must be an integer, got {}", value.type_name())),
+        _ => Err(format!(
+            "callback_id must be an integer, got {}",
+            value.type_name()
+        )),
     }
 }
 
@@ -249,7 +605,10 @@ fn collect_children(value: &Value) -> Result<Vec<GuiElement>, String> {
             }
             Ok(children)
         }
-        _ => Err(format!("children must be a list, got {}", value.type_name())),
+        _ => Err(format!(
+            "children must be a list, got {}",
+            value.type_name()
+        )),
     }
 }
 
@@ -593,7 +952,9 @@ fn gui_set_radio_selected(args: &[Value]) -> NativeResult {
     if let GuiElementKind::RadioButton(ref mut config) = element.kind {
         config.selected_value = Some(selected);
     } else {
-        return Err("gui_set_radio_selected can only be applied to RadioButton elements".to_string());
+        return Err(
+            "gui_set_radio_selected can only be applied to RadioButton elements".to_string(),
+        );
     }
 
     Ok(element.into_value())
@@ -631,12 +992,22 @@ fn gui_dropdown(args: &[Value]) -> NativeResult {
             for item in list.iter() {
                 match item {
                     Value::String(s) => opts.push(s.to_string()),
-                    v => return Err(format!("dropdown options must be strings, got {}", v.type_name())),
+                    v => {
+                        return Err(format!(
+                            "dropdown options must be strings, got {}",
+                            v.type_name()
+                        ))
+                    }
                 }
             }
             opts
         }
-        Some(v) => return Err(format!("first argument must be a list of options, got {}", v.type_name())),
+        Some(v) => {
+            return Err(format!(
+                "first argument must be a list of options, got {}",
+                v.type_name()
+            ))
+        }
         None => return Err("gui_dropdown requires at least 1 argument (options list)".to_string()),
     };
 
@@ -681,7 +1052,12 @@ fn gui_set_dropdown_options(args: &[Value]) -> NativeResult {
             for item in list.iter() {
                 match item {
                     Value::String(s) => opts.push(s.to_string()),
-                    v => return Err(format!("dropdown options must be strings, got {}", v.type_name())),
+                    v => {
+                        return Err(format!(
+                            "dropdown options must be strings, got {}",
+                            v.type_name()
+                        ))
+                    }
                 }
             }
             opts
@@ -692,7 +1068,9 @@ fn gui_set_dropdown_options(args: &[Value]) -> NativeResult {
     if let GuiElementKind::Dropdown(ref mut config) = element.kind {
         config.options = options;
     } else {
-        return Err("gui_set_dropdown_options can only be applied to Dropdown elements".to_string());
+        return Err(
+            "gui_set_dropdown_options can only be applied to Dropdown elements".to_string(),
+        );
     }
 
     Ok(element.into_value())
@@ -710,13 +1088,20 @@ fn gui_set_dropdown_selected(args: &[Value]) -> NativeResult {
     let selected = match &args[1] {
         Value::String(s) => Some(s.to_string()),
         Value::Null => None,
-        v => return Err(format!("selected must be a string or null, got {}", v.type_name())),
+        v => {
+            return Err(format!(
+                "selected must be a string or null, got {}",
+                v.type_name()
+            ))
+        }
     };
 
     if let GuiElementKind::Dropdown(ref mut config) = element.kind {
         config.selected = selected;
     } else {
-        return Err("gui_set_dropdown_selected can only be applied to Dropdown elements".to_string());
+        return Err(
+            "gui_set_dropdown_selected can only be applied to Dropdown elements".to_string(),
+        );
     }
 
     Ok(element.into_value())
@@ -735,7 +1120,9 @@ fn gui_set_dropdown_placeholder(args: &[Value]) -> NativeResult {
     if let GuiElementKind::Dropdown(ref mut config) = element.kind {
         config.placeholder = Some(placeholder);
     } else {
-        return Err("gui_set_dropdown_placeholder can only be applied to Dropdown elements".to_string());
+        return Err(
+            "gui_set_dropdown_placeholder can only be applied to Dropdown elements".to_string(),
+        );
     }
 
     Ok(element.into_value())
@@ -908,7 +1295,12 @@ fn gui_set_width(args: &[Value]) -> NativeResult {
         },
         Value::Float(f) => Size::Fixed(*f as f32),
         Value::Int(i) => Size::Fixed(*i as f32),
-        v => return Err(format!("width must be a string or number, got {}", v.type_name())),
+        v => {
+            return Err(format!(
+                "width must be a string or number, got {}",
+                v.type_name()
+            ))
+        }
     };
 
     element.style.width = Some(size);
@@ -934,7 +1326,12 @@ fn gui_set_height(args: &[Value]) -> NativeResult {
         },
         Value::Float(f) => Size::Fixed(*f as f32),
         Value::Int(i) => Size::Fixed(*i as f32),
-        v => return Err(format!("height must be a string or number, got {}", v.type_name())),
+        v => {
+            return Err(format!(
+                "height must be a string or number, got {}",
+                v.type_name()
+            ))
+        }
     };
 
     element.style.height = Some(size);
@@ -949,7 +1346,10 @@ fn parse_h_align(value: &Value) -> Result<HAlign, String> {
             "start" | "left" => Ok(HAlign::Start),
             "center" => Ok(HAlign::Center),
             "end" | "right" => Ok(HAlign::End),
-            other => Err(format!("invalid horizontal alignment '{}', expected: start, center, end, left, or right", other)),
+            other => Err(format!(
+                "invalid horizontal alignment '{}', expected: start, center, end, left, or right",
+                other
+            )),
         },
         v => Err(format!("alignment must be a string, got {}", v.type_name())),
     }
@@ -962,7 +1362,10 @@ fn parse_v_align(value: &Value) -> Result<VAlign, String> {
             "top" | "start" => Ok(VAlign::Top),
             "center" => Ok(VAlign::Center),
             "bottom" | "end" => Ok(VAlign::Bottom),
-            other => Err(format!("invalid vertical alignment '{}', expected: top, center, bottom, start, or end", other)),
+            other => Err(format!(
+                "invalid vertical alignment '{}', expected: top, center, bottom, start, or end",
+                other
+            )),
         },
         v => Err(format!("alignment must be a string, got {}", v.type_name())),
     }
@@ -974,7 +1377,9 @@ fn parse_v_align(value: &Value) -> Result<VAlign, String> {
 /// Supports: VStack (h_align only), HStack (v_align only), Grid (both), Container (both)
 fn gui_set_alignment(args: &[Value]) -> NativeResult {
     if args.len() != 3 {
-        return Err("gui_set_alignment requires 3 arguments: element, h_align, v_align".to_string());
+        return Err(
+            "gui_set_alignment requires 3 arguments: element, h_align, v_align".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
@@ -998,7 +1403,11 @@ fn gui_set_alignment(args: &[Value]) -> NativeResult {
             c.align_x = h_align;
             c.align_y = v_align;
         }
-        _ => return Err("alignment can only be set on VStack, HStack, Grid, or Container".to_string()),
+        _ => {
+            return Err(
+                "alignment can only be set on VStack, HStack, Grid, or Container".to_string(),
+            )
+        }
     }
 
     Ok(element.into_value())
@@ -1026,14 +1435,17 @@ fn gui_set_text_bold(args: &[Value]) -> NativeResult {
 /// gui_set_text_color(element, r, g, b) or gui_set_text_color(element, r, g, b, a)
 fn gui_set_text_color(args: &[Value]) -> NativeResult {
     if args.len() < 4 {
-        return Err("gui_set_text_color requires at least 4 arguments (element, r, g, b)".to_string());
+        return Err(
+            "gui_set_text_color requires at least 4 arguments (element, r, g, b)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
     let r = get_int(args, 1, "r")? as u8;
     let g = get_int(args, 2, "g")? as u8;
     let b = get_int(args, 3, "b")? as u8;
-    let a = args.get(4)
+    let a = args
+        .get(4)
         .map(|v| match v {
             Value::Int(i) => Ok(*i as u8),
             _ => Err("alpha must be an integer".to_string()),
@@ -1380,7 +1792,9 @@ fn gui_set_opacity(args: &[Value]) -> NativeResult {
 /// gui_if(condition_field, true_element, false_element) -> conditional element
 fn gui_if(args: &[Value]) -> NativeResult {
     if args.len() < 2 {
-        return Err("gui_if requires at least 2 arguments (condition_field, true_element)".to_string());
+        return Err(
+            "gui_if requires at least 2 arguments (condition_field, true_element)".to_string(),
+        );
     }
 
     let condition_field = get_string(args, 0, "condition_field")?;
@@ -1428,7 +1842,9 @@ fn gui_for_each(args: &[Value]) -> NativeResult {
 /// gui_computed(name, dependencies, compute_fn) -> computed property descriptor
 fn gui_computed(args: &[Value]) -> NativeResult {
     if args.len() != 3 {
-        return Err("gui_computed requires 3 arguments (name, dependencies, compute_fn)".to_string());
+        return Err(
+            "gui_computed requires 3 arguments (name, dependencies, compute_fn)".to_string(),
+        );
     }
 
     let name = get_string(args, 0, "name")?;
@@ -1443,25 +1859,36 @@ fn gui_computed(args: &[Value]) -> NativeResult {
                 if let Value::String(s) = item {
                     deps.push(s.to_string());
                 } else {
-                    return Err(format!("dependency must be a string, got {}", item.type_name()));
+                    return Err(format!(
+                        "dependency must be a string, got {}",
+                        item.type_name()
+                    ));
                 }
             }
             deps
         }
-        _ => return Err(format!("dependencies must be a list, got {}", deps_value.type_name())),
+        _ => {
+            return Err(format!(
+                "dependencies must be a list, got {}",
+                deps_value.type_name()
+            ))
+        }
     };
 
     let compute_fn = args[2].clone();
     if !matches!(compute_fn, Value::Closure(_)) {
-        return Err(format!("compute_fn must be a closure, got {}", compute_fn.type_name()));
+        return Err(format!(
+            "compute_fn must be a closure, got {}",
+            compute_fn.type_name()
+        ));
     }
 
     // Return a struct describing the computed property
     // The actual registration happens at the runtime level
-    use std::rc::Rc;
     use std::cell::RefCell;
-    use stratum_core::bytecode::StructInstance;
     use std::collections::HashMap;
+    use std::rc::Rc;
+    use stratum_core::bytecode::StructInstance;
 
     let mut fields = HashMap::new();
     fields.insert("name".to_string(), Value::String(Rc::new(name)));
@@ -1487,7 +1914,12 @@ fn gui_data_table(args: &[Value]) -> NativeResult {
     // Extract DataFrame from Value
     let df = match &args[0] {
         Value::DataFrame(df) => Arc::clone(df),
-        _ => return Err(format!("gui_data_table first argument must be a DataFrame, got {}", args[0].type_name())),
+        _ => {
+            return Err(format!(
+                "gui_data_table first argument must be a DataFrame, got {}",
+                args[0].type_name()
+            ))
+        }
     };
 
     let mut builder = GuiElement::data_table().dataframe(df);
@@ -1522,12 +1954,20 @@ fn gui_set_table_columns(args: &[Value]) -> NativeResult {
                 if let Value::String(s) = item {
                     cols.push(s.to_string());
                 } else {
-                    return Err(format!("column name must be a string, got {}", item.type_name()));
+                    return Err(format!(
+                        "column name must be a string, got {}",
+                        item.type_name()
+                    ));
                 }
             }
             cols
         }
-        _ => return Err(format!("columns must be a list, got {}", args[1].type_name())),
+        _ => {
+            return Err(format!(
+                "columns must be a list, got {}",
+                args[1].type_name()
+            ))
+        }
     };
 
     if let GuiElementKind::DataTable(ref mut config) = element.kind {
@@ -1556,7 +1996,12 @@ fn gui_set_page_size(args: &[Value]) -> NativeResult {
         GuiElementKind::CubeTable(config) => {
             config.page_size = if size > 0 { Some(size as usize) } else { None };
         }
-        _ => return Err("gui_set_page_size can only be applied to DataTable or CubeTable elements".to_string()),
+        _ => {
+            return Err(
+                "gui_set_page_size can only be applied to DataTable or CubeTable elements"
+                    .to_string(),
+            )
+        }
     }
 
     Ok(element.into_value())
@@ -1591,7 +2036,12 @@ fn gui_set_sortable(args: &[Value]) -> NativeResult {
     let mut element = clone_gui_element(&args[0])?;
     let sortable = match &args[1] {
         Value::Bool(b) => *b,
-        _ => return Err(format!("sortable must be a boolean, got {}", args[1].type_name())),
+        _ => {
+            return Err(format!(
+                "sortable must be a boolean, got {}",
+                args[1].type_name()
+            ))
+        }
     };
 
     if let GuiElementKind::DataTable(ref mut config) = element.kind {
@@ -1607,14 +2057,21 @@ fn gui_set_sortable(args: &[Value]) -> NativeResult {
 /// gui_set_sort_by(element, column, ascending) -> new_element
 fn gui_set_sort_by(args: &[Value]) -> NativeResult {
     if args.len() != 3 {
-        return Err("gui_set_sort_by requires 3 arguments (element, column, ascending)".to_string());
+        return Err(
+            "gui_set_sort_by requires 3 arguments (element, column, ascending)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
     let column = get_string(args, 1, "column")?;
     let ascending = match &args[2] {
         Value::Bool(b) => *b,
-        _ => return Err(format!("ascending must be a boolean, got {}", args[2].type_name())),
+        _ => {
+            return Err(format!(
+                "ascending must be a boolean, got {}",
+                args[2].type_name()
+            ))
+        }
     };
 
     if let GuiElementKind::DataTable(ref mut config) = element.kind {
@@ -1637,7 +2094,12 @@ fn gui_set_selectable(args: &[Value]) -> NativeResult {
     let mut element = clone_gui_element(&args[0])?;
     let selectable = match &args[1] {
         Value::Bool(b) => *b,
-        _ => return Err(format!("selectable must be a boolean, got {}", args[1].type_name())),
+        _ => {
+            return Err(format!(
+                "selectable must be a boolean, got {}",
+                args[1].type_name()
+            ))
+        }
     };
 
     if let GuiElementKind::DataTable(ref mut config) = element.kind {
@@ -1669,7 +2131,10 @@ fn gui_set_selected_rows(args: &[Value]) -> NativeResult {
                         indices.push(*i as usize);
                     }
                 } else {
-                    return Err(format!("row index must be an integer, got {}", item.type_name()));
+                    return Err(format!(
+                        "row index must be an integer, got {}",
+                        item.type_name()
+                    ));
                 }
             }
             indices
@@ -1690,7 +2155,9 @@ fn gui_set_selected_rows(args: &[Value]) -> NativeResult {
 /// gui_set_column_width(element, column, width) -> new_element
 fn gui_set_column_width(args: &[Value]) -> NativeResult {
     if args.len() != 3 {
-        return Err("gui_set_column_width requires 3 arguments (element, column, width)".to_string());
+        return Err(
+            "gui_set_column_width requires 3 arguments (element, column, width)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
@@ -1750,7 +2217,9 @@ fn gui_on_page_change(args: &[Value]) -> NativeResult {
 /// gui_on_selection_change(element, callback_id) -> new_element
 fn gui_on_selection_change(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err("gui_on_selection_change requires 2 arguments (element, callback_id)".to_string());
+        return Err(
+            "gui_on_selection_change requires 2 arguments (element, callback_id)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
@@ -1759,7 +2228,9 @@ fn gui_on_selection_change(args: &[Value]) -> NativeResult {
     if let GuiElementKind::DataTable(ref mut config) = element.kind {
         config.on_selection_change = Some(CallbackId::new(callback_id as u64));
     } else {
-        return Err("gui_on_selection_change can only be applied to DataTable elements".to_string());
+        return Err(
+            "gui_on_selection_change can only be applied to DataTable elements".to_string(),
+        );
     }
 
     Ok(element.into_value())
@@ -1954,7 +2425,11 @@ fn gui_set_chart_data(args: &[Value]) -> NativeResult {
     match &mut element.kind {
         GuiElementKind::BarChart(c) => c.data = data,
         GuiElementKind::PieChart(c) => c.data = data,
-        _ => return Err("gui_set_chart_data can only be applied to BarChart or PieChart".to_string()),
+        _ => {
+            return Err(
+                "gui_set_chart_data can only be applied to BarChart or PieChart".to_string(),
+            )
+        }
     }
 
     Ok(element.into_value())
@@ -2030,7 +2505,9 @@ fn gui_set_chart_data_arrays(args: &[Value]) -> NativeResult {
 /// gui_add_chart_series(element, name, values) -> new_element
 fn gui_add_chart_series(args: &[Value]) -> NativeResult {
     if args.len() != 3 {
-        return Err("gui_add_chart_series requires 3 arguments (element, name, values)".to_string());
+        return Err(
+            "gui_add_chart_series requires 3 arguments (element, name, values)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
@@ -2131,7 +2608,12 @@ fn gui_set_show_grid(args: &[Value]) -> NativeResult {
         GuiElementKind::BarChart(c) => c.show_grid = show,
         GuiElementKind::LineChart(c) => c.show_grid = show,
         GuiElementKind::CubeChart(c) => c.show_grid = show,
-        _ => return Err("gui_set_show_grid can only be applied to BarChart, LineChart, or CubeChart".to_string()),
+        _ => {
+            return Err(
+                "gui_set_show_grid can only be applied to BarChart, LineChart, or CubeChart"
+                    .to_string(),
+            )
+        }
     }
 
     Ok(element.into_value())
@@ -2208,7 +2690,9 @@ fn gui_cube_table(args: &[Value]) -> NativeResult {
 
 /// Create a CubeChart element
 fn gui_cube_chart(args: &[Value]) -> NativeResult {
-    use crate::element::{CubeChartConfig, CubeChartType, ElementStyle, GuiElement, GuiElementKind};
+    use crate::element::{
+        CubeChartConfig, CubeChartType, ElementStyle, GuiElement, GuiElementKind,
+    };
 
     let cube = if !args.is_empty() {
         match &args[0] {
@@ -2278,7 +2762,7 @@ fn gui_dimension_filter(args: &[Value]) -> NativeResult {
 
 /// Create a HierarchyNavigator element
 fn gui_hierarchy_navigator(args: &[Value]) -> NativeResult {
-    use crate::element::{HierarchyNavigatorConfig, ElementStyle, GuiElement, GuiElementKind};
+    use crate::element::{ElementStyle, GuiElement, GuiElementKind, HierarchyNavigatorConfig};
 
     let cube = if !args.is_empty() {
         match &args[0] {
@@ -2313,7 +2797,7 @@ fn gui_hierarchy_navigator(args: &[Value]) -> NativeResult {
 
 /// Create a MeasureSelector element
 fn gui_measure_selector(args: &[Value]) -> NativeResult {
-    use crate::element::{MeasureSelectorConfig, ElementStyle, GuiElement, GuiElementKind};
+    use crate::element::{ElementStyle, GuiElement, GuiElementKind, MeasureSelectorConfig};
 
     let cube = if !args.is_empty() {
         match &args[0] {
@@ -2363,20 +2847,21 @@ fn gui_set_cube(args: &[Value]) -> NativeResult {
 /// Set row dimensions for CubeTable
 fn gui_set_row_dimensions(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err("gui_set_row_dimensions requires 2 arguments (element, dimensions)".to_string());
+        return Err(
+            "gui_set_row_dimensions requires 2 arguments (element, dimensions)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
     let dims = match &args[1] {
-        Value::List(list) => {
-            list.borrow()
-                .iter()
-                .filter_map(|v| match v {
-                    Value::String(s) => Some(s.to_string()),
-                    _ => None,
-                })
-                .collect()
-        }
+        Value::List(list) => list
+            .borrow()
+            .iter()
+            .filter_map(|v| match v {
+                Value::String(s) => Some(s.to_string()),
+                _ => None,
+            })
+            .collect(),
         _ => return Err("second argument must be a list of strings".to_string()),
     };
 
@@ -2397,22 +2882,25 @@ fn gui_set_measures(args: &[Value]) -> NativeResult {
 
     let mut element = clone_gui_element(&args[0])?;
     let measures = match &args[1] {
-        Value::List(list) => {
-            list.borrow()
-                .iter()
-                .filter_map(|v| match v {
-                    Value::String(s) => Some(s.to_string()),
-                    _ => None,
-                })
-                .collect()
-        }
+        Value::List(list) => list
+            .borrow()
+            .iter()
+            .filter_map(|v| match v {
+                Value::String(s) => Some(s.to_string()),
+                _ => None,
+            })
+            .collect(),
         _ => return Err("second argument must be a list of strings".to_string()),
     };
 
     match &mut element.kind {
         GuiElementKind::CubeTable(c) => c.measures = measures,
         GuiElementKind::MeasureSelector(c) => c.selected_measures = measures,
-        _ => return Err("gui_set_measures can only be applied to CubeTable or MeasureSelector".to_string()),
+        _ => {
+            return Err(
+                "gui_set_measures can only be applied to CubeTable or MeasureSelector".to_string(),
+            )
+        }
     }
 
     Ok(element.into_value())
@@ -2486,7 +2974,9 @@ fn gui_set_y_measure(args: &[Value]) -> NativeResult {
 /// Set series dimension for CubeChart
 fn gui_set_series_dimension(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err("gui_set_series_dimension requires 2 arguments (element, dimension)".to_string());
+        return Err(
+            "gui_set_series_dimension requires 2 arguments (element, dimension)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
@@ -2507,7 +2997,9 @@ fn gui_set_series_dimension(args: &[Value]) -> NativeResult {
 /// Set dimension for DimensionFilter
 fn gui_set_filter_dimension(args: &[Value]) -> NativeResult {
     if args.len() != 2 {
-        return Err("gui_set_filter_dimension requires 2 arguments (element, dimension)".to_string());
+        return Err(
+            "gui_set_filter_dimension requires 2 arguments (element, dimension)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
@@ -2582,7 +3074,11 @@ fn gui_on_drill(args: &[Value]) -> NativeResult {
     match &mut element.kind {
         GuiElementKind::CubeTable(c) => c.on_drill = Some(callback_id),
         GuiElementKind::HierarchyNavigator(c) => c.on_drill_down = Some(callback_id),
-        _ => return Err("gui_on_drill can only be applied to CubeTable or HierarchyNavigator".to_string()),
+        _ => {
+            return Err(
+                "gui_on_drill can only be applied to CubeTable or HierarchyNavigator".to_string(),
+            )
+        }
     }
 
     Ok(element.into_value())
@@ -2603,7 +3099,11 @@ fn gui_on_roll_up(args: &[Value]) -> NativeResult {
     match &mut element.kind {
         GuiElementKind::CubeTable(c) => c.on_roll_up = Some(callback_id),
         GuiElementKind::HierarchyNavigator(c) => c.on_roll_up = Some(callback_id),
-        _ => return Err("gui_on_roll_up can only be applied to CubeTable or HierarchyNavigator".to_string()),
+        _ => {
+            return Err(
+                "gui_on_roll_up can only be applied to CubeTable or HierarchyNavigator".to_string(),
+            )
+        }
     }
 
     Ok(element.into_value())
@@ -2640,7 +3140,9 @@ fn gui_set_background(args: &[Value]) -> NativeResult {
     use crate::theme::Color;
 
     if args.len() < 4 {
-        return Err("gui_set_background requires at least 4 arguments (element, r, g, b)".to_string());
+        return Err(
+            "gui_set_background requires at least 4 arguments (element, r, g, b)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
@@ -2663,7 +3165,9 @@ fn gui_set_foreground(args: &[Value]) -> NativeResult {
     use crate::theme::Color;
 
     if args.len() < 4 {
-        return Err("gui_set_foreground requires at least 4 arguments (element, r, g, b)".to_string());
+        return Err(
+            "gui_set_foreground requires at least 4 arguments (element, r, g, b)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
@@ -2686,7 +3190,9 @@ fn gui_set_border_color(args: &[Value]) -> NativeResult {
     use crate::theme::Color;
 
     if args.len() < 4 {
-        return Err("gui_set_border_color requires at least 4 arguments (element, r, g, b)".to_string());
+        return Err(
+            "gui_set_border_color requires at least 4 arguments (element, r, g, b)".to_string(),
+        );
     }
 
     let mut element = clone_gui_element(&args[0])?;
@@ -2754,8 +3260,12 @@ fn gui_set_theme(args: &[Value]) -> NativeResult {
 
     let preset_name = get_string(args, 0, "preset_name")?;
 
-    let preset = ThemePreset::from_name(&preset_name)
-        .ok_or_else(|| format!("Unknown theme preset: '{}'. Use Gui.theme_presets() to see available themes.", preset_name))?;
+    let preset = ThemePreset::from_name(&preset_name).ok_or_else(|| {
+        format!(
+            "Unknown theme preset: '{}'. Use Gui.theme_presets() to see available themes.",
+            preset_name
+        )
+    })?;
 
     request_theme_preset(preset);
     Ok(Value::Null)
@@ -2791,10 +3301,12 @@ fn gui_custom_theme(args: &[Value]) -> NativeResult {
 
             StratumPalette::new(background, text, primary, success, warning, danger)
         }
-        _ => return Err(format!(
-            "palette must be a struct with color fields, got {}",
-            palette_value.type_name()
-        )),
+        _ => {
+            return Err(format!(
+                "palette must be a struct with color fields, got {}",
+                palette_value.type_name()
+            ))
+        }
     };
 
     request_custom_theme(name, palette);
@@ -2806,7 +3318,8 @@ fn extract_color_from_field(
     fields: &std::collections::HashMap<String, Value>,
     field_name: &str,
 ) -> Result<crate::theme::Color, String> {
-    let value = fields.get(field_name)
+    let value = fields
+        .get(field_name)
         .ok_or_else(|| format!("palette missing required field: '{}'", field_name))?;
 
     extract_color_value(value, field_name)
@@ -2819,8 +3332,7 @@ fn extract_color_value(value: &Value, context: &str) -> Result<crate::theme::Col
     match value {
         // Hex string: "#RRGGBB" or "#RRGGBBAA"
         Value::String(s) => {
-            Color::from_hex(s)
-                .ok_or_else(|| format!("{}: invalid hex color '{}'", context, s))
+            Color::from_hex(s).ok_or_else(|| format!("{}: invalid hex color '{}'", context, s))
         }
         // List/tuple: [r, g, b] or [r, g, b, a]
         Value::List(list) => {
@@ -2848,19 +3360,27 @@ fn extract_color_value(value: &Value, context: &str) -> Result<crate::theme::Col
         // Struct with r, g, b, a fields
         Value::Struct(struct_ref) => {
             let instance = struct_ref.borrow();
-            let r = instance.fields.get("r")
+            let r = instance
+                .fields
+                .get("r")
                 .map(|v| get_u8_from_value(v, &format!("{}.r", context)))
                 .transpose()?
                 .unwrap_or(0);
-            let g = instance.fields.get("g")
+            let g = instance
+                .fields
+                .get("g")
                 .map(|v| get_u8_from_value(v, &format!("{}.g", context)))
                 .transpose()?
                 .unwrap_or(0);
-            let b = instance.fields.get("b")
+            let b = instance
+                .fields
+                .get("b")
                 .map(|v| get_u8_from_value(v, &format!("{}.b", context)))
                 .transpose()?
                 .unwrap_or(0);
-            let a = instance.fields.get("a")
+            let a = instance
+                .fields
+                .get("a")
                 .map(|v| get_u8_from_value(v, &format!("{}.a", context)))
                 .transpose()?
                 .unwrap_or(255);
@@ -2879,7 +3399,10 @@ fn get_u8_from_value(value: &Value, context: &str) -> Result<u8, String> {
     match value {
         Value::Int(i) => {
             if *i < 0 || *i > 255 {
-                Err(format!("{}: color component must be 0-255, got {}", context, i))
+                Err(format!(
+                    "{}: color component must be 0-255, got {}",
+                    context, i
+                ))
             } else {
                 Ok(*i as u8)
             }
@@ -2891,10 +3414,17 @@ fn get_u8_from_value(value: &Value, context: &str) -> Result<u8, String> {
             } else if *f >= 0.0 && *f <= 255.0 {
                 Ok(*f as u8)
             } else {
-                Err(format!("{}: color component must be 0-255 or 0.0-1.0, got {}", context, f))
+                Err(format!(
+                    "{}: color component must be 0-255 or 0.0-1.0, got {}",
+                    context, f
+                ))
             }
         }
-        _ => Err(format!("{}: color component must be a number, got {}", context, value.type_name())),
+        _ => Err(format!(
+            "{}: color component must be a number, got {}",
+            context,
+            value.type_name()
+        )),
     }
 }
 
@@ -3128,7 +3658,10 @@ fn gui_on_change(args: &[Value]) -> NativeResult {
         GuiElementKind::TextField(config) => config.on_change = Some(callback_id),
         GuiElementKind::Slider(config) => config.on_change = Some(callback_id),
         GuiElementKind::MeasureSelector(config) => config.on_change = Some(callback_id),
-        _ => return Err("gui_on_change can only be applied to TextField, Slider, or MeasureSelector elements".to_string()),
+        _ => return Err(
+            "gui_on_change can only be applied to TextField, Slider, or MeasureSelector elements"
+                .to_string(),
+        ),
     }
 
     Ok(element.into_value())
@@ -3166,7 +3699,11 @@ fn gui_on_toggle(args: &[Value]) -> NativeResult {
     match &mut element.kind {
         GuiElementKind::Checkbox(config) => config.on_toggle = Some(callback_id),
         GuiElementKind::Toggle(config) => config.on_toggle = Some(callback_id),
-        _ => return Err("gui_on_toggle can only be applied to Checkbox or Toggle elements".to_string()),
+        _ => {
+            return Err(
+                "gui_on_toggle can only be applied to Checkbox or Toggle elements".to_string(),
+            )
+        }
     }
 
     Ok(element.into_value())
@@ -3309,7 +3846,12 @@ mod tests {
 
     #[test]
     fn test_gui_slider_with_step() {
-        let result = gui_slider(&[Value::Float(0.0), Value::Float(100.0), Value::Float(50.0), Value::Float(5.0)]);
+        let result = gui_slider(&[
+            Value::Float(0.0),
+            Value::Float(100.0),
+            Value::Float(50.0),
+            Value::Float(5.0),
+        ]);
         assert!(result.is_ok());
     }
 
@@ -3428,7 +3970,13 @@ mod tests {
     #[test]
     fn test_gui_set_text_color_with_alpha() {
         let elem = gui_text(&[Value::string("Colored text")]).unwrap();
-        let result = gui_set_text_color(&[elem, Value::Int(0), Value::Int(128), Value::Int(255), Value::Int(128)]);
+        let result = gui_set_text_color(&[
+            elem,
+            Value::Int(0),
+            Value::Int(128),
+            Value::Int(255),
+            Value::Int(128),
+        ]);
         assert!(result.is_ok());
 
         // Verify color with alpha was set
@@ -3561,7 +4109,11 @@ mod tests {
 
     #[test]
     fn test_gui_text_field_secure() {
-        let result = gui_text_field(&[Value::string(""), Value::string("Password"), Value::Bool(true)]);
+        let result = gui_text_field(&[
+            Value::string(""),
+            Value::string("Password"),
+            Value::Bool(true),
+        ]);
         assert!(result.is_ok());
 
         let value = result.unwrap();
@@ -4399,7 +4951,8 @@ mod tests {
     #[test]
     fn test_gui_set_border_color() {
         let elem = gui_button(&[Value::string("Test")]).unwrap();
-        let result = gui_set_border_color(&[elem, Value::Int(100), Value::Int(100), Value::Int(100)]);
+        let result =
+            gui_set_border_color(&[elem, Value::Int(100), Value::Int(100), Value::Int(100)]);
         assert!(result.is_ok());
     }
 
@@ -4536,10 +5089,7 @@ mod tests {
         };
         let palette_value = Value::Struct(Rc::new(RefCell::new(palette_instance)));
 
-        let result = gui_custom_theme(&[
-            Value::string("OneDark"),
-            palette_value,
-        ]);
+        let result = gui_custom_theme(&[Value::string("OneDark"), palette_value]);
         assert!(result.is_ok());
 
         let pending = crate::bindings::take_pending_theme();
@@ -4565,23 +5115,43 @@ mod tests {
         let mut palette_fields = HashMap::new();
         palette_fields.insert(
             "background".to_string(),
-            Value::List(Rc::new(RefCell::new(vec![Value::Int(40), Value::Int(44), Value::Int(52)]))),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(40),
+                Value::Int(44),
+                Value::Int(52),
+            ]))),
         );
         palette_fields.insert(
             "text".to_string(),
-            Value::List(Rc::new(RefCell::new(vec![Value::Int(255), Value::Int(255), Value::Int(255)]))),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(255),
+                Value::Int(255),
+                Value::Int(255),
+            ]))),
         );
         palette_fields.insert(
             "primary".to_string(),
-            Value::List(Rc::new(RefCell::new(vec![Value::Int(97), Value::Int(175), Value::Int(239)]))),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(97),
+                Value::Int(175),
+                Value::Int(239),
+            ]))),
         );
         palette_fields.insert(
             "success".to_string(),
-            Value::List(Rc::new(RefCell::new(vec![Value::Int(152), Value::Int(195), Value::Int(121)]))),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(152),
+                Value::Int(195),
+                Value::Int(121),
+            ]))),
         );
         palette_fields.insert(
             "warning".to_string(),
-            Value::List(Rc::new(RefCell::new(vec![Value::Int(229), Value::Int(192), Value::Int(123)]))),
+            Value::List(Rc::new(RefCell::new(vec![
+                Value::Int(229),
+                Value::Int(192),
+                Value::Int(123),
+            ]))),
         );
         // 'danger' field intentionally missing
 
@@ -4591,10 +5161,7 @@ mod tests {
         };
         let palette_value = Value::Struct(Rc::new(RefCell::new(palette_instance)));
 
-        let result = gui_custom_theme(&[
-            Value::string("Incomplete"),
-            palette_value,
-        ]);
+        let result = gui_custom_theme(&[Value::string("Incomplete"), palette_value]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("missing required field"));
@@ -4625,7 +5192,7 @@ mod tests {
     // =========================================================================
 
     fn create_test_cube() -> Value {
-        use stratum_core::data::{DataFrame, Series, Cube, CubeAggFunc};
+        use stratum_core::data::{Cube, CubeAggFunc, DataFrame, Series};
         // Create a simple test DataFrame for the cube
         let regions = Series::from_strings("region", vec!["North", "South", "North", "South"]);
         let products = Series::from_strings("product", vec!["A", "A", "B", "B"]);
@@ -4713,7 +5280,10 @@ mod tests {
         if let Value::GuiElement(e) = value {
             if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
                 if let GuiElementKind::CubeChart(config) = &gui_elem.kind {
-                    assert!(matches!(config.chart_type, crate::element::CubeChartType::Line));
+                    assert!(matches!(
+                        config.chart_type,
+                        crate::element::CubeChartType::Line
+                    ));
                 } else {
                     panic!("Expected CubeChart element");
                 }
@@ -4971,7 +5541,8 @@ mod tests {
     #[test]
     fn test_gui_set_alignment_invalid_h_align() {
         let vstack = gui_vstack(&[]).unwrap();
-        let result = gui_set_alignment(&[vstack, Value::string("invalid"), Value::string("center")]);
+        let result =
+            gui_set_alignment(&[vstack, Value::string("invalid"), Value::string("center")]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid horizontal alignment"));
     }
@@ -4979,7 +5550,8 @@ mod tests {
     #[test]
     fn test_gui_set_alignment_invalid_v_align() {
         let vstack = gui_vstack(&[]).unwrap();
-        let result = gui_set_alignment(&[vstack, Value::string("center"), Value::string("invalid")]);
+        let result =
+            gui_set_alignment(&[vstack, Value::string("center"), Value::string("invalid")]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid vertical alignment"));
     }
@@ -5027,7 +5599,9 @@ mod tests {
         let elem = gui_button(&[Value::string("Click")]).unwrap();
         let result = gui_on_change(&[elem, Value::Int(1)]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("can only be applied to TextField"));
+        assert!(result
+            .unwrap_err()
+            .contains("can only be applied to TextField"));
     }
 
     #[test]
@@ -5053,7 +5627,9 @@ mod tests {
         let elem = gui_button(&[Value::string("Click")]).unwrap();
         let result = gui_on_submit(&[elem, Value::Int(1)]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("can only be applied to TextField"));
+        assert!(result
+            .unwrap_err()
+            .contains("can only be applied to TextField"));
     }
 
     #[test]
@@ -5097,7 +5673,9 @@ mod tests {
         let elem = gui_text(&[Value::string("Text")]).unwrap();
         let result = gui_on_toggle(&[elem, Value::Int(1)]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("can only be applied to Checkbox or Toggle"));
+        assert!(result
+            .unwrap_err()
+            .contains("can only be applied to Checkbox or Toggle"));
     }
 
     #[test]
@@ -5142,7 +5720,9 @@ mod tests {
         let elem = gui_text(&[Value::string("Text")]).unwrap();
         let result = gui_on_select(&[elem, Value::Int(1)]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("can only be applied to RadioButton, Dropdown"));
+        assert!(result
+            .unwrap_err()
+            .contains("can only be applied to RadioButton, Dropdown"));
     }
 
     // ==================== State Binding Tests ====================
@@ -5226,7 +5806,11 @@ mod tests {
     #[test]
     fn test_gui_dropdown_with_state_binding() {
         // Test that Dropdown accepts a StateBinding and sets field_path
-        let options = Value::list(vec![Value::string("Red"), Value::string("Green"), Value::string("Blue")]);
+        let options = Value::list(vec![
+            Value::string("Red"),
+            Value::string("Green"),
+            Value::string("Blue"),
+        ]);
         let binding = Value::StateBinding("state.color".to_string());
         let result = gui_dropdown(&[options, binding]);
         assert!(result.is_ok());
@@ -5292,7 +5876,10 @@ mod tests {
         if let Value::GuiElement(e) = value {
             if let Some(gui_elem) = e.as_any().downcast_ref::<GuiElement>() {
                 if let GuiElementKind::TextField(config) = &gui_elem.kind {
-                    assert_eq!(config.field_path, Some("state.user.profile.name".to_string()));
+                    assert_eq!(
+                        config.field_path,
+                        Some("state.user.profile.name".to_string())
+                    );
                 } else {
                     panic!("Expected TextField element");
                 }

@@ -67,9 +67,7 @@ impl Position {
         match self {
             Self::Default => iced::window::Position::Default,
             Self::Centered => iced::window::Position::Centered,
-            Self::Specific(x, y) => {
-                iced::window::Position::Specific(iced::Point::new(x, y))
-            }
+            Self::Specific(x, y) => iced::window::Position::Specific(iced::Point::new(x, y)),
         }
     }
 }
@@ -238,8 +236,12 @@ impl WindowSettings {
         iced::window::Settings {
             size,
             position: self.position.to_iced(),
-            min_size: self.min_size.map(|(w, h)| iced::Size::new(w as f32, h as f32)),
-            max_size: self.max_size.map(|(w, h)| iced::Size::new(w as f32, h as f32)),
+            min_size: self
+                .min_size
+                .map(|(w, h)| iced::Size::new(w as f32, h as f32)),
+            max_size: self
+                .max_size
+                .map(|(w, h)| iced::Size::new(w as f32, h as f32)),
             visible: self.visible,
             resizable: self.resizable,
             decorations: self.decorations,
@@ -411,11 +413,7 @@ pub enum WindowEvent {
     /// A window lost focus
     Unfocused(WindowId),
     /// A window was moved
-    Moved {
-        id: WindowId,
-        x: i32,
-        y: i32,
-    },
+    Moved { id: WindowId, x: i32, y: i32 },
 }
 
 #[cfg(test)]

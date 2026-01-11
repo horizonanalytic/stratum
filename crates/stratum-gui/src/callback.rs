@@ -184,9 +184,9 @@ impl CallbackExecutor {
     /// - The callback execution fails
     pub fn execute(&self, id: CallbackId, args: Vec<Value>) -> GuiResult<Value> {
         let registry = self.registry.borrow();
-        let callback = registry.get(id).ok_or_else(|| {
-            GuiError::EventHandling(format!("Callback {:?} not found", id))
-        })?;
+        let callback = registry
+            .get(id)
+            .ok_or_else(|| GuiError::EventHandling(format!("Callback {:?} not found", id)))?;
 
         let handler = callback.handler().clone();
         drop(registry); // Release borrow before VM execution
@@ -330,7 +330,9 @@ mod tests {
 
         // Register a native callback that returns 42
         let handler = make_native_callback(|_| Ok(Value::Int(42)));
-        let id = registry.borrow_mut().register(Callback::new(handler).unwrap());
+        let id = registry
+            .borrow_mut()
+            .register(Callback::new(handler).unwrap());
 
         let result = executor.execute_no_args(id);
         assert!(result.is_ok());

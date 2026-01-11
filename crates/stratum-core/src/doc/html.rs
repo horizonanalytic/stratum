@@ -34,7 +34,12 @@ impl HtmlGenerator {
             "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
         )
         .unwrap();
-        writeln!(output, "  <title>{} - Stratum Documentation</title>", module.name).unwrap();
+        writeln!(
+            output,
+            "  <title>{} - Stratum Documentation</title>",
+            module.name
+        )
+        .unwrap();
         Self::write_styles(&mut output);
         writeln!(output, "</head>").unwrap();
         writeln!(output, "<body>").unwrap();
@@ -59,12 +64,20 @@ impl HtmlGenerator {
         if let Some(doc) = &module.doc {
             writeln!(output, "<section class=\"module-doc\">").unwrap();
             if !doc.summary.is_empty() {
-                writeln!(output, "  <p class=\"summary\">{}</p>", Self::escape_html(&doc.summary))
-                    .unwrap();
+                writeln!(
+                    output,
+                    "  <p class=\"summary\">{}</p>",
+                    Self::escape_html(&doc.summary)
+                )
+                .unwrap();
             }
             if let Some(desc) = &doc.description {
-                writeln!(output, "  <div class=\"description\">{}</div>", Self::escape_html(desc))
-                    .unwrap();
+                writeln!(
+                    output,
+                    "  <div class=\"description\">{}</div>",
+                    Self::escape_html(desc)
+                )
+                .unwrap();
             }
             writeln!(output, "</section>").unwrap();
         }
@@ -114,7 +127,11 @@ impl HtmlGenerator {
         }
 
         // Implementations
-        let impls: Vec<_> = module.items.iter().filter(|i| i.kind == ItemKind::Impl).collect();
+        let impls: Vec<_> = module
+            .items
+            .iter()
+            .filter(|i| i.kind == ItemKind::Impl)
+            .collect();
         if !impls.is_empty() {
             writeln!(output, "<section id=\"implementations\">").unwrap();
             writeln!(output, "  <h2>Implementations</h2>").unwrap();
@@ -323,7 +340,11 @@ impl HtmlGenerator {
         }
 
         // Implementations
-        let impls: Vec<_> = module.items.iter().filter(|i| i.kind == ItemKind::Impl).collect();
+        let impls: Vec<_> = module
+            .items
+            .iter()
+            .filter(|i| i.kind == ItemKind::Impl)
+            .collect();
         if !impls.is_empty() {
             writeln!(output, "<section id=\"implementations\">").unwrap();
             writeln!(output, "  <h2>Implementations</h2>").unwrap();
@@ -441,7 +462,12 @@ impl HtmlGenerator {
                 .as_ref()
                 .map(|d| d.summary.clone())
                 .unwrap_or_default();
-            writeln!(output, "    <a href=\"{}.html\" class=\"module-card\">", m.name).unwrap();
+            writeln!(
+                output,
+                "    <a href=\"{}.html\" class=\"module-card\">",
+                m.name
+            )
+            .unwrap();
             writeln!(output, "      <h3>{}</h3>", m.name).unwrap();
             writeln!(output, "      <p>{}</p>", Self::escape_html(&desc)).unwrap();
             // Item counts
@@ -483,9 +509,18 @@ impl HtmlGenerator {
                 symbol.kind.display_name()
             )
             .unwrap();
-            writeln!(output, "      <span class=\"symbol-name\">{}</span>", symbol.name).unwrap();
-            writeln!(output, "      <span class=\"symbol-module\">{}</span>", symbol.module)
-                .unwrap();
+            writeln!(
+                output,
+                "      <span class=\"symbol-name\">{}</span>",
+                symbol.name
+            )
+            .unwrap();
+            writeln!(
+                output,
+                "      <span class=\"symbol-module\">{}</span>",
+                symbol.module
+            )
+            .unwrap();
             writeln!(output, "    </a>").unwrap();
         }
         if project.all_symbols().len() > 50 {
@@ -1198,12 +1233,8 @@ footer a {{
                 for reference in &doc.see_also {
                     if let Some(l) = linker {
                         if let Some((text, link)) = l.resolve_see_also(reference) {
-                            writeln!(
-                                output,
-                                "        <li><a href=\"{}\">{}</a></li>",
-                                link, text
-                            )
-                            .unwrap();
+                            writeln!(output, "        <li><a href=\"{}\">{}</a></li>", link, text)
+                                .unwrap();
                         } else {
                             writeln!(output, "        <li>{}</li>", Self::escape_html(reference))
                                 .unwrap();

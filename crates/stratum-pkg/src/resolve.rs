@@ -263,13 +263,12 @@ impl Resolver {
                 }
 
                 if let DependencySource::Registry { ref version_req } = resolved.source {
-                    version_requirements
-                        .entry(name.clone())
-                        .or_default()
-                        .push(VersionRequirement {
+                    version_requirements.entry(name.clone()).or_default().push(
+                        VersionRequirement {
                             version_req: version_req.clone(),
                             source: DependencySection::Dev.to_string(),
-                        });
+                        },
+                    );
                 }
                 dependencies.insert(name.clone(), resolved);
             }
@@ -286,13 +285,12 @@ impl Resolver {
                 }
 
                 if let DependencySource::Registry { ref version_req } = resolved.source {
-                    version_requirements
-                        .entry(name.clone())
-                        .or_default()
-                        .push(VersionRequirement {
+                    version_requirements.entry(name.clone()).or_default().push(
+                        VersionRequirement {
                             version_req: version_req.clone(),
                             source: DependencySection::Build.to_string(),
-                        });
+                        },
+                    );
                 }
                 dependencies.insert(name.clone(), resolved);
             }
@@ -695,10 +693,8 @@ mod tests {
 
     #[test]
     fn test_resolve_includes_dev_deps() {
-        let mut manifest = make_manifest(vec![(
-            "http",
-            DependencySpec::Simple("^1.0".to_string()),
-        )]);
+        let mut manifest =
+            make_manifest(vec![("http", DependencySpec::Simple("^1.0".to_string()))]);
         manifest.dev_dependencies.insert(
             "test-utils".to_string(),
             DependencySpec::Simple("0.5".to_string()),

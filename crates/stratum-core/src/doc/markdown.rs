@@ -82,7 +82,11 @@ impl MarkdownGenerator {
         }
 
         // Impl blocks
-        let impls: Vec<_> = module.items.iter().filter(|i| i.kind == ItemKind::Impl).collect();
+        let impls: Vec<_> = module
+            .items
+            .iter()
+            .filter(|i| i.kind == ItemKind::Impl)
+            .collect();
         if !impls.is_empty() {
             writeln!(output, "## Implementations").unwrap();
             writeln!(output).unwrap();
@@ -220,7 +224,13 @@ impl MarkdownGenerator {
             writeln!(output).unwrap();
 
             for child in &item.children {
-                writeln!(output, "- `{}` - {}", child.signature, Self::child_summary(child)).unwrap();
+                writeln!(
+                    output,
+                    "- `{}` - {}",
+                    child.signature,
+                    Self::child_summary(child)
+                )
+                .unwrap();
             }
             writeln!(output).unwrap();
         }

@@ -182,10 +182,8 @@ impl CoverageCollector {
         let key = format!("{}@{:p}", function.name, function);
 
         if !self.functions.contains_key(&key) {
-            let mut coverage = FunctionCoverage::new(
-                function.name.clone(),
-                function.chunk.source_name.clone(),
-            );
+            let mut coverage =
+                FunctionCoverage::new(function.name.clone(), function.chunk.source_name.clone());
             coverage.analyze_chunk(&function.chunk);
 
             // Update source line count
@@ -274,9 +272,9 @@ impl CoverageCollector {
                 .clone()
                 .unwrap_or_else(|| "<unknown>".to_string());
 
-            let file_cov = files.entry(source.clone()).or_insert_with(|| {
-                FileCoverage::new(source)
-            });
+            let file_cov = files
+                .entry(source.clone())
+                .or_insert_with(|| FileCoverage::new(source));
 
             file_cov.executable_lines.extend(&coverage.executable_lines);
             file_cov.executed_lines.extend(&coverage.executed_lines);
@@ -527,10 +525,7 @@ fn generate_summary_report(collector: &CoverageCollector) -> String {
 
             output.push_str(&format!(
                 "[{}] {} - Lines: {:.1}%, Branches: {:.1}%\n",
-                status,
-                file.source_file,
-                file.line_coverage_percent,
-                file.branch_coverage_percent
+                status, file.source_file, file.line_coverage_percent, file.branch_coverage_percent
             ));
         }
     }
@@ -831,9 +826,18 @@ mod tests {
 
     #[test]
     fn test_coverage_format_parsing() {
-        assert_eq!("summary".parse::<CoverageFormat>().unwrap(), CoverageFormat::Summary);
-        assert_eq!("html".parse::<CoverageFormat>().unwrap(), CoverageFormat::Html);
-        assert_eq!("lcov".parse::<CoverageFormat>().unwrap(), CoverageFormat::Lcov);
+        assert_eq!(
+            "summary".parse::<CoverageFormat>().unwrap(),
+            CoverageFormat::Summary
+        );
+        assert_eq!(
+            "html".parse::<CoverageFormat>().unwrap(),
+            CoverageFormat::Html
+        );
+        assert_eq!(
+            "lcov".parse::<CoverageFormat>().unwrap(),
+            CoverageFormat::Lcov
+        );
         assert!("invalid".parse::<CoverageFormat>().is_err());
     }
 

@@ -49,10 +49,7 @@ pub enum LazyOp {
     /// Apply window function
     Window(WindowSpec),
     /// Add a computed column
-    WithColumn {
-        name: String,
-        expr: ColumnExpr,
-    },
+    WithColumn { name: String, expr: ColumnExpr },
     /// Explode a list column into multiple rows
     Explode(String),
 }
@@ -312,18 +309,17 @@ impl LazyFrame {
 
     /// Filter where column is between two values
     #[must_use]
-    pub fn filter_between(
-        self,
-        column: impl Into<String>,
-        low: Value,
-        high: Value,
-    ) -> Self {
+    pub fn filter_between(self, column: impl Into<String>, low: Value, high: Value) -> Self {
         self.filter(FilterPredicate::Between(column.into(), low, high))
     }
 
     /// Sort by columns
     #[must_use]
-    pub fn sort(mut self, columns: impl IntoIterator<Item = impl Into<String>>, ascending: bool) -> Self {
+    pub fn sort(
+        mut self,
+        columns: impl IntoIterator<Item = impl Into<String>>,
+        ascending: bool,
+    ) -> Self {
         let cols: Vec<String> = columns.into_iter().map(Into::into).collect();
         let asc = vec![ascending; cols.len()];
         self.push_op(LazyOp::Sort {
@@ -335,14 +331,8 @@ impl LazyFrame {
 
     /// Sort by columns with individual directions
     #[must_use]
-    pub fn sort_by(
-        mut self,
-        columns: impl IntoIterator<Item = (impl Into<String>, bool)>,
-    ) -> Self {
-        let (cols, asc): (Vec<_>, Vec<_>) = columns
-            .into_iter()
-            .map(|(c, a)| (c.into(), a))
-            .unzip();
+    pub fn sort_by(mut self, columns: impl IntoIterator<Item = (impl Into<String>, bool)>) -> Self {
+        let (cols, asc): (Vec<_>, Vec<_>) = columns.into_iter().map(|(c, a)| (c.into(), a)).unzip();
         self.push_op(LazyOp::Sort {
             columns: cols,
             ascending: asc,
@@ -386,7 +376,10 @@ impl LazyFrame {
 
     /// Rename columns
     #[must_use]
-    pub fn rename(mut self, renames: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>) -> Self {
+    pub fn rename(
+        mut self,
+        renames: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
+    ) -> Self {
         let pairs: Vec<(String, String)> = renames
             .into_iter()
             .map(|(old, new)| (old.into(), new.into()))
@@ -428,11 +421,7 @@ impl LazyFrame {
 
     /// Inner join on a single column
     #[must_use]
-    pub fn inner_join(
-        self,
-        right: LazyFrame,
-        on: impl Into<String>,
-    ) -> Self {
+    pub fn inner_join(self, right: LazyFrame, on: impl Into<String>) -> Self {
         let col = on.into();
         let spec = JoinSpec::inner(&col);
         self.join(right, spec)
@@ -452,11 +441,7 @@ impl LazyFrame {
 
     /// Left join on a single column
     #[must_use]
-    pub fn left_join(
-        self,
-        right: LazyFrame,
-        on: impl Into<String>,
-    ) -> Self {
+    pub fn left_join(self, right: LazyFrame, on: impl Into<String>) -> Self {
         let col = on.into();
         let spec = JoinSpec::left(&col);
         self.join(right, spec)
@@ -476,11 +461,7 @@ impl LazyFrame {
 
     /// Right join on a single column
     #[must_use]
-    pub fn right_join(
-        self,
-        right: LazyFrame,
-        on: impl Into<String>,
-    ) -> Self {
+    pub fn right_join(self, right: LazyFrame, on: impl Into<String>) -> Self {
         let col = on.into();
         let spec = JoinSpec::right(&col);
         self.join(right, spec)
@@ -488,11 +469,7 @@ impl LazyFrame {
 
     /// Outer join on a single column
     #[must_use]
-    pub fn outer_join(
-        self,
-        right: LazyFrame,
-        on: impl Into<String>,
-    ) -> Self {
+    pub fn outer_join(self, right: LazyFrame, on: impl Into<String>) -> Self {
         let col = on.into();
         let spec = JoinSpec::outer(&col);
         self.join(right, spec)
@@ -745,7 +722,10 @@ impl LazyFrame {
                 let series = df.column(col)?;
                 Ok((0..series.len())
                     .filter(|&i| {
-                        series.get(i).ok().map_or(false, |v| Self::compare_lt(&v, val))
+                        series
+                            .get(i)
+                            .ok()
+                            .map_or(false, |v| Self::compare_lt(&v, val))
                     })
                     .collect())
             }
@@ -753,7 +733,10 @@ impl LazyFrame {
                 let series = df.column(col)?;
                 Ok((0..series.len())
                     .filter(|&i| {
-                        series.get(i).ok().map_or(false, |v| Self::compare_le(&v, val))
+                        series
+                            .get(i)
+                            .ok()
+                            .map_or(false, |v| Self::compare_le(&v, val))
                     })
                     .collect())
             }
@@ -761,7 +744,10 @@ impl LazyFrame {
                 let series = df.column(col)?;
                 Ok((0..series.len())
                     .filter(|&i| {
-                        series.get(i).ok().map_or(false, |v| Self::compare_gt(&v, val))
+                        series
+                            .get(i)
+                            .ok()
+                            .map_or(false, |v| Self::compare_gt(&v, val))
                     })
                     .collect())
             }
@@ -769,7 +755,10 @@ impl LazyFrame {
                 let series = df.column(col)?;
                 Ok((0..series.len())
                     .filter(|&i| {
-                        series.get(i).ok().map_or(false, |v| Self::compare_ge(&v, val))
+                        series
+                            .get(i)
+                            .ok()
+                            .map_or(false, |v| Self::compare_ge(&v, val))
                     })
                     .collect())
             }
@@ -788,17 +777,13 @@ impl LazyFrame {
             FilterPredicate::In(col, vals) => {
                 let series = df.column(col)?;
                 Ok((0..series.len())
-                    .filter(|&i| {
-                        series.get(i).ok().map_or(false, |v| vals.contains(&v))
-                    })
+                    .filter(|&i| series.get(i).ok().map_or(false, |v| vals.contains(&v)))
                     .collect())
             }
             FilterPredicate::NotIn(col, vals) => {
                 let series = df.column(col)?;
                 Ok((0..series.len())
-                    .filter(|&i| {
-                        series.get(i).ok().map_or(false, |v| !vals.contains(&v))
-                    })
+                    .filter(|&i| series.get(i).ok().map_or(false, |v| !vals.contains(&v)))
                     .collect())
             }
             FilterPredicate::Contains(col, substr) => {
@@ -954,9 +939,7 @@ impl LazyFrame {
                     })
                     .collect()
             }
-            WindowFunc::CumCount => {
-                (1..=num_rows).map(|i| Value::Int(i as i64)).collect()
-            }
+            WindowFunc::CumCount => (1..=num_rows).map(|i| Value::Int(i as i64)).collect(),
             WindowFunc::CumMin => {
                 let col = df.column(&spec.column)?;
                 let mut min: Option<f64> = None;
@@ -1050,25 +1033,21 @@ impl LazyFrame {
                 let last = col.get(num_rows - 1).unwrap_or(Value::Null);
                 vec![last; num_rows]
             }
-            WindowFunc::PercentRank => {
-                (0..num_rows)
-                    .map(|i| {
-                        if num_rows <= 1 {
-                            Value::Float(0.0)
-                        } else {
-                            Value::Float(i as f64 / (num_rows - 1) as f64)
-                        }
-                    })
-                    .collect()
-            }
-            WindowFunc::Ntile(n) => {
-                (0..num_rows)
-                    .map(|i| {
-                        let tile = (i * n / num_rows) + 1;
-                        Value::Int(tile as i64)
-                    })
-                    .collect()
-            }
+            WindowFunc::PercentRank => (0..num_rows)
+                .map(|i| {
+                    if num_rows <= 1 {
+                        Value::Float(0.0)
+                    } else {
+                        Value::Float(i as f64 / (num_rows - 1) as f64)
+                    }
+                })
+                .collect(),
+            WindowFunc::Ntile(n) => (0..num_rows)
+                .map(|i| {
+                    let tile = (i * n / num_rows) + 1;
+                    Value::Int(tile as i64)
+                })
+                .collect(),
         };
 
         // Add new column to DataFrame
@@ -1208,7 +1187,10 @@ impl LazyFrame {
                     })
                     .collect())
             }
-            ColumnExpr::Case { when_then, otherwise } => {
+            ColumnExpr::Case {
+                when_then,
+                otherwise,
+            } => {
                 let mut result = Self::evaluate_expr(df, otherwise)?;
                 // Apply when clauses in reverse order (last match wins)
                 for (pred, then_expr) in when_then.iter().rev() {
@@ -1359,28 +1341,32 @@ impl LazyGroupBy {
     /// Add a sum aggregation
     #[must_use]
     pub fn sum(mut self, column: impl Into<String>, output_name: impl Into<String>) -> Self {
-        self.agg_specs.push(AggSpec::sum(&column.into(), &output_name.into()));
+        self.agg_specs
+            .push(AggSpec::sum(&column.into(), &output_name.into()));
         self
     }
 
     /// Add a mean aggregation
     #[must_use]
     pub fn mean(mut self, column: impl Into<String>, output_name: impl Into<String>) -> Self {
-        self.agg_specs.push(AggSpec::mean(&column.into(), &output_name.into()));
+        self.agg_specs
+            .push(AggSpec::mean(&column.into(), &output_name.into()));
         self
     }
 
     /// Add a min aggregation
     #[must_use]
     pub fn min(mut self, column: impl Into<String>, output_name: impl Into<String>) -> Self {
-        self.agg_specs.push(AggSpec::min(&column.into(), &output_name.into()));
+        self.agg_specs
+            .push(AggSpec::min(&column.into(), &output_name.into()));
         self
     }
 
     /// Add a max aggregation
     #[must_use]
     pub fn max(mut self, column: impl Into<String>, output_name: impl Into<String>) -> Self {
-        self.agg_specs.push(AggSpec::max(&column.into(), &output_name.into()));
+        self.agg_specs
+            .push(AggSpec::max(&column.into(), &output_name.into()));
         self
     }
 
@@ -1394,35 +1380,40 @@ impl LazyGroupBy {
     /// Add a first aggregation
     #[must_use]
     pub fn first(mut self, column: impl Into<String>, output_name: impl Into<String>) -> Self {
-        self.agg_specs.push(AggSpec::first(&column.into(), &output_name.into()));
+        self.agg_specs
+            .push(AggSpec::first(&column.into(), &output_name.into()));
         self
     }
 
     /// Add a last aggregation
     #[must_use]
     pub fn last(mut self, column: impl Into<String>, output_name: impl Into<String>) -> Self {
-        self.agg_specs.push(AggSpec::last(&column.into(), &output_name.into()));
+        self.agg_specs
+            .push(AggSpec::last(&column.into(), &output_name.into()));
         self
     }
 
     /// Add a std (standard deviation) aggregation
     #[must_use]
     pub fn std(mut self, column: impl Into<String>, output_name: impl Into<String>) -> Self {
-        self.agg_specs.push(AggSpec::std(&column.into(), &output_name.into()));
+        self.agg_specs
+            .push(AggSpec::std(&column.into(), &output_name.into()));
         self
     }
 
     /// Add a var (variance) aggregation
     #[must_use]
     pub fn var(mut self, column: impl Into<String>, output_name: impl Into<String>) -> Self {
-        self.agg_specs.push(AggSpec::var(&column.into(), &output_name.into()));
+        self.agg_specs
+            .push(AggSpec::var(&column.into(), &output_name.into()));
         self
     }
 
     /// Add a median aggregation
     #[must_use]
     pub fn median(mut self, column: impl Into<String>, output_name: impl Into<String>) -> Self {
-        self.agg_specs.push(AggSpec::median(&column.into(), &output_name.into()));
+        self.agg_specs
+            .push(AggSpec::median(&column.into(), &output_name.into()));
         self
     }
 
@@ -1438,8 +1429,8 @@ impl LazyGroupBy {
     /// # Errors
     /// Returns error if aggregation fails
     pub fn collect(self) -> DataResult<DataFrame> {
-        use std::sync::Arc;
         use super::grouped::GroupedDataFrame;
+        use std::sync::Arc;
 
         let df = self.source.collect()?;
         let grouped = GroupedDataFrame::new(Arc::new(df), self.group_columns)?;
@@ -1453,22 +1444,20 @@ mod tests {
 
     fn test_df() -> DataFrame {
         let a = Series::from_values("a", &[Value::Int(1), Value::Int(2), Value::Int(3)]).unwrap();
-        let b = Series::from_values("b", &[Value::Int(10), Value::Int(20), Value::Int(30)]).unwrap();
-        let c = Series::from_values("c", &[
-            Value::string("x"),
-            Value::string("y"),
-            Value::string("z"),
-        ]).unwrap();
+        let b =
+            Series::from_values("b", &[Value::Int(10), Value::Int(20), Value::Int(30)]).unwrap();
+        let c = Series::from_values(
+            "c",
+            &[Value::string("x"), Value::string("y"), Value::string("z")],
+        )
+        .unwrap();
         DataFrame::from_series(vec![a, b, c]).unwrap()
     }
 
     #[test]
     fn test_lazy_select() {
         let df = test_df();
-        let result = LazyFrame::new(df)
-            .select(["a", "c"])
-            .collect()
-            .unwrap();
+        let result = LazyFrame::new(df).select(["a", "c"]).collect().unwrap();
         assert_eq!(result.num_columns(), 2);
         assert_eq!(result.columns(), vec!["a", "c"]);
     }
@@ -1486,10 +1475,7 @@ mod tests {
     #[test]
     fn test_lazy_limit() {
         let df = test_df();
-        let result = LazyFrame::new(df)
-            .limit(2)
-            .collect()
-            .unwrap();
+        let result = LazyFrame::new(df).limit(2).collect().unwrap();
         assert_eq!(result.num_rows(), 2);
     }
 

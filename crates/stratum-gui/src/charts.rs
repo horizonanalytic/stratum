@@ -14,16 +14,16 @@ use crate::callback::CallbackId;
 
 /// Default colors for chart series
 pub const CHART_COLORS: [(u8, u8, u8); 10] = [
-    (66, 133, 244),   // Blue
-    (234, 67, 53),    // Red
-    (251, 188, 5),    // Yellow
-    (52, 168, 83),    // Green
-    (154, 160, 166),  // Gray
-    (255, 112, 67),   // Orange
-    (156, 39, 176),   // Purple
-    (0, 188, 212),    // Cyan
-    (139, 195, 74),   // Light Green
-    (121, 85, 72),    // Brown
+    (66, 133, 244),  // Blue
+    (234, 67, 53),   // Red
+    (251, 188, 5),   // Yellow
+    (52, 168, 83),   // Green
+    (154, 160, 166), // Gray
+    (255, 112, 67),  // Orange
+    (156, 39, 176),  // Purple
+    (0, 188, 212),   // Cyan
+    (139, 195, 74),  // Light Green
+    (121, 85, 72),   // Brown
 ];
 
 /// Get a consistent color index for a given label string.
@@ -298,7 +298,10 @@ impl canvas::Program<crate::runtime::Message> for BarChartProgram {
                     Point::new(margin_left, y),
                     Point::new(margin_left + chart_width, y),
                 );
-                frame.stroke(&line, Stroke::default().with_color(grid_color).with_width(1.0));
+                frame.stroke(
+                    &line,
+                    Stroke::default().with_color(grid_color).with_width(1.0),
+                );
 
                 // Y-axis labels
                 let value = max_value * i as f64 / num_grid_lines as f64;
@@ -326,9 +329,12 @@ impl canvas::Program<crate::runtime::Message> for BarChartProgram {
         let total_spacing = bar_spacing * (num_bars + 1) as f32;
         let bar_width = (chart_width - total_spacing) / num_bars as f32;
 
-        let bar_color = config.bar_color
+        let bar_color = config
+            .bar_color
             .map(|(r, g, b)| Color::from_rgb8(r, g, b))
-            .unwrap_or_else(|| Color::from_rgb8(CHART_COLORS[0].0, CHART_COLORS[0].1, CHART_COLORS[0].2));
+            .unwrap_or_else(|| {
+                Color::from_rgb8(CHART_COLORS[0].0, CHART_COLORS[0].1, CHART_COLORS[0].2)
+            });
 
         for (i, point) in data.iter().enumerate() {
             let x = margin_left + bar_spacing + (bar_width + bar_spacing) * i as f32;
@@ -336,10 +342,7 @@ impl canvas::Program<crate::runtime::Message> for BarChartProgram {
             let y = margin_top + chart_height - bar_height;
 
             // Draw bar
-            let bar = Path::rectangle(
-                Point::new(x, y),
-                Size::new(bar_width, bar_height),
-            );
+            let bar = Path::rectangle(Point::new(x, y), Size::new(bar_width, bar_height));
             frame.fill(&bar, bar_color);
 
             // Draw value label if enabled
@@ -387,14 +390,20 @@ impl canvas::Program<crate::runtime::Message> for BarChartProgram {
             Point::new(margin_left, margin_top),
             Point::new(margin_left, margin_top + chart_height),
         );
-        frame.stroke(&y_axis, Stroke::default().with_color(axis_color).with_width(1.5));
+        frame.stroke(
+            &y_axis,
+            Stroke::default().with_color(axis_color).with_width(1.5),
+        );
 
         // X-axis
         let x_axis = Path::line(
             Point::new(margin_left, margin_top + chart_height),
             Point::new(margin_left + chart_width, margin_top + chart_height),
         );
-        frame.stroke(&x_axis, Stroke::default().with_color(axis_color).with_width(1.5));
+        frame.stroke(
+            &x_axis,
+            Stroke::default().with_color(axis_color).with_width(1.5),
+        );
 
         // Draw axis labels
         if let Some(ref x_label) = config.x_label {
@@ -486,12 +495,16 @@ impl canvas::Program<crate::runtime::Message> for LineChartProgram {
         }
 
         // Find data range
-        let max_value = config.series.iter()
+        let max_value = config
+            .series
+            .iter()
             .flat_map(|s| s.values.iter())
             .fold(0.0_f64, |acc, &v| f64::max(acc, v));
         let max_value = if max_value <= 0.0 { 1.0 } else { max_value };
 
-        let min_value = config.series.iter()
+        let min_value = config
+            .series
+            .iter()
             .flat_map(|s| s.values.iter())
             .fold(f64::MAX, |acc, &v| f64::min(acc, v));
         let min_value = min_value.min(0.0);
@@ -509,7 +522,10 @@ impl canvas::Program<crate::runtime::Message> for LineChartProgram {
                     Point::new(margin_left, y),
                     Point::new(margin_left + chart_width, y),
                 );
-                frame.stroke(&line, Stroke::default().with_color(grid_color).with_width(1.0));
+                frame.stroke(
+                    &line,
+                    Stroke::default().with_color(grid_color).with_width(1.0),
+                );
 
                 // Y-axis labels
                 let value = min_value + value_range * i as f64 / num_grid_lines as f64;
@@ -549,16 +565,22 @@ impl canvas::Program<crate::runtime::Message> for LineChartProgram {
             };
 
             // Collect points
-            let points: Vec<Point> = series.values.iter().enumerate().map(|(i, &value)| {
-                let x = margin_left + if num_points > 1 {
-                    point_spacing * i as f32
-                } else {
-                    chart_width / 2.0
-                };
-                let normalized = (value - min_value) / value_range;
-                let y = margin_top + chart_height * (1.0 - normalized as f32);
-                Point::new(x, y)
-            }).collect();
+            let points: Vec<Point> = series
+                .values
+                .iter()
+                .enumerate()
+                .map(|(i, &value)| {
+                    let x = margin_left
+                        + if num_points > 1 {
+                            point_spacing * i as f32
+                        } else {
+                            chart_width / 2.0
+                        };
+                    let normalized = (value - min_value) / value_range;
+                    let y = margin_top + chart_height * (1.0 - normalized as f32);
+                    Point::new(x, y)
+                })
+                .collect();
 
             // Draw area fill if enabled
             if config.fill_area && points.len() >= 2 {
@@ -570,7 +592,10 @@ impl canvas::Program<crate::runtime::Message> for LineChartProgram {
                     for point in &points {
                         builder.line_to(*point);
                     }
-                    builder.line_to(Point::new(points.last().unwrap().x, margin_top + chart_height));
+                    builder.line_to(Point::new(
+                        points.last().unwrap().x,
+                        margin_top + chart_height,
+                    ));
                     builder.close();
                 });
                 frame.fill(&fill_path, fill_color);
@@ -599,11 +624,12 @@ impl canvas::Program<crate::runtime::Message> for LineChartProgram {
             if i % label_step != 0 && i != num_points - 1 {
                 continue;
             }
-            let x = margin_left + if num_points > 1 {
-                point_spacing * i as f32
-            } else {
-                chart_width / 2.0
-            };
+            let x = margin_left
+                + if num_points > 1 {
+                    point_spacing * i as f32
+                } else {
+                    chart_width / 2.0
+                };
             let display_label = if label.len() > 8 {
                 format!("{}...", &label[..6])
             } else {
@@ -628,13 +654,19 @@ impl canvas::Program<crate::runtime::Message> for LineChartProgram {
             Point::new(margin_left, margin_top),
             Point::new(margin_left, margin_top + chart_height),
         );
-        frame.stroke(&y_axis, Stroke::default().with_color(axis_color).with_width(1.5));
+        frame.stroke(
+            &y_axis,
+            Stroke::default().with_color(axis_color).with_width(1.5),
+        );
 
         let x_axis = Path::line(
             Point::new(margin_left, margin_top + chart_height),
             Point::new(margin_left + chart_width, margin_top + chart_height),
         );
-        frame.stroke(&x_axis, Stroke::default().with_color(axis_color).with_width(1.5));
+        frame.stroke(
+            &x_axis,
+            Stroke::default().with_color(axis_color).with_width(1.5),
+        );
 
         // Draw legend if enabled
         if config.show_legend && !config.series.is_empty() {
@@ -653,7 +685,8 @@ impl canvas::Program<crate::runtime::Message> for LineChartProgram {
                 let y = legend_y + i as f32 * 20.0;
 
                 // Color box
-                let box_path = Path::rectangle(Point::new(legend_x, y - 5.0), Size::new(12.0, 12.0));
+                let box_path =
+                    Path::rectangle(Point::new(legend_x, y - 5.0), Size::new(12.0, 12.0));
                 frame.fill(&box_path, color);
 
                 // Series name
@@ -803,7 +836,12 @@ impl canvas::Program<crate::runtime::Message> for PieChartProgram {
                     builder.move_to(outer_start);
                     builder.draw_arc(center, radius, start_angle, sweep_angle);
                     builder.line_to(inner_end);
-                    builder.draw_arc(center, inner_radius, start_angle + sweep_angle, -sweep_angle);
+                    builder.draw_arc(
+                        center,
+                        inner_radius,
+                        start_angle + sweep_angle,
+                        -sweep_angle,
+                    );
                     builder.close();
                 } else {
                     // Regular pie
@@ -819,7 +857,10 @@ impl canvas::Program<crate::runtime::Message> for PieChartProgram {
             frame.fill(&slice, color);
 
             // Draw slice border
-            frame.stroke(&slice, Stroke::default().with_color(Color::WHITE).with_width(1.5));
+            frame.stroke(
+                &slice,
+                Stroke::default().with_color(Color::WHITE).with_width(1.5),
+            );
 
             // Draw label if percentage is significant enough
             if percentage > 0.03 {
@@ -884,7 +925,8 @@ impl canvas::Program<crate::runtime::Message> for PieChartProgram {
                 let y = legend_y + i as f32 * 22.0;
 
                 // Color box
-                let box_path = Path::rectangle(Point::new(legend_x, y - 6.0), Size::new(14.0, 14.0));
+                let box_path =
+                    Path::rectangle(Point::new(legend_x, y - 6.0), Size::new(14.0, 14.0));
                 frame.fill(&box_path, color);
 
                 // Label with value

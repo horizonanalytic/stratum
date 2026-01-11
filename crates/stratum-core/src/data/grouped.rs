@@ -85,25 +85,41 @@ impl AggSpec {
     /// Create a sum aggregation
     #[must_use]
     pub fn sum(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::Sum, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::Sum,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a mean aggregation
     #[must_use]
     pub fn mean(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::Mean, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::Mean,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a min aggregation
     #[must_use]
     pub fn min(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::Min, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::Min,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a max aggregation
     #[must_use]
     pub fn max(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::Max, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::Max,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a count aggregation
@@ -115,43 +131,71 @@ impl AggSpec {
     /// Create a first aggregation
     #[must_use]
     pub fn first(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::First, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::First,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a last aggregation
     #[must_use]
     pub fn last(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::Last, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::Last,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a std (standard deviation) aggregation
     #[must_use]
     pub fn std(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::Std, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::Std,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a var (variance) aggregation
     #[must_use]
     pub fn var(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::Var, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::Var,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a median aggregation
     #[must_use]
     pub fn median(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::Median, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::Median,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a mode aggregation
     #[must_use]
     pub fn mode(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::Mode, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::Mode,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 
     /// Create a count_distinct aggregation
     #[must_use]
     pub fn count_distinct(column: &str, output_name: &str) -> Self {
-        Self::new(AggOp::CountDistinct, Some(column.to_string()), output_name.to_string())
+        Self::new(
+            AggOp::CountDistinct,
+            Some(column.to_string()),
+            output_name.to_string(),
+        )
     }
 }
 
@@ -349,9 +393,9 @@ impl GroupedDataFrame {
     }
 
     fn compute_sum(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
-        let col = source_col.as_ref().ok_or_else(|| {
-            DataError::InvalidOperation("sum requires a column".to_string())
-        })?;
+        let col = source_col
+            .as_ref()
+            .ok_or_else(|| DataError::InvalidOperation("sum requires a column".to_string()))?;
 
         let mut sum_int: i64 = 0;
         let mut sum_float: f64 = 0.0;
@@ -395,9 +439,9 @@ impl GroupedDataFrame {
     }
 
     fn compute_mean(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
-        let col = source_col.as_ref().ok_or_else(|| {
-            DataError::InvalidOperation("mean requires a column".to_string())
-        })?;
+        let col = source_col
+            .as_ref()
+            .ok_or_else(|| DataError::InvalidOperation("mean requires a column".to_string()))?;
 
         let mut sum: f64 = 0.0;
         let mut count: usize = 0;
@@ -431,9 +475,9 @@ impl GroupedDataFrame {
     }
 
     fn compute_min(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
-        let col = source_col.as_ref().ok_or_else(|| {
-            DataError::InvalidOperation("min requires a column".to_string())
-        })?;
+        let col = source_col
+            .as_ref()
+            .ok_or_else(|| DataError::InvalidOperation("min requires a column".to_string()))?;
 
         let mut min_val: Option<Value> = None;
 
@@ -459,9 +503,9 @@ impl GroupedDataFrame {
     }
 
     fn compute_max(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
-        let col = source_col.as_ref().ok_or_else(|| {
-            DataError::InvalidOperation("max requires a column".to_string())
-        })?;
+        let col = source_col
+            .as_ref()
+            .ok_or_else(|| DataError::InvalidOperation("max requires a column".to_string()))?;
 
         let mut max_val: Option<Value> = None;
 
@@ -487,9 +531,9 @@ impl GroupedDataFrame {
     }
 
     fn compute_first(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
-        let col = source_col.as_ref().ok_or_else(|| {
-            DataError::InvalidOperation("first requires a column".to_string())
-        })?;
+        let col = source_col
+            .as_ref()
+            .ok_or_else(|| DataError::InvalidOperation("first requires a column".to_string()))?;
 
         if let Some(&first_idx) = indices.first() {
             col.get(first_idx)
@@ -499,9 +543,9 @@ impl GroupedDataFrame {
     }
 
     fn compute_last(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
-        let col = source_col.as_ref().ok_or_else(|| {
-            DataError::InvalidOperation("last requires a column".to_string())
-        })?;
+        let col = source_col
+            .as_ref()
+            .ok_or_else(|| DataError::InvalidOperation("last requires a column".to_string()))?;
 
         if let Some(&last_idx) = indices.last() {
             col.get(last_idx)
@@ -520,9 +564,9 @@ impl GroupedDataFrame {
     }
 
     fn compute_var(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
-        let col = source_col.as_ref().ok_or_else(|| {
-            DataError::InvalidOperation("var requires a column".to_string())
-        })?;
+        let col = source_col
+            .as_ref()
+            .ok_or_else(|| DataError::InvalidOperation("var requires a column".to_string()))?;
 
         // First compute the mean
         let mean_result = self.compute_mean(source_col, indices)?;
@@ -562,9 +606,9 @@ impl GroupedDataFrame {
     }
 
     fn compute_median(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
-        let col = source_col.as_ref().ok_or_else(|| {
-            DataError::InvalidOperation("median requires a column".to_string())
-        })?;
+        let col = source_col
+            .as_ref()
+            .ok_or_else(|| DataError::InvalidOperation("median requires a column".to_string()))?;
 
         let mut values: Vec<f64> = Vec::new();
 
@@ -598,9 +642,9 @@ impl GroupedDataFrame {
     }
 
     fn compute_mode(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
-        let col = source_col.as_ref().ok_or_else(|| {
-            DataError::InvalidOperation("mode requires a column".to_string())
-        })?;
+        let col = source_col
+            .as_ref()
+            .ok_or_else(|| DataError::InvalidOperation("mode requires a column".to_string()))?;
 
         let mut counts: std::collections::HashMap<String, (usize, Value)> =
             std::collections::HashMap::new();
@@ -628,10 +672,17 @@ impl GroupedDataFrame {
             .map(|(_, v)| v)
             .collect();
 
-        Ok(mode_values.first().map(|v| (*v).clone()).unwrap_or(Value::Null))
+        Ok(mode_values
+            .first()
+            .map(|v| (*v).clone())
+            .unwrap_or(Value::Null))
     }
 
-    fn compute_count_distinct(&self, source_col: &Option<Series>, indices: &[usize]) -> DataResult<Value> {
+    fn compute_count_distinct(
+        &self,
+        source_col: &Option<Series>,
+        indices: &[usize],
+    ) -> DataResult<Value> {
         let col = source_col.as_ref().ok_or_else(|| {
             DataError::InvalidOperation("count_distinct requires a column".to_string())
         })?;
@@ -798,7 +849,8 @@ mod tests {
     use super::*;
 
     fn sample_sales_data() -> DataFrame {
-        let regions = Series::from_strings("region", vec!["North", "South", "North", "South", "North"]);
+        let regions =
+            Series::from_strings("region", vec!["North", "South", "North", "South", "North"]);
         let amounts = Series::from_ints("amount", vec![100, 200, 150, 250, 175]);
         let quantities = Series::from_ints("quantity", vec![10, 20, 15, 25, 18]);
 

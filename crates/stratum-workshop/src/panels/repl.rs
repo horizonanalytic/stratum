@@ -209,9 +209,7 @@ impl ReplPanel {
             })?;
 
         // Run in the VM with output capture (globals are preserved between runs)
-        let (result, captured) = with_output_capture(|| {
-            self.vm.borrow_mut().run(function)
-        });
+        let (result, captured) = with_output_capture(|| self.vm.borrow_mut().run(function));
 
         result
             .map(|value| (captured.stdout, value))
@@ -330,11 +328,14 @@ impl ReplPanel {
     /// Render the REPL panel
     pub fn view(&self) -> Element<'_, ReplMessage> {
         // Build history view
-        let history_view: Element<'_, ReplMessage> = if self.history.is_empty() && !self.multi_line_mode
+        let history_view: Element<'_, ReplMessage> = if self.history.is_empty()
+            && !self.multi_line_mode
         {
-            container(text("REPL ready. Type expressions to evaluate. Type :help for commands.").size(12))
-                .padding(4)
-                .into()
+            container(
+                text("REPL ready. Type expressions to evaluate. Type :help for commands.").size(12),
+            )
+            .padding(4)
+            .into()
         } else {
             let items: Vec<Element<'_, ReplMessage>> = self
                 .history
@@ -392,23 +393,27 @@ impl ReplPanel {
         };
 
         // Show accumulated multi-line input if in multi-line mode
-        let pending_lines: Element<'_, ReplMessage> = if self.multi_line_mode && !self.accumulated_input.is_empty() {
-            let lines: Vec<Element<'_, ReplMessage>> = self
-                .accumulated_input
-                .lines()
-                .enumerate()
-                .map(|(i, line)| {
-                    let prompt = if i == 0 { ">>> " } else { "... " };
-                    text(format!("{prompt}{line}"))
-                        .size(12)
-                        .font(iced::Font::MONOSPACE)
-                        .into()
-                })
-                .collect();
-            Column::with_children(lines).spacing(1).padding([0, 4]).into()
-        } else {
-            column![].into()
-        };
+        let pending_lines: Element<'_, ReplMessage> =
+            if self.multi_line_mode && !self.accumulated_input.is_empty() {
+                let lines: Vec<Element<'_, ReplMessage>> = self
+                    .accumulated_input
+                    .lines()
+                    .enumerate()
+                    .map(|(i, line)| {
+                        let prompt = if i == 0 { ">>> " } else { "... " };
+                        text(format!("{prompt}{line}"))
+                            .size(12)
+                            .font(iced::Font::MONOSPACE)
+                            .into()
+                    })
+                    .collect();
+                Column::with_children(lines)
+                    .spacing(1)
+                    .padding([0, 4])
+                    .into()
+            } else {
+                column![].into()
+            };
 
         // Determine prompt based on mode
         let prompt = if self.multi_line_mode { "... " } else { ">>> " };

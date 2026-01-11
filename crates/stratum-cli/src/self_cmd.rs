@@ -175,10 +175,7 @@ pub fn detect_install_method() -> Result<InstallMethod> {
 
     // Check if running from cargo install location
     if let Ok(exe_path) = std::env::current_exe() {
-        if exe_path
-            .to_string_lossy()
-            .contains(".cargo/bin")
-        {
+        if exe_path.to_string_lossy().contains(".cargo/bin") {
             return Ok(InstallMethod::Cargo);
         }
     }
@@ -233,10 +230,7 @@ fn fetch_latest_release() -> Result<ReleaseInfo> {
 
     let version = tag_name.trim_start_matches('v').to_string();
 
-    let published_at = json["published_at"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let published_at = json["published_at"].as_str().unwrap_or("").to_string();
 
     let assets = json["assets"]
         .as_array()
@@ -335,7 +329,9 @@ fn download_file(url: &str, dest: &PathBuf) -> Result<()> {
     let mut buffer = [0; 8192];
 
     loop {
-        let bytes_read = reader.read(&mut buffer).context("Failed to read response")?;
+        let bytes_read = reader
+            .read(&mut buffer)
+            .context("Failed to read response")?;
         if bytes_read == 0 {
             break;
         }
@@ -430,7 +426,9 @@ fn get_completion_paths() -> Vec<PathBuf> {
     }
 
     // System locations (may need sudo, but we try anyway)
-    paths.push(PathBuf::from("/usr/local/share/zsh/site-functions/_stratum"));
+    paths.push(PathBuf::from(
+        "/usr/local/share/zsh/site-functions/_stratum",
+    ));
 
     paths
 }
@@ -457,7 +455,10 @@ fn get_user_data_paths() -> Result<Vec<(PathBuf, &'static str)>> {
     paths.push((stratum_home.join("versions"), "installed versions"));
 
     // Active version marker
-    paths.push((stratum_home.join(".active-version"), "active version marker"));
+    paths.push((
+        stratum_home.join(".active-version"),
+        "active version marker",
+    ));
 
     Ok(paths)
 }
@@ -519,20 +520,14 @@ fn get_workshop_ide_paths() -> Vec<(PathBuf, &'static str)> {
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| home.join(".local/share"));
 
-            paths.push((
-                data_home.join("stratum-workshop"),
-                "Workshop IDE data",
-            ));
+            paths.push((data_home.join("stratum-workshop"), "Workshop IDE data"));
 
             // XDG cache directory
             let cache_home = std::env::var("XDG_CACHE_HOME")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| home.join(".cache"));
 
-            paths.push((
-                cache_home.join("stratum-workshop"),
-                "Workshop IDE cache",
-            ));
+            paths.push((cache_home.join("stratum-workshop"), "Workshop IDE cache"));
 
             // Desktop entry
             paths.push((
@@ -830,13 +825,19 @@ pub fn update(options: UpdateOptions) -> Result<()> {
     }
 
     if !needs_update && tier_changed {
-        println!("\nChanging tier from '{}' to '{}'", current_tier, target_tier);
+        println!(
+            "\nChanging tier from '{}' to '{}'",
+            current_tier, target_tier
+        );
     } else if needs_update {
         println!("\nNew version available!");
     }
 
     if options.dry_run {
-        println!("\n[DRY RUN] Would update to {} (tier: {})", release.version, target_tier);
+        println!(
+            "\n[DRY RUN] Would update to {} (tier: {})",
+            release.version, target_tier
+        );
         return Ok(());
     }
 
@@ -862,7 +863,10 @@ pub fn update(options: UpdateOptions) -> Result<()> {
     println!("\nTarget platform: {}", target);
 
     // Find the appropriate asset
-    let archive_name = format!("stratum-{}-{}-{}.tar.gz", release.version, target_tier, target);
+    let archive_name = format!(
+        "stratum-{}-{}-{}.tar.gz",
+        release.version, target_tier, target
+    );
     let checksum_name = format!("{}.sha256", archive_name);
 
     let archive_asset = release
@@ -939,7 +943,10 @@ pub fn update(options: UpdateOptions) -> Result<()> {
     };
     new_meta.write(&meta_path)?;
 
-    println!("\nStratum updated successfully to version {}!", release.version);
+    println!(
+        "\nStratum updated successfully to version {}!",
+        release.version
+    );
     println!("\nTo verify, run: stratum --version");
 
     Ok(())
@@ -1300,7 +1307,10 @@ pub fn uninstall(options: UninstallOptions) -> Result<()> {
     }
 
     if warning_count > 0 {
-        println!("  {} warnings (some items may need manual removal)", warning_count);
+        println!(
+            "  {} warnings (some items may need manual removal)",
+            warning_count
+        );
     }
 
     // Remind user to reload shell
@@ -1447,10 +1457,7 @@ fn fetch_release(version: &str) -> Result<ReleaseInfo> {
 
     let version_str = tag_name.trim_start_matches('v').to_string();
 
-    let published_at = json["published_at"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let published_at = json["published_at"].as_str().unwrap_or("").to_string();
 
     let assets = json["assets"]
         .as_array()
@@ -1494,10 +1501,7 @@ fn fetch_available_releases(limit: usize) -> Result<Vec<ReleaseInfo>> {
         .context("Failed to fetch releases")?;
 
     if !response.status().is_success() {
-        bail!(
-            "Failed to fetch releases: HTTP {}",
-            response.status()
-        );
+        bail!("Failed to fetch releases: HTTP {}", response.status());
     }
 
     let json: Vec<serde_json::Value> = response.json().context("Failed to parse releases JSON")?;
@@ -1546,7 +1550,11 @@ fn activate_version_symlinks(version: &str) -> Result<()> {
 
     // Ensure the version bin directory exists
     if !version_bin.exists() {
-        bail!("Version {} bin directory not found at {}", version, version_bin.display());
+        bail!(
+            "Version {} bin directory not found at {}",
+            version,
+            version_bin.display()
+        );
     }
 
     // Create main bin directory if it doesn't exist
@@ -1573,7 +1581,11 @@ fn activate_version_symlinks(version: &str) -> Result<()> {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(&src, &dst).with_context(|| {
-                format!("Failed to create symlink: {} -> {}", dst.display(), src.display())
+                format!(
+                    "Failed to create symlink: {} -> {}",
+                    dst.display(),
+                    src.display()
+                )
             })?;
         }
 
@@ -1581,7 +1593,11 @@ fn activate_version_symlinks(version: &str) -> Result<()> {
         {
             // On Windows, copy the file instead of symlinking (requires admin for symlinks)
             fs::copy(&src, &dst).with_context(|| {
-                format!("Failed to copy binary: {} -> {}", src.display(), dst.display())
+                format!(
+                    "Failed to copy binary: {} -> {}",
+                    src.display(),
+                    dst.display()
+                )
             })?;
         }
     }
@@ -1644,18 +1660,28 @@ pub fn install_version(options: InstallVersionOptions) -> Result<()> {
     println!("Target platform: {}", target);
 
     // Find the appropriate asset
-    let archive_name = format!("stratum-{}-{}-{}.tar.gz", release.version, options.tier, target);
+    let archive_name = format!(
+        "stratum-{}-{}-{}.tar.gz",
+        release.version, options.tier, target
+    );
     let checksum_name = format!("{}.sha256", archive_name);
 
     let archive_asset = release
         .assets
         .iter()
         .find(|a| a.name == archive_name)
-        .with_context(|| format!(
-            "Release asset not found: {}\nAvailable assets: {}",
-            archive_name,
-            release.assets.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
-        ))?;
+        .with_context(|| {
+            format!(
+                "Release asset not found: {}\nAvailable assets: {}",
+                archive_name,
+                release
+                    .assets
+                    .iter()
+                    .map(|a| a.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
 
     let checksum_asset = release.assets.iter().find(|a| a.name == checksum_name);
 
@@ -1812,11 +1838,13 @@ pub fn list_versions(show_available: bool) -> Result<()> {
         for (version, meta) in &installed {
             let is_active = active_version.as_deref() == Some(version);
             let marker = if is_active { " (active)" } else { "" };
-            let tier_info = meta.as_ref()
+            let tier_info = meta
+                .as_ref()
                 .map(|m| format!(" [{}]", m.tier))
                 .unwrap_or_default();
 
-            println!("  {} {}{}{}",
+            println!(
+                "  {} {}{}{}",
                 if is_active { "*" } else { " " },
                 version,
                 tier_info,
@@ -2055,10 +2083,15 @@ installer_version=1.0.0"#;
         assert!(paths.len() >= 5);
 
         // Verify expected paths
-        let path_strings: Vec<_> = paths.iter().map(|(p, _)| p.to_string_lossy().to_string()).collect();
+        let path_strings: Vec<_> = paths
+            .iter()
+            .map(|(p, _)| p.to_string_lossy().to_string())
+            .collect();
         assert!(path_strings.iter().any(|p| p.contains("packages")));
         assert!(path_strings.iter().any(|p| p.contains("cache")));
-        assert!(path_strings.iter().any(|p| p.contains("history") || p.contains("repl")));
+        assert!(path_strings
+            .iter()
+            .any(|p| p.contains("history") || p.contains("repl")));
         assert!(path_strings.iter().any(|p| p.contains("lsp")));
         assert!(path_strings.iter().any(|p| p.contains("versions")));
 
@@ -2080,7 +2113,10 @@ installer_version=1.0.0"#;
         #[cfg(target_os = "macos")]
         {
             assert!(!paths.is_empty());
-            let path_strings: Vec<_> = paths.iter().map(|(p, _)| p.to_string_lossy().to_string()).collect();
+            let path_strings: Vec<_> = paths
+                .iter()
+                .map(|(p, _)| p.to_string_lossy().to_string())
+                .collect();
             assert!(path_strings.iter().any(|p| p.contains("Library")));
         }
 
@@ -2175,13 +2211,20 @@ installer_version=1.0.0"#;
         let paths = get_shell_profile_paths();
 
         // Should include common shell profiles
-        let path_strings: Vec<_> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+        let path_strings: Vec<_> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
 
         // Check for bash profiles
-        assert!(path_strings.iter().any(|p| p.contains("bashrc") || p.contains("bash_profile")));
+        assert!(path_strings
+            .iter()
+            .any(|p| p.contains("bashrc") || p.contains("bash_profile")));
 
         // Check for zsh profiles
-        assert!(path_strings.iter().any(|p| p.contains("zshrc") || p.contains("zprofile")));
+        assert!(path_strings
+            .iter()
+            .any(|p| p.contains("zshrc") || p.contains("zprofile")));
 
         // Check for fish config
         assert!(path_strings.iter().any(|p| p.contains("fish")));
@@ -2192,10 +2235,15 @@ installer_version=1.0.0"#;
         let paths = get_completion_paths();
 
         // Should include completion paths for bash, zsh, and fish
-        let path_strings: Vec<_> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+        let path_strings: Vec<_> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
 
         assert!(path_strings.iter().any(|p| p.contains("bash-completion")));
-        assert!(path_strings.iter().any(|p| p.contains("zfunc") || p.contains("zsh")));
+        assert!(path_strings
+            .iter()
+            .any(|p| p.contains("zfunc") || p.contains("zsh")));
         assert!(path_strings.iter().any(|p| p.contains("fish")));
     }
 }

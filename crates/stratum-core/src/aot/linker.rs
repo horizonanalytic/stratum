@@ -56,9 +56,9 @@ impl Linker {
     /// Link an object product into an executable
     pub fn link(&self, product: ObjectProduct) -> Result<PathBuf, AotError> {
         // Write the object file to a temporary file
-        let obj_data = product.emit().map_err(|e| {
-            AotError::LinkError(format!("Failed to emit object file: {}", e))
-        })?;
+        let obj_data = product
+            .emit()
+            .map_err(|e| AotError::LinkError(format!("Failed to emit object file: {}", e)))?;
 
         let temp_dir = std::env::temp_dir();
         let obj_path = temp_dir.join("stratum_module.o");
@@ -133,19 +133,16 @@ int main(int argc, char** argv) {
         // Link with libc
         cmd.arg("-lc");
 
-        let output = cmd.output().map_err(|e| {
-            AotError::LinkError(format!("Failed to run linker: {}", e))
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| AotError::LinkError(format!("Failed to run linker: {}", e)))?;
 
         // Clean up wrapper
         let _ = std::fs::remove_file(&wrapper_path);
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AotError::LinkError(format!(
-                "Linker failed: {}",
-                stderr
-            )));
+            return Err(AotError::LinkError(format!("Linker failed: {}", stderr)));
         }
 
         Ok(())
@@ -190,19 +187,16 @@ int main(int argc, char** argv) {
         // Link with libc
         cmd.arg("-lc");
 
-        let output = cmd.output().map_err(|e| {
-            AotError::LinkError(format!("Failed to run linker: {}", e))
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| AotError::LinkError(format!("Failed to run linker: {}", e)))?;
 
         // Clean up wrapper
         let _ = std::fs::remove_file(&wrapper_path);
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AotError::LinkError(format!(
-                "Linker failed: {}",
-                stderr
-            )));
+            return Err(AotError::LinkError(format!("Linker failed: {}", stderr)));
         }
 
         Ok(())
@@ -256,19 +250,16 @@ int main(int argc, char** argv) {
             cmd.arg(flag);
         }
 
-        let output = cmd.output().map_err(|e| {
-            AotError::LinkError(format!("Failed to run linker: {}", e))
-        })?;
+        let output = cmd
+            .output()
+            .map_err(|e| AotError::LinkError(format!("Failed to run linker: {}", e)))?;
 
         // Clean up wrapper
         let _ = std::fs::remove_file(&wrapper_path);
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AotError::LinkError(format!(
-                "Linker failed: {}",
-                stderr
-            )));
+            return Err(AotError::LinkError(format!("Linker failed: {}", stderr)));
         }
 
         Ok(())

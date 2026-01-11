@@ -53,10 +53,7 @@ pub fn compute_formatting(source: &str) -> Option<Vec<TextEdit>> {
 ///
 /// Note: Currently formats the entire document as range formatting
 /// requires more sophisticated diffing. Returns None if source cannot be parsed.
-pub fn compute_range_formatting(
-    source: &str,
-    _range: Range,
-) -> Option<Vec<TextEdit>> {
+pub fn compute_range_formatting(source: &str, _range: Range) -> Option<Vec<TextEdit>> {
     // For now, we format the entire document
     // True range formatting would require:
     // 1. Identifying which AST nodes fall within the range

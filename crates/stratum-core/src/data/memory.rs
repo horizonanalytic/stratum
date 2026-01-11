@@ -360,7 +360,9 @@ impl MemoryProfiler {
             // Consider it a potential leak if:
             // 1. There are unmatched allocations (alloc_count > dealloc_count)
             // 2. Current bytes is > 0
-            let unmatched = stats.allocation_count.saturating_sub(stats.deallocation_count);
+            let unmatched = stats
+                .allocation_count
+                .saturating_sub(stats.deallocation_count);
             if unmatched > 0 && stats.current_bytes > 0 {
                 leaks.push(LeakInfo {
                     category: category.clone(),

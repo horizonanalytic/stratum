@@ -31,8 +31,8 @@ pub mod types;
 
 pub use compiler::JitCompiler;
 pub use runtime::{
-    call_jit_function, CompiledFunction, JitContext, JitRuntime, PackedValue,
-    packed_to_value, value_to_packed,
+    call_jit_function, packed_to_value, value_to_packed, CompiledFunction, JitContext, JitRuntime,
+    PackedValue,
 };
 pub use types::ValueLayout;
 

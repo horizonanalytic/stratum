@@ -42,7 +42,10 @@ impl Comment {
         match self.kind {
             CommentKind::Line => {
                 // Strip // prefix
-                self.text.strip_prefix("//").unwrap_or(&self.text).trim_start()
+                self.text
+                    .strip_prefix("//")
+                    .unwrap_or(&self.text)
+                    .trim_start()
             }
             CommentKind::Block => {
                 // Strip /* prefix and */ suffix
@@ -71,7 +74,12 @@ impl Comment {
         match self.kind {
             CommentKind::Line => {
                 // Strip /// prefix
-                Some(self.text.strip_prefix("///").unwrap_or(&self.text).trim_start())
+                Some(
+                    self.text
+                        .strip_prefix("///")
+                        .unwrap_or(&self.text)
+                        .trim_start(),
+                )
             }
             CommentKind::Block => {
                 // Strip /** prefix and */ suffix

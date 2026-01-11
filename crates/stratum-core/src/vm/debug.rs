@@ -188,10 +188,7 @@ impl DebugContext {
         let breakpoint = Breakpoint::new(id, location);
 
         self.breakpoints_by_id.insert(id, breakpoint);
-        self.breakpoints
-            .entry(file)
-            .or_default()
-            .insert(line);
+        self.breakpoints.entry(file).or_default().insert(line);
 
         id
     }

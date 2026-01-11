@@ -141,14 +141,7 @@ fn disassemble_instruction_to_string(chunk: &Chunk, offset: usize, output: &mut 
         | OpCode::Loop => {
             let jump = chunk.read_i16(offset + 1).unwrap_or(0);
             let target = (offset as isize + 3 + jump as isize) as usize;
-            writeln!(
-                output,
-                "{:16} {:4} -> {}",
-                opcode.name(),
-                jump,
-                target
-            )
-            .unwrap();
+            writeln!(output, "{:16} {:4} -> {}", opcode.name(), jump, target).unwrap();
             offset + 3
         }
 
@@ -215,14 +208,7 @@ fn disassemble_instruction_to_string(chunk: &Chunk, offset: usize, output: &mut 
         OpCode::IterNext => {
             let jump = chunk.read_i16(offset + 1).unwrap_or(0);
             let target = (offset as isize + 3 + jump as isize) as usize;
-            writeln!(
-                output,
-                "{:16} {:4} -> {}",
-                opcode.name(),
-                jump,
-                target
-            )
-            .unwrap();
+            writeln!(output, "{:16} {:4} -> {}", opcode.name(), jump, target).unwrap();
             offset + 3
         }
 

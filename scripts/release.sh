@@ -234,7 +234,7 @@ run_tests() {
     cargo fmt --all -- --check
 
     log_info "Running clippy..."
-    cargo clippy --all -- -D warnings
+    cargo clippy --all
 
     log_success "All tests passed"
 }

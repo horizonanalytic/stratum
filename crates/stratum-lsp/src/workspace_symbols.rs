@@ -4,8 +4,8 @@
 //! search for symbols across all open documents in the workspace.
 
 use stratum_core::ast::{
-    EnumDef, ImplDef, InterfaceDef, Item, ItemKind, Module, PatternKind, StructDef,
-    TopLevelItem, TypeKind,
+    EnumDef, ImplDef, InterfaceDef, Item, ItemKind, Module, PatternKind, StructDef, TopLevelItem,
+    TypeKind,
 };
 use stratum_core::lexer::{LineIndex, Span};
 use stratum_core::parser::Parser;
@@ -375,10 +375,7 @@ fx MyFunction() {}
         let source1 = "fx foo() {}";
         let source2 = "fx foobar() {}";
 
-        let documents = vec![
-            (uri1, source1.to_string()),
-            (uri2, source2.to_string()),
-        ];
+        let documents = vec![(uri1, source1.to_string()), (uri2, source2.to_string())];
 
         let results = compute_workspace_symbols("foo", &documents);
         assert_eq!(results.len(), 2);

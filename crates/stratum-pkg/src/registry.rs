@@ -98,10 +98,12 @@ impl GitHubPackage {
     /// Returns an error if the specification format is invalid.
     pub fn parse(spec: &str) -> Result<Self, RegistryError> {
         // Check for github: prefix
-        let rest = spec.strip_prefix("github:").ok_or_else(|| RegistryError::InvalidSpec {
-            spec: spec.to_string(),
-            reason: "must start with 'github:'".to_string(),
-        })?;
+        let rest = spec
+            .strip_prefix("github:")
+            .ok_or_else(|| RegistryError::InvalidSpec {
+                spec: spec.to_string(),
+                reason: "must start with 'github:'".to_string(),
+            })?;
 
         // Split on @ for version
         let (repo_part, version) = if let Some(at_pos) = rest.rfind('@') {
@@ -144,7 +146,11 @@ impl GitHubPackage {
             });
         }
 
-        Ok(Self { owner, repo, version })
+        Ok(Self {
+            owner,
+            repo,
+            version,
+        })
     }
 
     /// Get the package name (derived from repo name).
@@ -301,7 +307,8 @@ impl PackageIndex {
     ///
     /// Returns an error if the file cannot be written.
     pub fn save(&self, path: &Path) -> Result<(), RegistryError> {
-        let content = toml::to_string_pretty(self).map_err(|e| RegistryError::Toml(e.to_string()))?;
+        let content =
+            toml::to_string_pretty(self).map_err(|e| RegistryError::Toml(e.to_string()))?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -355,7 +362,10 @@ fn dirs_cache_dir() -> PathBuf {
     if let Ok(cache) = std::env::var("XDG_CACHE_HOME") {
         return PathBuf::from(cache);
     }
-    if let Some(home) = std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok()) {
+    if let Some(home) = std::env::var("HOME")
+        .ok()
+        .or_else(|| std::env::var("USERPROFILE").ok())
+    {
         #[cfg(target_os = "macos")]
         {
             return PathBuf::from(&home).join("Library").join("Caches");
@@ -403,7 +413,10 @@ impl RegistryClient {
             .build()
             .map_err(|e| RegistryError::Network(e.to_string()))?;
 
-        Ok(Self { config, http_client })
+        Ok(Self {
+            config,
+            http_client,
+        })
     }
 
     /// Get the cache directory for packages.
@@ -553,10 +566,7 @@ impl RegistryClient {
         }
 
         // Fall back to any .tar.gz file
-        release
-            .assets
-            .iter()
-            .find(|a| a.name.ends_with(".tar.gz"))
+        release.assets.iter().find(|a| a.name.ends_with(".tar.gz"))
     }
 
     /// Download a file from a URL.

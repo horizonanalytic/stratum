@@ -235,7 +235,10 @@ impl PackageStructure {
     }
 
     /// Discover all targets in the package.
-    fn discover_targets(manifest: &Manifest, layout: &PackageLayout) -> Result<Vec<DiscoveredTarget>, PackageError> {
+    fn discover_targets(
+        manifest: &Manifest,
+        layout: &PackageLayout,
+    ) -> Result<Vec<DiscoveredTarget>, PackageError> {
         let mut targets = Vec::new();
 
         // Library target
@@ -282,7 +285,14 @@ impl PackageStructure {
             // Explicit binary configurations
             for bin in &manifest.binaries {
                 let path = bin.path.as_ref().map_or_else(
-                    || layout.root.join(SOURCE_DIR).join("bin").join(&bin.name).with_extension(SOURCE_EXT),
+                    || {
+                        layout
+                            .root
+                            .join(SOURCE_DIR)
+                            .join("bin")
+                            .join(&bin.name)
+                            .with_extension(SOURCE_EXT)
+                    },
                     |p| layout.root.join(p),
                 );
                 targets.push(DiscoveredTarget {
@@ -301,7 +311,12 @@ impl PackageStructure {
                 targets.extend(Self::discover_in_dir(tests_dir, TargetKind::Test)?);
             }
         } else {
-            targets.extend(Self::explicit_targets(&manifest.tests, &layout.root, TargetKind::Test, TESTS_DIR));
+            targets.extend(Self::explicit_targets(
+                &manifest.tests,
+                &layout.root,
+                TargetKind::Test,
+                TESTS_DIR,
+            ));
         }
 
         // Example targets
@@ -311,7 +326,12 @@ impl PackageStructure {
                 targets.extend(Self::discover_in_dir(examples_dir, TargetKind::Example)?);
             }
         } else {
-            targets.extend(Self::explicit_targets(&manifest.examples, &layout.root, TargetKind::Example, EXAMPLES_DIR));
+            targets.extend(Self::explicit_targets(
+                &manifest.examples,
+                &layout.root,
+                TargetKind::Example,
+                EXAMPLES_DIR,
+            ));
         }
 
         // Benchmark targets
@@ -321,7 +341,12 @@ impl PackageStructure {
                 targets.extend(Self::discover_in_dir(benches_dir, TargetKind::Bench)?);
             }
         } else {
-            targets.extend(Self::explicit_targets(&manifest.benches, &layout.root, TargetKind::Bench, BENCHES_DIR));
+            targets.extend(Self::explicit_targets(
+                &manifest.benches,
+                &layout.root,
+                TargetKind::Bench,
+                BENCHES_DIR,
+            ));
         }
 
         if targets.is_empty() {
@@ -332,7 +357,10 @@ impl PackageStructure {
     }
 
     /// Discover targets in a directory.
-    fn discover_in_dir(dir: &Path, kind: TargetKind) -> Result<Vec<DiscoveredTarget>, PackageError> {
+    fn discover_in_dir(
+        dir: &Path,
+        kind: TargetKind,
+    ) -> Result<Vec<DiscoveredTarget>, PackageError> {
         let mut targets = Vec::new();
 
         for entry in std::fs::read_dir(dir)? {
@@ -369,7 +397,11 @@ impl PackageStructure {
             .iter()
             .map(|t| {
                 let path = t.path.as_ref().map_or_else(
-                    || root.join(default_dir).join(&t.name).with_extension(SOURCE_EXT),
+                    || {
+                        root.join(default_dir)
+                            .join(&t.name)
+                            .with_extension(SOURCE_EXT)
+                    },
                     |p| root.join(p),
                 );
                 DiscoveredTarget {

@@ -279,11 +279,10 @@ impl Workspace {
         let root = root.as_ref().to_path_buf();
         let manifest_path = root.join(MANIFEST_FILE);
 
-        let content = std::fs::read_to_string(&manifest_path)
-            .map_err(WorkspaceError::Io)?;
+        let content = std::fs::read_to_string(&manifest_path).map_err(WorkspaceError::Io)?;
 
-        let workspace_manifest: WorkspaceManifest = toml::from_str(&content)
-            .map_err(ManifestError::Parse)?;
+        let workspace_manifest: WorkspaceManifest =
+            toml::from_str(&content).map_err(ManifestError::Parse)?;
 
         let config = workspace_manifest
             .workspace

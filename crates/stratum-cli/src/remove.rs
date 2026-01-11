@@ -40,9 +40,7 @@ pub fn remove_dependency_at(manifest_path: &Path, options: RemoveOptions) -> Res
         Some(section) => {
             // Remove from specific section
             let (deps, section_name) = match section {
-                DependencySection::Dependencies => {
-                    (&mut manifest.dependencies, "dependencies")
-                }
+                DependencySection::Dependencies => (&mut manifest.dependencies, "dependencies"),
                 DependencySection::Dev => (&mut manifest.dev_dependencies, "dev-dependencies"),
                 DependencySection::Build => {
                     (&mut manifest.build_dependencies, "build-dependencies")
@@ -66,10 +64,7 @@ pub fn remove_dependency_at(manifest_path: &Path, options: RemoveOptions) -> Res
             let in_dev = manifest.dev_dependencies.contains_key(name);
             let in_build = manifest.build_dependencies.contains_key(name);
 
-            let count = [in_deps, in_dev, in_build]
-                .iter()
-                .filter(|&&x| x)
-                .count();
+            let count = [in_deps, in_dev, in_build].iter().filter(|&&x| x).count();
 
             if count == 0 {
                 return Err(anyhow::anyhow!(
