@@ -160,11 +160,8 @@ impl TypeChecker {
 
         // float: converts a value to float
         // Uses Type::Any so it can accept String, Int, Bool, etc.
-        self.env.define_var(
-            "float",
-            Type::function(vec![Type::Any], Type::Float),
-            false,
-        );
+        self.env
+            .define_var("float", Type::function(vec![Type::Any], Type::Float), false);
 
         // Register native namespace modules
         // These are built-in modules accessed via dot notation (e.g., Random.int(1, 10))

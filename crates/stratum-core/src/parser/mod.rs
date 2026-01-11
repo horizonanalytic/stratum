@@ -2581,10 +2581,7 @@ impl Parser {
             }
 
             // If followed by : or , it's definitely struct init
-            if matches!(
-                self.tokens[pos].kind,
-                TokenKind::Colon | TokenKind::Comma
-            ) {
+            if matches!(self.tokens[pos].kind, TokenKind::Colon | TokenKind::Comma) {
                 return true;
             }
 

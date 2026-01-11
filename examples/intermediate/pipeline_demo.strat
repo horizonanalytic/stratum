@@ -173,10 +173,44 @@ fx main() {
     assert(wrapped == "[content]");
 
     // -------------------------------------------------------------------------
-    // Example 7: Complex pipeline showing real-world usage
+    // Example 7: Multiline pipelines for readability
     // -------------------------------------------------------------------------
     println("");
-    println("7. Complex data transformation pipeline:");
+    println("7. Multiline pipelines (each step on its own line):");
+
+    // Pipelines can span multiple lines for better readability
+    // Each |> can start on a new line
+    let multiline1 = 100
+        |> divide(_, 2)
+        |> subtract(_, 10)
+        |> double
+        |> add(5);
+
+    println("   100");
+    println("       |> divide(_, 2)    // 50");
+    println("       |> subtract(_, 10) // 40");
+    println("       |> double          // 80");
+    println("       |> add(5)          // 85");
+    println("   Result: " + str(multiline1));
+    assert(multiline1 == 85);
+
+    // Complex multiline with mixed operations
+    let multiline2 = 7
+        |> square
+        |> add(_, 15)
+        |> multiply(_, 2);
+
+    println("");
+    println("   7 |> square |> add(_, 15) |> multiply(_, 2)");
+    println("   Steps: 7 -> 49 -> 64 -> 128");
+    println("   Result: " + str(multiline2));
+    assert(multiline2 == 128);
+
+    // -------------------------------------------------------------------------
+    // Example 8: Complex pipeline showing real-world usage
+    // -------------------------------------------------------------------------
+    println("");
+    println("8. Complex data transformation pipeline:");
 
     // Calculate: ((input * 2) + 10) * 3
     let input = 5;
@@ -192,10 +226,10 @@ fx main() {
     assert(transformed == 60);
 
     // -------------------------------------------------------------------------
-    // Example 8: Comparison - with vs without pipes
+    // Example 9: Comparison - with vs without pipes
     // -------------------------------------------------------------------------
     println("");
-    println("8. Comparison - nested calls vs pipeline:");
+    println("9. Comparison - nested calls vs pipeline:");
 
     // Without pipes (nested, hard to read):
     let nested_result = triple(add(double(5), 10));
@@ -211,10 +245,10 @@ fx main() {
     assert(piped_result == 60);
 
     // -------------------------------------------------------------------------
-    // Example 9: Multiple placeholders (same value used multiple times)
+    // Example 10: Multiple placeholders (same value used multiple times)
     // -------------------------------------------------------------------------
     println("");
-    println("9. Multiple placeholders (value used multiple times):");
+    println("10. Multiple placeholders (value used multiple times):");
 
     // add(5, 5) = 10
     let result15 = 5 |> add(_, _);

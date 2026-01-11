@@ -201,6 +201,7 @@ fx double(x: Int) -> Int { x * 2 }
 fx triple(x: Int) -> Int { x * 3 }
 fx add(a: Int, b: Int) -> Int { a + b }
 fx subtract(a: Int, b: Int) -> Int { a - b }
+fx divide(a: Int, b: Int) -> Int { a / b }
 fx square(x: Int) -> Int { x * x }
 
 fx greet(name: String) -> String {
@@ -232,12 +233,16 @@ fx main() {
     println("10 |> subtract(_, 3) = " + str(result4));
     println("10 |> subtract(3, _) = " + str(result5));
 
+    // Multiline pipelines for readability
+    let transformed = 100
+        |> divide(_, 2)
+        |> subtract(_, 10)
+        |> double;
+    println("Multiline result: " + str(transformed));  // 80
+
     // String pipelines
     let greeting = "World" |> greet;
     println(greeting);  // "Hello, World!"
-
-    let wrapped = "content" |> wrap(_, "[", "]");
-    println(wrapped);  // "[content]"
 
     // Multiple placeholders (value used multiple times)
     let squared = 7 |> add(_, _);  // add(7, 7) = 14
@@ -255,8 +260,8 @@ fx main() {
 5 |> double |> add(3) |> triple = 39
 10 |> subtract(_, 3) = 7
 10 |> subtract(3, _) = -7
+Multiline result: 80
 Hello, World!
-[content]
 7 |> add(_, _) = 14
 === All pipeline tests passed! ===
 ```
@@ -266,5 +271,6 @@ Hello, World!
 - Implicit first argument: `x |> f(y)` becomes `f(x, y)`
 - Placeholder `_` for explicit argument positioning
 - Multiple placeholders to use the same value multiple times
+- Multiline pipelines: each `|>` can start on a new line for readability
 - Chaining for readable data transformation pipelines
 - Comparison: `triple(add(double(5), 10))` vs `5 |> double |> add(10) |> triple`
